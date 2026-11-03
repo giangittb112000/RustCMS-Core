@@ -35,7 +35,16 @@ docker compose up -d --wait postgres >/dev/null
 docker compose exec -T postgres psql -qU postgres -c "drop database if exists rustcms_bench" -c "create database rustcms_bench" >/dev/null
 
 workdir=$(mktemp -d)
-trap 'kill "${server:-0}" 2>/dev/null || true; rm -rf "$workdir"' EXIT
+server=
+cleanup() {
+    # Only the server this script started (never `kill 0`: the whole group).
+    if [ -n "$server" ]; then
+        kill "$server" 2>/dev/null || true
+        wait "$server" 2>/dev/null || true
+    fi
+    rm -rf "$workdir"
+}
+trap cleanup EXIT
 cp -R "$root/bench/api/config" "$workdir/config"
 cd "$workdir"
 export APP_KEY=$("$bin" key:generate --show 2>/dev/null | tail -1)
@@ -52,10 +61,15 @@ curl -sf "$base/health" >/dev/null || { echo "the server did not start: $out/$la
 jwt=$(curl -sf -X POST "$base/api/v1/auth/jwt" -H 'content-type: application/json' \
     -d '{"email":"bench@example.test","password":"bench password 123"}' | jq -r .accessToken)
 
-# rss_kb cpu_seconds of the server
+# rss_kb cpu_seconds of the server. `ps -o time` is `[[dd-]hh:]mm:ss[.cc]`
+# (macOS `m:ss.cc`, Linux `hh:mm:ss`).
 usage() {
-    ps -o rss=,time= -p "$server" | awk '{ split($2, t, "[:.]"); n = length(t);
-        s = (n >= 3 ? t[n-2] * 60 + t[n-1] : t[n-1]) + t[n] / 100; printf "%d %.2f\n", $1, s }'
+    ps -o rss=,time= -p "$server" | awk '{
+        t = $2; days = 0
+        if (index(t, "-")) { split(t, d, "-"); days = d[1]; t = d[2] }
+        n = split(t, f, ":"); s = 0
+        for (i = 1; i <= n; i++) s = s * 60 + f[i]
+        printf "%d %.2f\n", $1, s + days * 86400 }'
 }
 
 {
