@@ -420,6 +420,8 @@ impl App {
         // Schedules: only here, never in console commands or tests. Owned by
         // `drain` below: dropped (a server error), it aborts everything it runs.
         let scheduler = crate::schedule::start(&self.state, grace)?;
+        // This instance's abandoned staged files, whatever the mode (stopped when dropped).
+        let _sweeper = crate::storage::Sweeper::start(&self.state);
         let long_lived = self.state.service::<crate::realtime::Shutdown>();
         let listen = tokio::spawn(async move {
             stop.await;

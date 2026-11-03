@@ -67,8 +67,9 @@ S3 credentials come from the usual `AWS_*` variables (`AWS_ACCESS_KEY_ID`,
   bucket (large files go up in parts; an upload interrupted by a crash leaves
   parts behind). Uploads are staged in `<storage.root>/.s3-staging/` (created
   private to the app's user; a symbolic link there is refused) before they
-  are sent; `media:prune` removes the `*.upload` files interrupted uploads
-  left there.
+  are sent; files left there by a crash (uploads, exports and imports being
+  written) are removed after an hour by the instance's own sweep (`serve`,
+  `queue:work`, `media:prune`).
 
 ### Cloudflare R2
 
@@ -161,14 +162,16 @@ Never build a key from client input: parse the key you stored.
 
 ## Pruning
 
-- Files of deleted media and abandoned uploads are removed by a background
-  pass every minute, and by `rustcms media:prune` (it stops taking new work
-  after five minutes; the rest waits for the next run).
-- Exports and imports are removed by a background pass every 10 minutes; no
-  command does it.
+- Files of deleted media and abandoned uploads are removed every minute by
+  the `rustcms.media-prune` schedule, and by `rustcms media:prune` (it stops
+  taking new work after five minutes; the rest waits for the next run).
+- Exports and imports are removed every 10 minutes by the
+  `rustcms.exports-prune` schedule, or `rustcms schedule:run rustcms.exports-prune`.
+- Each `serve` and `queue:work` removes the files it staged and abandoned
+  (older than an hour) every 10 minutes.
 
-These passes start when the application boots (`serve`, `queue:work`). See
-[Data retention](../operations/retention.md).
+Schedules run only in `serve` with the scheduler, once per slot across
+instances. See [Data retention](../operations/retention.md).
 
 Files are always served through the application (no presigned URLs), so
 authorization and safe response headers apply to every byte.

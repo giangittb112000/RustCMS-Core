@@ -317,6 +317,21 @@ impl ServiceProvider for AdminProvider {
             let uploads = tokio::sync::Semaphore::new(config.max_concurrent_uploads.max(1));
             app.bind(crate::media::MediaState { storage, config, uploads });
             app.command(MediaPrune);
+            // Only `serve` runs it (ADR 0031), once per slot across instances;
+            // each instance sweeps its own staged files (`storage::sweep_staging`).
+            app.schedule(
+                rustcms_core::schedule::Schedule::every(MEDIA_PRUNE, MEDIA_PRUNE_EVERY)
+                    .framework()
+                    .timeout(STORAGE_PRUNE_TIMEOUT)
+                    .task(|ctx| async move {
+                        let media = ctx
+                            .state
+                            .service::<crate::media::MediaState>()
+                            .ok_or_else(|| anyhow::anyhow!("media is not enabled"))?;
+                        let deleted = crate::media::prune(ctx.state.db(), media.storage.as_ref()).await?;
+                        Ok(Some(format!("{deleted} media files deleted")))
+                    }),
+            );
         }
         // Every permission is declared by now: the Roles page's labels,
         // areas and presets may only name declared ones.
@@ -325,6 +340,18 @@ impl ServiceProvider for AdminProvider {
         if app.service::<std::sync::Arc<dyn rustcms_core::storage::Storage>>().is_some() {
             app.job::<crate::exports::ExportJob>();
             app.job::<crate::imports::ImportJob>();
+            app.schedule(
+                rustcms_core::schedule::Schedule::every(EXPORTS_PRUNE, EXPORTS_PRUNE_EVERY)
+                    .framework()
+                    .timeout(STORAGE_PRUNE_TIMEOUT)
+                    .task(|ctx| async move {
+                        let storage = rustcms_core::storage::of(&ctx.state)
+                            .ok_or_else(|| anyhow::anyhow!("no storage is bound"))?;
+                        let exports = crate::exports::prune(ctx.state.db(), storage.as_ref()).await?;
+                        let imports = crate::imports::prune(ctx.state.db(), storage.as_ref()).await?;
+                        Ok(Some(format!("{exports} expired exports, {imports} expired imports")))
+                    }),
+            );
             // Import uploads alone accept files up to their limit.
             for resource in registry.all().into_iter().filter(|r| r.meta().importable) {
                 app.body_limit(
@@ -414,56 +441,18 @@ impl ServiceProvider for AdminProvider {
         app.command(LangMissing);
         app.command(BrandingCheck);
     }
-
-    async fn boot(&self, state: &AppState) -> anyhow::Result<()> {
-        // With Redis, one instance at a time does each job (a lease per job and,
-        // for media, per storage disk); the jobs are correct either way.
-        if let Some(media) = state.service::<crate::media::MediaState>() {
-            let app = state.clone();
-            tokio::spawn(async move {
-                let lease = format!("media-prune:{}", media.storage.disk());
-                let mut every = tokio::time::interval(MEDIA_PRUNE_EVERY);
-                loop {
-                    every.tick().await;
-                    let (db, media) = (app.db().clone(), media.clone());
-                    rustcms_core::jobs::exclusive(&app, &lease, MEDIA_PRUNE_EVERY, || async move {
-                        if let Err(err) = crate::media::prune(&db, media.storage.as_ref()).await {
-                            tracing::warn!(%err, "media pruning failed");
-                        }
-                    })
-                    .await;
-                }
-            });
-        }
-        if let Some(storage) = state.service::<std::sync::Arc<dyn rustcms_core::storage::Storage>>() {
-            let app = state.clone();
-            tokio::spawn(async move {
-                let lease = format!("exports-prune:{}", storage.disk());
-                let mut every = tokio::time::interval(EXPORTS_PRUNE_EVERY);
-                loop {
-                    every.tick().await;
-                    let (db, storage) = (app.db().clone(), storage.clone());
-                    rustcms_core::jobs::exclusive(&app, &lease, EXPORTS_PRUNE_EVERY, || async move {
-                        if let Err(err) = crate::exports::prune(&db, storage.as_ref().as_ref()).await {
-                            tracing::warn!(%err, "export pruning failed");
-                        }
-                        if let Err(err) = crate::imports::prune(&db, storage.as_ref().as_ref()).await {
-                            tracing::warn!(%err, "import pruning failed");
-                        }
-                    })
-                    .await;
-                }
-            });
-        }
-        Ok(())
-    }
 }
 
-/// How often expired exports are deleted.
+/// Expired exports and imports of the storage's disk (`exports::prune`, `imports::prune`).
+const EXPORTS_PRUNE: &str = "rustcms.exports-prune";
+/// How often expired exports and imports are deleted.
 const EXPORTS_PRUNE_EVERY: std::time::Duration = std::time::Duration::from_secs(600);
-
+/// Queued media deletions and abandoned uploads (`media::prune`).
+const MEDIA_PRUNE: &str = "rustcms.media-prune";
 /// How often queued media deletions and abandoned uploads are processed.
 const MEDIA_PRUNE_EVERY: std::time::Duration = std::time::Duration::from_secs(60);
+/// Longest run of either: a media pass stops taking work after 5 minutes.
+const STORAGE_PRUNE_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(1_800);
 
 /// `media:prune`: deletes queued media objects and abandoned uploads.
 struct MediaPrune;
@@ -477,7 +466,9 @@ impl AppCommand for MediaPrune {
     async fn run(&self, state: &AppState, _: &ArgMatches) -> anyhow::Result<()> {
         let media =
             state.service::<crate::media::MediaState>().ok_or_else(|| anyhow::anyhow!("media is not enabled"))?;
-        let deleted = crate::media::prune(state.db(), media.storage.as_ref()).await?;
+        let mut deleted = crate::media::prune(state.db(), media.storage.as_ref()).await?;
+        // And this instance's abandoned staged files.
+        deleted += rustcms_core::storage::sweep_staging(state).await?;
         println!("{deleted} media files deleted");
         Ok(())
     }

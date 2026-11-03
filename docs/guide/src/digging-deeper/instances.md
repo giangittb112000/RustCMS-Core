@@ -40,24 +40,15 @@ prefix = "rustcms:blog"
 - **Rate limits** (sign-in, `Throttle<N>`, uploads, …) are counted in Redis
   for all instances, atomically across the keys of one check. If Redis does
   not answer, checks fail closed (500).
-- **The media and exports cleanups** take a lease, which avoids most
-  duplicate runs. It is best effort: a lease expires (it is not renewed
-  during a long run), and when Redis does not answer the cleanup runs anyway.
-  Every cleanup is safe to run twice, also at the same time. Their lease
-  names show in the logs:
 
-  | Lease | Every | Deletes |
-  |---|---|---|
-  | `media-prune:<disk>` | minute | files of deleted media, abandoned uploads |
-  | `exports-prune:<disk>` | 10 minutes | expired exports and imports |
-
-  These cleanups start when the application boots, in every process that
-  boots it: `serve`, `queue:work`, and also application commands for as long
-  as they run. The auth and idempotency cleanups need no lease: they are
-  [framework schedules](scheduling.md#framework-schedules)
-  (`rustcms.auth-prune`, `rustcms.idempotency-prune`), each slot claimed once
-  in the database, run only by `serve`. See
-  [Data retention](../operations/retention.md).
+The cleanups need no Redis. The auth, idempotency, media and exports
+cleanups are [framework schedules](scheduling.md#framework-schedules)
+(`rustcms.auth-prune`, `rustcms.idempotency-prune`, `rustcms.media-prune`,
+`rustcms.exports-prune`): each slot is claimed once in the database and run
+only by `serve` with the scheduler. Files an instance stages on its own disk
+(uploads, exports and imports being written) are swept by that instance:
+every `serve` and `queue:work` removes its abandoned ones, older than an hour,
+every 10 minutes. See [Data retention](../operations/retention.md).
 
 Permissions need no Redis: a change made on one instance applies on every
 instance from the next request (the permission cache follows a counter kept

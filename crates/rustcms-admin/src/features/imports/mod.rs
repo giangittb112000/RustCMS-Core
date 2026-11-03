@@ -903,7 +903,6 @@ pub async fn prune(db: &sea_orm::DatabaseConnection, storage: &dyn Storage) -> A
         entity::Entity::delete_by_id(row.id).exec(db).await?;
         deleted += 1;
     }
-    storage.sweep(std::time::Duration::from_secs(3_600)).await?;
     Ok(deleted)
 }
 

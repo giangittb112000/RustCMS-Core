@@ -1,4 +1,4 @@
-//! `media:prune` and the worker: queued deletions, abandoned uploads, temp files.
+//! `media:prune` and the `rustcms.media-prune` schedule: queued deletions, abandoned uploads.
 
 use super::*;
 
@@ -11,6 +11,7 @@ const DELETIONS_PER_RUN: usize = 100;
 const PASS_BUDGET: std::time::Duration = std::time::Duration::from_secs(300);
 
 /// Removes queued objects and abandoned uploads; returns how many objects were deleted.
+/// Staged files are each instance's own: `rustcms_core::storage::sweep_staging`.
 ///
 /// On PostgreSQL and MySQL each queued deletion is claimed in its own write
 /// transaction (`FOR UPDATE SKIP LOCKED`) and held until its object is deleted
@@ -26,8 +27,6 @@ pub async fn prune(db: &DatabaseConnection, storage: &dyn Storage) -> AppResult<
         claimed_deletions(db, storage, deadline).await?
     };
     deleted += abandoned_uploads(db, storage, deadline).await?;
-    // Staged and partial files of interrupted uploads.
-    deleted += storage.sweep(std::time::Duration::from_secs(ABANDONED_AFTER_MINUTES as u64 * 60)).await?;
     Ok(deleted)
 }
 

@@ -105,8 +105,9 @@ may carry an `Idempotency-Key`.
 - Answer: `201 {data: {id, name, mime, size, width?, height?, inline, alt?}}`
   (`rustcms::admin::media::MediaItem`). Storage paths are never sent.
 - An upload is recorded before its file is stored and committed with its row.
-  A crash in between is cleaned by `media:prune`. The admin provider also
-  runs this cleanup every minute in every process that boots the application.
+  A crash in between is cleaned by `media:prune` and by the
+  `rustcms.media-prune` [schedule](../digging-deeper/scheduling.md#framework-schedules),
+  every minute.
 
 | Answer | When |
 |---|---|
@@ -422,10 +423,12 @@ Other public items of `rustcms::admin::rich_text`:
   bucket (a cancelled request cannot always abort its upload). The bucket is
   not probed at boot; the first upload reports a misconfiguration.
 - Local disk: files are synced before their row commits; staged and partial
-  files of interrupted uploads are removed by `media:prune` after an hour.
-- Pruning runs every minute in each process that boots the application (with
-  Redis, one instance at a time per storage disk). `rustcms media:prune` runs
-  it once by hand.
+  files of interrupted uploads are removed after an hour by the instance that
+  staged them (`serve` and `queue:work` sweep every 10 minutes,
+  `media:prune` once).
+- Pruning runs every minute as the `rustcms.media-prune` schedule (`serve`
+  with the scheduler, once per slot across instances). `rustcms media:prune`
+  runs it once by hand.
 
 | `[storage]` key | Used for |
 |---|---|

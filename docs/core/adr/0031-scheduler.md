@@ -141,3 +141,24 @@ unless Redis was configured.
 - Not moved: the media and exports/imports prunes are per disk and sweep each
   instance's local staging directory; a cluster-wide slot would leave other
   instances' directories unswept (plan `code-findings-fixes.md` B2).
+
+## Amendment (Unreleased, 2026-11-04): storage cleanups (API mode)
+
+- The media and exports/imports cleanups move to the scheduler too:
+  `rustcms.media-prune` (every minute) and `rustcms.exports-prune` (every 10
+  minutes), registered in `AdminProvider::register` (media only with
+  `.media()`, exports with a bound storage). Their `tokio::spawn` loops and
+  Redis leases in `boot` are gone: boot ran them in every process, commands
+  included, and an API-only instance (ADR 0036) cannot tell from its
+  configuration whether it stages files.
+- The objection above (a cluster-wide slot leaves other instances' staging
+  directories unswept) is met by splitting ownership: shared work (database
+  rows and stored objects) is the schedules'; each instance's own staged
+  files are swept by the instance (`storage::sweep_staging`, files older than
+  an hour) from its lifecycle, outside any lease: `serve` in every mode and
+  `queue:work` at start and every 10 minutes, `queue:work --once` and
+  `media:prune` once. Commands and `TestApp` sweep nothing on their own.
+- Consequences: without the scheduler, media and exports cleanups need cron
+  (`media:prune`, `schedule:run rustcms.exports-prune`); the queued-deletion
+  latency stays a minute.
+

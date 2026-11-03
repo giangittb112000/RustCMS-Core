@@ -86,9 +86,8 @@ instances, Redis, S3 or mail. Each item links to the page that explains it.
 
 - [ ] Several instances: build with the `redis` feature and set `[redis] url`
       (one standalone Redis, one `redis.prefix` per deployment) so rate limits
-      are shared and periodic jobs mostly run on one instance (best effort:
-      jobs are safe to run twice, also at the same time); the permission cache
-      needs nothing (it follows the database). Media storage must be shared
+      are shared; the permission cache, the queue and the schedules need
+      nothing (they follow the database). Media storage must be shared
       (S3, or one volume mounted by every instance). Without Redis, run one
       instance ([Several instances](../digging-deeper/instances.md)).
 - [ ] Password-hashing and upload concurrency limits are per instance (each
@@ -97,16 +96,17 @@ instances, Redis, S3 or mail. Each item links to the page that explains it.
       with `queue.enabled = false` on web instances); clocks synchronized
       (NTP); `queue:failed` watched; job payloads and error messages carry no
       secrets ([Queues](../digging-deeper/queues.md)).
-- [ ] The hourly clean-up of sessions, sign-ins, links and old audit entries
-      (`rustcms.auth-prune`) runs only in `serve` with `[schedule] enabled`:
-      keep the scheduler on at least one instance, or cron it
-      ([Authentication](authentication.md#clean-up)).
+- [ ] The clean-ups of sessions, sign-ins, links and old audit entries
+      (`rustcms.auth-prune`), of media (`rustcms.media-prune`) and of exports
+      (`rustcms.exports-prune`) run only in `serve` with `[schedule] enabled`:
+      keep the scheduler on at least one instance, or cron them
+      ([Data retention](../operations/retention.md#from-cron)).
 
 ## Storage
 
 - [ ] S3 storage: a private bucket, credentials limited to it, an *abort
       incomplete multipart uploads* lifecycle rule, `storage.root` writable by
-      the app only (uploads are staged there), `media:prune` scheduled
+      the app only (uploads are staged there)
       ([File storage](../digging-deeper/storage.md)).
 
 ## Related pages

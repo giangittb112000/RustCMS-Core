@@ -52,9 +52,13 @@ impl AppCommand for QueueWork {
         if args.get_flag("once") {
             let ran = run_until_idle(state, queues, 1_000).await?;
             println!("{ran} jobs run");
+            // Files staged by jobs of this instance that died.
+            crate::storage::sweep_staging(state).await?;
             return Ok(());
         }
         let count = args.get_one::<u16>("workers").map_or(config.workers.max(1), |n| usize::from(*n));
+        // This instance's abandoned staged files (stopped when dropped).
+        let _sweeper = crate::storage::Sweeper::start(state);
         let workers = Workers::start(state, &config, queues, count);
         tracing::info!(workers = count, "queue workers started");
         crate::app::shutdown_signal().await;

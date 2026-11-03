@@ -6,6 +6,20 @@ All notable changes are documented here. The format follows
 
 ## [Unreleased]
 
+### Changed
+- The media and exports/imports cleanups are framework schedules
+  (`rustcms.media-prune` every minute, `rustcms.exports-prune` every 10
+  minutes, timeout 30 min) instead of `tokio::spawn` loops in
+  `AdminProvider::boot` with a Redis lease: run only by `serve` with the
+  scheduler, once per slot across instances, never by commands or tests.
+  Deployments without the scheduler run `media:prune` and
+  `schedule:run rustcms.exports-prune` from cron.
+- Each instance sweeps its own staging directory (`storage::sweep_staging`:
+  abandoned uploads, export and import files older than an hour): `serve` in
+  any mode and `queue:work` at start and every 10 minutes, `queue:work --once`
+  and `media:prune` once. `media::prune`, `exports::prune` and
+  `imports::prune` no longer sweep.
+
 ### Fixed
 - The S3 disk's sweep also removes export and import files a crash left in
   `.s3-staging` (it removed only `*.upload`), so exported data no longer stays

@@ -247,6 +247,8 @@ reserved: an application's `rustcms.x` panics at boot):
 |---|---|---|---|
 | `rustcms.auth-prune` | hour (timeout 30 min) | deletes expired sessions, ended JWT sign-ins, expired reset and invitation links, audit entries past `audit.retention_days` | `3 sessions, 0 JWT sign-ins, 1 links, 0 audit entries` |
 | `rustcms.idempotency-prune` | hour (timeout 30 min) | deletes expired idempotency receipts of admin writes | `12 expired keys` |
+| `rustcms.media-prune` | minute (timeout 30 min; only with `.media()`) | deletes files of deleted media and abandoned uploads | `2 media files deleted` |
+| `rustcms.exports-prune` | 10 minutes (timeout 30 min; with a storage) | deletes expired exports and imports, with their files | `1 expired exports, 0 expired imports` |
 
 They behave like yours: only `serve` runs them, once per slot across
 instances; they are listed on System → Schedules and by `schedule:list`, and

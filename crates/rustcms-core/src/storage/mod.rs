@@ -199,6 +199,54 @@ pub fn of(state: &crate::AppState) -> Option<Arc<dyn Storage>> {
     state.service::<Arc<dyn Storage>>().map(|s| s.as_ref().clone())
 }
 
+/// Staged files older than this are abandoned (a crash, a cancelled
+/// request or job): [`sweep_staging`] removes them.
+pub const STAGED_MAX_AGE: std::time::Duration = std::time::Duration::from_secs(3_600);
+/// How often `serve` and `queue:work` sweep their staging directory.
+const SWEEP_EVERY: std::time::Duration = std::time::Duration::from_secs(600);
+
+/// Removes this instance's abandoned staged files (uploads, exports, imports)
+/// and partial files, older than [`STAGED_MAX_AGE`]; returns how many. Each
+/// instance stages on its own disk, so each sweeps its own directory: `serve`
+/// (any mode) and `queue:work` do it every 10 minutes, `queue:work --once`
+/// when it is done. Shared work (queued media deletions, expired exports) is
+/// done by framework schedules instead.
+pub async fn sweep_staging(state: &crate::AppState) -> Result<u64, StorageError> {
+    match of(state) {
+        Some(storage) => storage.sweep(STAGED_MAX_AGE).await,
+        None => Ok(0),
+    }
+}
+
+/// The periodic [`sweep_staging`] of a long-running process; dropping it stops it.
+pub(crate) struct Sweeper(tokio::task::JoinHandle<()>);
+
+impl Sweeper {
+    /// Starts sweeping when a storage is bound.
+    pub(crate) fn start(state: &crate::AppState) -> Option<Self> {
+        of(state)?;
+        let state = state.clone();
+        Some(Self(tokio::spawn(async move {
+            let mut every = tokio::time::interval(SWEEP_EVERY);
+            every.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Delay);
+            loop {
+                every.tick().await;
+                match sweep_staging(&state).await {
+                    Ok(0) => {}
+                    Ok(removed) => tracing::info!(removed, "abandoned staged files removed"),
+                    Err(err) => tracing::warn!(%err, "sweeping the staging directory failed"),
+                }
+            }
+        })))
+    }
+}
+
+impl Drop for Sweeper {
+    fn drop(&mut self) {
+        self.0.abort();
+    }
+}
+
 /// Builds the configured storage.
 pub fn connect(config: &StorageConfig) -> Result<Arc<dyn Storage>, StorageError> {
     match config.disk.as_str() {
