@@ -427,6 +427,11 @@ impl App {
         listener: tokio::net::TcpListener,
         stop: impl Future<Output = ()> + Send + 'static,
     ) -> anyhow::Result<()> {
+        if self.state.mode().is_api() {
+            for warning in api_mode_warnings(&self.state) {
+                tracing::warn!("API mode: {warning}");
+            }
+        }
         // Workers run beside the server and stop after it (jobs may finish).
         let queue = crate::queue::QueueConfig::of(self.state.config())?;
         let workers = (queue.enabled && queue.workers > 0)
@@ -477,7 +482,7 @@ impl App {
             };
             let sweep = async {
                 if let Some(sweeper) = sweeper {
-                    let _ = tokio::time::timeout(grace, sweeper.shutdown()).await;
+                    sweeper.shutdown(grace).await;
                 }
             };
             tokio::join!(workers, schedules, sweep);
@@ -519,6 +524,27 @@ impl App {
         served?;
         Ok(())
     }
+}
+
+/// What an API-mode instance probably lacks to run beside others (ADR 0036),
+/// logged by `serve` in API mode: warnings only, as one instance in API mode
+/// is valid.
+pub fn api_mode_warnings(state: &AppState) -> Vec<&'static str> {
+    let mut warnings = Vec::new();
+    if state.db().get_database_backend() == sea_orm::DbBackend::Sqlite {
+        warnings.push("the database is SQLite: instances on several hosts cannot share it");
+    }
+    #[cfg(feature = "redis")]
+    let redis = state.service::<crate::redis::Redis>().is_some();
+    #[cfg(not(feature = "redis"))]
+    let redis = false;
+    if !redis {
+        warnings.push("no Redis (`[redis] url`): each instance keeps its own rate limits");
+    }
+    if state.service::<crate::storage::StorageConfig>().is_some_and(|s| s.disk == "local") {
+        warnings.push("storage disk `local`: every instance must mount the same volume (or use `s3`)");
+    }
+    warnings
 }
 
 /// `[realtime] shutdown_grace_secs` (default 5).

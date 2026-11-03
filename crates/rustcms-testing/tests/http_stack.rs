@@ -289,3 +289,36 @@ async fn a_panic_answers_the_standard_500() {
     // The application keeps serving, and the timeout still answers 408.
     app.get("/health").await.assert_status(StatusCode::OK);
 }
+
+/// Routes under a panel path, the application's own included.
+fn with_panel(config: Config) -> AppBuilder {
+    let mut app = AppBuilder::new(config);
+    app.panel_path("/panel/");
+    app.routes(|r| {
+        r.route("/panel/hook", post(|| async { "hooked" }))
+            .route("/panel", get(|| async { "home" }))
+            .route("/panelled", get(|| async { "beside" }))
+    });
+    app
+}
+
+#[tokio::test]
+async fn panel_paths_are_refused_before_routing_in_api_mode() {
+    let full = TestApp::new(with_panel, TestDb::sqlite().await).await;
+    full.post_json("/panel/hook", &json!({})).await.assert_status(StatusCode::OK);
+    let wrong = full.get("/panel/hook").await;
+    assert_eq!(wrong.status, StatusCode::METHOD_NOT_ALLOWED);
+
+    let api = |config: Config| with_panel(config.with("app.mode", rustcms_core::AppMode::Api).unwrap());
+    let api = TestApp::new(api, TestDb::sqlite().await).await;
+    for (method, path) in [("POST", "/panel/hook"), ("GET", "/panel/hook"), ("GET", "/panel"), ("DELETE", "/panel/x")] {
+        let request = Request::builder().method(method).uri(path).body(Body::empty()).unwrap();
+        let response = api.request(request).await;
+        assert_eq!(response.status, StatusCode::NOT_FOUND, "{method} {path}");
+        assert!(response.header("allow").is_none(), "{method} {path}: no Allow");
+        assert_eq!(response.json()["code"], "not_found");
+        assert!(response.header("x-request-id").is_some(), "inside the request id layer");
+    }
+    // A sibling path is not under it.
+    api.get("/panelled").await.assert_status(StatusCode::OK);
+}

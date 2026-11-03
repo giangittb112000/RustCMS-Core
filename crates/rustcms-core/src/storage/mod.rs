@@ -250,12 +250,17 @@ impl Sweeper {
         Some(Self { stop, task: Some(task) })
     }
 
-    /// Stops sweeping and waits for the sweep in progress, if any.
-    pub(crate) async fn shutdown(mut self) {
+    /// Stops sweeping and waits for the sweep in progress, at most `grace`;
+    /// then the task is aborted (a directory scan already on its blocking
+    /// thread still runs to its end: it cannot be interrupted).
+    pub(crate) async fn shutdown(mut self, grace: std::time::Duration) {
         let _ = self.stop.send(true);
-        if let Some(task) = self.task.take() {
-            let _ = task.await;
+        if let Some(task) = self.task.as_mut()
+            && tokio::time::timeout(grace, task).await.is_ok()
+        {
+            self.task = None;
         }
+        // Still running: dropped here, which aborts it.
     }
 }
 

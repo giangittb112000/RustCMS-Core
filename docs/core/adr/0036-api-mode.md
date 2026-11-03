@@ -29,8 +29,9 @@ the mode is called API mode.
   included).
   - The core router refuses every path under a declared panel prefix
     (`AppBuilder::panel_path`, `AuthProvider` declares `auth.admin_path`) with
-    a JSON 404, in an outer layer: before routing (no 405 for a route an
-    application mounted there itself), before any body is read.
+    a JSON 404, in front of the routes: before routing (no 405 or `Allow`
+    for a route an application mounted there itself), before any body is
+    read.
   - The auth guard does the same first, before its asset bypass: no session
     is ever loaded under the admin path of an API instance.
 - **What it keeps**: everything other instances rely on is declared as in
@@ -55,8 +56,10 @@ the mode is called API mode.
   `full` instances and the rest anywhere. Mail links are built from the
   `app.url` of the instance running the job: every instance keeps the same
   `app.url`, the one that reaches a `full` instance.
-- An oversized request under the admin path may still get 413 from the outer
-  body limit layer; nothing else answers there.
+- The refusal wraps the routes as one service (a `Router::layer` would run
+  after the route and method are chosen, and a method router still adds its
+  `Allow` header): an API instance answers the same 404 for every path and
+  method under the admin path, before any body limit.
 - API mode does not make API requests cheaper by itself (measured in
   `docs/core/reports/api-performance.vi.md`): the cost of an authenticated
   request is its SQL statements. The PAT check was reduced in the same work.

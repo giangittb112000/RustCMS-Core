@@ -205,14 +205,25 @@ pub(crate) fn router(
     for wrap in middleware {
         router = wrap(router, state.clone());
     }
-    let router = router.route("/health", get(health));
-    router
+    let router = router
+        .route("/health", get(health))
         .fallback(|| async { AppError::NotFound })
         .method_not_allowed_fallback(|| async { AppError::MethodNotAllowed })
         .layer(DefaultBodyLimit::max(largest))
         .layer(middleware::from_fn_with_state(limits, limit_body))
-        // API mode: the panel's paths, before routing (no 405, no body read).
-        .layer(middleware::from_fn_with_state(std::sync::Arc::new(refused), refuse_paths))
+        .with_state(state.clone());
+    // API mode: the panel's paths are refused in front of the routes (a
+    // `Router::layer` runs after the route and method are chosen, and the
+    // method router would still add its `Allow`): no route there is reached,
+    // whatever its method, and no body is read.
+    let router = if refused.is_empty() {
+        router
+    } else {
+        Router::new()
+            .fallback_service(router)
+            .layer(middleware::from_fn_with_state(std::sync::Arc::new(refused), refuse_paths))
+    };
+    router
         .layer(middleware::from_fn_with_state(Duration::from_secs(http.timeout_secs), with_deadline))
         // Inside the timeout, request id and trace: the 500 keeps the request's
         // id and is logged in its span.
@@ -226,7 +237,6 @@ pub(crate) fn router(
         }))
         .layer(SetRequestIdLayer::new(REQUEST_ID, MakeRequestUuid))
         .layer(middleware::from_fn(sanitize_request_id))
-        .with_state(state)
 }
 
 /// Answers a JSON 404 for paths under one of `refused` (API mode's panel paths).

@@ -5,7 +5,7 @@
 mod support;
 
 use axum::http::{Method, StatusCode};
-use rustcms_auth::{API_GUARD, Access, AdminAccess, AdminRoutes, ApiRoutes};
+use rustcms_auth::{API_GUARD, Access, AdminAccess, AdminRoutes, AdminSocket, ApiRoutes, LiveSession, LiveSocket};
 use rustcms_core::{AppBuilder, AppMode, Config};
 use rustcms_migration::Migrator;
 use rustcms_testing::{TestApp, TestDb, db_test};
@@ -20,7 +20,14 @@ fn api_routes() -> ApiRoutes {
 }
 
 fn admin_routes() -> AdminRoutes {
-    AdminRoutes::new("/tools").get("/me", AdminAccess::authenticated(), || async { "me" })
+    AdminRoutes::new("/tools")
+        .get("/me", AdminAccess::authenticated(), || async { "me" })
+        .events("/stream", AdminAccess::authenticated(), |live: LiveSession| async move {
+            Ok::<_, rustcms_core::AppError>(live.stream(futures::stream::pending()))
+        })
+        .socket("/socket", AdminAccess::authenticated(), |live: LiveSocket| async move {
+            live.accept(|_socket: AdminSocket| async {})
+        })
 }
 
 fn build(config: Config) -> AppBuilder {
@@ -52,13 +59,16 @@ const ADMIN_PATHS: &[&str] = &[
     "/admin/api/resources/posts/records",
     "/admin/api/ping",
     "/admin/api/x/tools/me",
-    "/admin/api/x/tools/events",
+    "/admin/api/x/tools/stream",
+    "/admin/api/x/tools/socket",
     "/admin/api/nothing/here",
 ];
 
 fn assert_absent(response: &rustcms_testing::TestResponse, what: &str) {
     assert_eq!(response.status, StatusCode::NOT_FOUND, "{what}");
     assert!(response.header("set-cookie").is_none(), "{what}: no cookie");
+    // A mounted route would show its methods: none is reached.
+    assert!(response.header("allow").is_none(), "{what}: no Allow");
     assert_eq!(response.json()["code"], "not_found", "{what}");
 }
 
@@ -161,4 +171,21 @@ db_test!(permissions_are_the_same_in_both_modes, migrate = Migrator, |db: TestDb
     let full = declared(build(config.with("app.mode", AppMode::Full).unwrap()));
     assert_eq!(api, full);
     assert!(api.iter().any(|(guard, name)| guard == API_GUARD && name == "posts.view"));
+});
+
+db_test!(odd_and_custom_admin_paths, migrate = Migrator, |db: TestDb| async move {
+    // A nested admin path, written with a trailing slash.
+    let custom = |config: Config| build_api(config.with("auth.admin_path", "/back/office/").unwrap());
+    let (app, seed) = support::setup_with(custom, db, &[]).await;
+    let signed_in = app.acting_as(&seed.admin).await;
+    for path in ["/back/office", "/back/office/", "/back/office/api/auth/csrf", "/back/office/api/x/tools/me"] {
+        assert_absent(&signed_in.send(Method::GET, path, None).await, path);
+    }
+    // Not under it, and not routed: plain 404s, never the panel.
+    for path in ["//back/office/", "/back/office%2Fapi/auth/csrf", "/back", "/back/officex", "/admin/"] {
+        let response = signed_in.send(Method::GET, path, None).await;
+        assert_eq!(response.status, StatusCode::NOT_FOUND, "{path}");
+        assert!(response.header("set-cookie").is_none(), "{path}");
+    }
+    app.client().send(Method::GET, "/api/v2/open", None).await.assert_status(StatusCode::OK);
 });

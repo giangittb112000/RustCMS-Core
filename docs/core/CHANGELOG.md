@@ -14,7 +14,9 @@ All notable changes are documented here. The format follows
   (streams, sockets). Permissions, job kinds, schedules and commands are
   declared as in `full`. `queue.enabled` and `schedule.enabled` left out are
   `false` in API mode. `AppState::mode()`, `AppBuilder::mode()`,
-  `AppBuilder::panel_path()`, `queue::Jobs::kinds()`.
+  `AppBuilder::panel_path()`, `queue::Jobs::kinds()`; `serve` in API mode
+  warns about SQLite, a missing Redis and a `local` disk
+  (`app::api_mode_warnings`).
 - `just bench-api` (`bench/api`, `scripts/bench-api.sh`): a load test of the
   application API with `oha` on PostgreSQL.
 

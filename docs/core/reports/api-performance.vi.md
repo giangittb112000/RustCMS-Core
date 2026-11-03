@@ -41,3 +41,45 @@ Nhận xét:
   - thu hẹp bề mặt (không có session, CSRF, SPA hay stream trên node API);
   - không có việc nền cạnh tranh pool DB;
   - vận hành nhiều node.
+
+## Sau khi làm (939df68)
+
+Full mode, cấu hình mặc định:
+
+| Kịch bản | req/s | p50 ms | p99 ms | non-2xx | CPU s | RSS MiB |
+|---|---:|---:|---:|---:|---:|---:|
+| public | 91135 | 0.33 | 0.96 | 0 | 67.40 | 43 |
+| pat_read | 3059 | 10.15 | 14.32 | 0 | 16.62 | 46 |
+| jwt_read | 2400 | 12.99 | 18.09 | 0 | 16.05 | 46 |
+| pat_write | 3111 | 9.93 | 15.12 | 0 | 16.70 | 47 |
+| admin_path | 87335 | 0.34 | 1 | 0 | 68.63 | 47 |
+
+API mode (`RUSTCMS_APP__MODE=api`):
+
+| Kịch bản | req/s | p50 ms | p99 ms | non-2xx | CPU s | RSS MiB |
+|---|---:|---:|---:|---:|---:|---:|
+| public | 90642 | 0.33 | 0.93 | 0 | 67.31 | 41 |
+| pat_read | 3038 | 10.18 | 15.26 | 0 | 16.71 | 45 |
+| jwt_read | 2403 | 13.03 | 17.32 | 0 | 15.96 | 45 |
+| pat_write | 3147 | 9.91 | 13.79 | 0 | 16.91 | 45 |
+| admin_path | 105189 | 0.28 | 0.81 | tất cả (404, đúng thiết kế) | 60.31 | 45 |
+
+Tách theo từng yếu tố:
+- **(c) Tối ưu PAT** là nguồn tăng chính.
+  - pat_read tăng từ 1921 lên 3059 req/s (+59%), p50 giảm từ 16.1 xuống 10.2 ms.
+  - pat_write tăng từ 1941 lên 3111 req/s (+60%).
+  - Nguyên nhân: từ 4 câu SQL trước handler còn 2 (token join user; generation RBAC), và không còn `UPDATE last_used_at` trên mỗi request.
+- **(a) Bỏ route admin** không ảnh hưởng tới route API: public, pat_read và jwt_read của Full và API ngang nhau, chênh lệch nằm trong nhiễu (khoảng ±5% giữa các lần chạy trên cùng máy).
+  - Riêng public đo khoảng 91k, so với 96k ở baseline. Layer chặn path panel được thêm ở mọi mode, nên đã đổi lại thành chỉ thêm khi có path cần chặn (tức là chỉ ở API mode).
+  - Path admin trên node API trả 404 ở khoảng 105k req/s và không đụng DB.
+- **(b) Tắt worker và scheduler** (đo ở baseline-quiet) không thay đổi throughput trong 15 giây đo. Lợi ích là pool DB không bị việc nền chiếm, và có ý nghĩa khi có job thật.
+- **jwt_read** không đổi (2400), vì vẫn tốn 2 câu SQL: kiểm tra family (revoke) và generation.
+
+## Đề xuất (chờ anh duyệt, đụng ADR 0012)
+
+1. **Câu đọc generation RBAC trên mỗi request.** Có thể cache vài trăm ms theo từng instance.
+   - Lợi ích: PAT còn 1 câu, JWT còn 1 câu, khoảng +30–50% theo cách đo này.
+   - Đánh đổi: thay đổi phân quyền có thể trễ tối đa bằng TTL trên các instance khác, phá cam kết "áp dụng từ request kế tiếp" của ADR 0012.
+2. **Kiểm tra revoke JWT** (`jwt_session::verify_access` đọc family). Có thể cache trạng thái family theo TTL ngắn.
+   - Đánh đổi tương tự: đăng xuất hoặc revoke có độ trễ.
+3. **Pool DB:** pool 32 cho thêm khoảng 25% ở baseline. Các key `min_connections`/`acquire_timeout` chưa cần. Hướng dẫn chỉnh `database.max_connections` theo số instance đã có trong guide.

@@ -109,3 +109,12 @@ db_test!(api_mode_serves_without_the_scheduler_unless_enabled, |db: TestDb| asyn
     let enabled = config.with("schedule.enabled", true).unwrap();
     assert!(scheduled_by_serving(&app, enabled).await > 0, "on when set");
 });
+
+db_test!(serve_warns_about_what_several_instances_need, |db: TestDb| async move {
+    let (app, _) = api_app(db).await;
+    let warnings = rustcms_core::app::api_mode_warnings(app.state());
+    let has = |text: &str| warnings.iter().any(|w| w.contains(text));
+    assert!(has("Redis") && has("`local`"), "{warnings:?}");
+    let sqlite = app.state().db().get_database_backend() == sea_orm::DbBackend::Sqlite;
+    assert_eq!(has("SQLite"), sqlite, "{warnings:?}");
+});

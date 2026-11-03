@@ -64,7 +64,7 @@ impl AppCommand for QueueWork {
         crate::app::shutdown_signal().await;
         let sweep = async {
             if let Some(sweeper) = sweeper {
-                sweeper.shutdown().await;
+                sweeper.shutdown(std::time::Duration::from_secs(config.shutdown_secs)).await;
             }
         };
         tokio::join!(workers.shutdown(), sweep);

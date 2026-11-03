@@ -47,6 +47,9 @@ rustcms serve --api-only        # or [app] mode = "api" / RUSTCMS_APP__MODE=api
 - **Your own code:** check `state.mode()` (or `app.mode()` in a provider)
   before mounting panel-only routes with `app.routes` or starting services
   only the panel uses.
+- `serve` in API mode logs a warning for what several instances need and
+  this one lacks: a SQLite database, no Redis (rate limits per instance), a
+  `local` storage disk (one shared volume, or `s3`).
 - `route:list` lists the routes of the mode it runs in:
   `RUSTCMS_APP__MODE=api rustcms route:list`.
 

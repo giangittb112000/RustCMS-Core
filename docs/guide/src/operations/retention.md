@@ -9,7 +9,7 @@ which commands do the same from cron when no long-running process is up.
 The auth, idempotency, media and exports cleanups are framework
 [schedules](../digging-deeper/scheduling.md) (`rustcms.auth-prune`,
 `rustcms.idempotency-prune`, `rustcms.media-prune.<disk>`, `rustcms.exports-prune.<disk>`):
-they run only in `serve` with `[schedule] enabled` (the default), once per
+they run only in `serve` with `[schedule] enabled` (the default, except in [API mode](../digging-deeper/instances.md#api-mode)), once per
 slot across instances (UTC), never in `queue:work`, console commands or
 tests. They show on System → Schedules and in `schedule:list` with their runs
 and summaries.

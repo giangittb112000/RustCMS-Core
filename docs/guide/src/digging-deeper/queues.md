@@ -120,9 +120,11 @@ if status == enrollment::ACTIVE {
 
 ## Running
 
-`serve` runs `queue.workers` workers (2) beside the HTTP server. To run them
-elsewhere, set `queue.enabled = false` (or `workers = 0`) on the web
-instances and run `rustcms queue:work` in another process.
+`serve` runs `queue.workers` workers (2) beside the HTTP server, except in
+[API mode](instances.md#api-mode), where `queue.enabled` left out is `false`
+(set it to `true` to run workers there too). To run them elsewhere, set
+`queue.enabled = false` (or `workers = 0`) on the web instances and run
+`rustcms queue:work` in another process.
 
 | `queue:work` option | |
 |---|---|
@@ -307,7 +309,7 @@ Keep the instances' clocks synchronized (NTP); `queue.clock_skew_secs`
 
 | Key | Default | Range | |
 |---|---|---|---|
-| `enabled` | `true` | | workers in `serve` |
+| `enabled` | `true` (`false` in [API mode](instances.md#api-mode)) | | workers in `serve`; a value set wins over the mode |
 | `workers` | `2` | 0 to 64 | per process (`serve`, `queue:work`); 0: none in `serve` |
 | `queues` | `["default"]` | not empty | queues the workers take jobs from; jobs of all of them are taken in one order (by when they became ready, then id), not queue by queue |
 | `lease_secs` | `60` | 10 to 3,600 | how long a run owns its job, renewed by heartbeats |

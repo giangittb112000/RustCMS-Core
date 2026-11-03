@@ -125,7 +125,7 @@ audit entries older than `audit.retention_days` are deleted once an hour.
 ::: warning Where the hourly clean-up runs
 The hourly clean-up is the framework schedule `rustcms.auth-prune`
 ([Scheduling](../digging-deeper/scheduling.md#framework-schedules)): only
-`serve` runs it, with `[schedule] enabled` (the default), once per hour across
+`serve` runs it, with `[schedule] enabled` (the default, except in [API mode](../digging-deeper/instances.md#api-mode)), once per hour across
 instances. `queue:work`, `db:seed`, your own commands and tests never prune.
 It shows on the Schedules page and in `schedule:list`. Without `serve`, run
 `schedule:run rustcms.auth-prune` (or `session:prune` and `audit:prune`) from

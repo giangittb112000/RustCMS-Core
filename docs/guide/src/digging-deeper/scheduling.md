@@ -149,7 +149,7 @@ Give each schedule exactly one action.
 
 | Key | Default | Range | |
 |---|---|---|---|
-| `enabled` | `true` | | run the schedules in `serve` on this instance |
+| `enabled` | `true` (`false` in [API mode](instances.md#api-mode)) | | run the schedules in `serve` on this instance; a value set wins over the mode |
 | `grace_secs` | `30` | 1 to 300 | how late a slot may still be claimed |
 | `history_retention_days` | `7` | 1 to 3,650 | how long runs are kept in `schedule_runs` |
 

@@ -137,9 +137,13 @@ One `serve` process is the whole application:
 - **the scheduler**, when `schedule.enabled` (`true`); with several
   instances, each slot runs once
   ([Scheduling](../digging-deeper/scheduling.md)). It also runs the
-  framework's hourly clean-ups (expired sessions, links, audit entries,
-  idempotency receipts): keep it enabled on at least one instance, or run them
-  from cron ([Data retention](../operations/retention.md#from-cron)).
+  framework's clean-ups (expired sessions, links, audit entries,
+  idempotency receipts, media and exports): keep it enabled on at least one
+  instance, or run them from cron ([Data retention](../operations/retention.md#from-cron)).
+
+`serve --api-only` (or `app.mode = "api"`) serves the application API alone,
+without the admin panel; its workers and scheduler are off unless set
+([API mode](../digging-deeper/instances.md#api-mode)).
 
 Other commands (`migrate`, `db:seed`, your own commands) do not start
 workers or the scheduler automatically. Two commands do that work on
