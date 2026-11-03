@@ -163,8 +163,8 @@ impl Storage for S3Storage {
             for entry in std::fs::read_dir(&dir)? {
                 // Entries may vanish meanwhile (an upload finishing): skip them.
                 let Ok(entry) = entry else { continue };
-                // Only staged uploads (`<uuid>.upload`), never links or other files.
-                if !entry.file_name().to_string_lossy().ends_with(".upload") {
+                // Only files the framework stages, never links or other files.
+                if !super::is_staged_name(&entry.file_name().to_string_lossy()) {
                     continue;
                 }
                 let Ok(meta) = std::fs::symlink_metadata(entry.path()) else { continue };

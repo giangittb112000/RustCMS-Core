@@ -6,6 +6,11 @@ All notable changes are documented here. The format follows
 
 ## [Unreleased]
 
+### Fixed
+- The S3 disk's sweep also removes export and import files a crash left in
+  `.s3-staging` (it removed only `*.upload`), so exported data no longer stays
+  on the instance's disk.
+
 ## [0.11.0] — 2026-10-28
 
 ### Changed

@@ -103,6 +103,15 @@ pub trait Storage: Send + Sync {
     }
 }
 
+/// Files the framework stages before storing them: uploads (`<uuid>.upload`),
+/// CSV exports (`export-<id>-<uuid>.csv`) and imports (`import-<uuid>.csv`).
+/// A crash leaves them behind; [`Storage::sweep`] removes them once old.
+#[cfg_attr(not(feature = "s3"), allow(dead_code))]
+pub(crate) fn is_staged_name(name: &str) -> bool {
+    name.ends_with(".upload")
+        || ((name.starts_with("export-") || name.starts_with("import-")) && name.ends_with(".csv"))
+}
+
 /// `[storage]` settings.
 #[derive(Debug, Clone, Deserialize)]
 #[serde(default)]
@@ -205,6 +214,16 @@ pub fn connect(config: &StorageConfig) -> Result<Arc<dyn Storage>, StorageError>
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn staged_names_are_the_framework_s() {
+        for staged in ["0199d3a4.upload", "export-7-0199d3a4.csv", "import-0199d3a4.csv"] {
+            assert!(is_staged_name(staged), "{staged}");
+        }
+        for other in ["notes.txt", "export.txt", "my-export-1.csv", "upload"] {
+            assert!(!is_staged_name(other), "{other}");
+        }
+    }
 
     #[test]
     fn keys_are_generated_and_validated() {

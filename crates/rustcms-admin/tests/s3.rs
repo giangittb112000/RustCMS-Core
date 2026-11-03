@@ -96,8 +96,12 @@ async fn interrupted_uploads_are_swept_from_staging() {
     let recent = staging.join(format!("{}.upload", uuid::Uuid::now_v7()));
     std::fs::write(&recent, b"in progress").unwrap();
     let other = stale(&staging, "notes.txt");
-    assert_eq!(storage.sweep(std::time::Duration::from_secs(3_600)).await.unwrap(), 1);
+    // Exports and imports staged by a process that died.
+    let export = stale(&staging, &format!("export-7-{}.csv", uuid::Uuid::now_v7()));
+    let import = stale(&staging, &format!("import-{}.csv", uuid::Uuid::now_v7()));
+    assert_eq!(storage.sweep(std::time::Duration::from_secs(3_600)).await.unwrap(), 3);
     assert!(!left.exists(), "the interrupted upload goes");
+    assert!(!export.exists() && !import.exists(), "abandoned CSV files go");
     assert!(recent.exists(), "uploads in progress stay");
     assert!(other.exists(), "only staged uploads are removed");
 }
