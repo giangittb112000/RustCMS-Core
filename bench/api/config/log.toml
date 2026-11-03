@@ -1,0 +1,2 @@
+# Requests are not logged: the benchmark measures the server, not the terminal.
+filter = "warn"

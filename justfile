@@ -84,6 +84,11 @@ doc: docs
     RUSTDOCFLAGS="-D warnings" cargo doc --workspace --no-deps
     cargo test --workspace --doc
 
+# Load test of the application API (bench/api, PostgreSQL in docker, `brew install oha`):
+# `just bench-api after RUSTCMS_APP__MODE=api`; results in target/bench/<label>.md.
+bench-api label *env:
+    scripts/bench-api.sh {{label}} {{env}}
+
 # The guide (VitePress): dependency age, install, build with snippet/link/anchor checks, script tests.
 docs:
     cd docs/guide && node scripts/check-deps-age.mjs && npm ci --ignore-scripts --no-audit --no-fund

@@ -1,0 +1,21 @@
+# Load-test application for `just bench-api` (docs/core/reports/api-performance.vi.md).
+# Outside the workspace: CI never builds it.
+[package]
+name = "bench-api"
+version = "0.0.0"
+edition = "2024"
+publish = false
+
+[workspace]
+
+[dependencies]
+rustcms = { path = "../../crates/rustcms", features = ["redis"] }
+sea-orm = { version = "=2.0.4", default-features = false, features = ["macros", "with-chrono", "with-uuid", "with-rust_decimal", "with-json"] }
+sea-orm-migration = { version = "=2.0.4", default-features = false }
+anyhow = "1"
+clap = "4"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+
+[profile.release]
+debug = false
