@@ -8,7 +8,7 @@ which commands do the same from cron when no long-running process is up.
 
 The auth, idempotency, media and exports cleanups are framework
 [schedules](../digging-deeper/scheduling.md) (`rustcms.auth-prune`,
-`rustcms.idempotency-prune`, `rustcms.media-prune`, `rustcms.exports-prune`):
+`rustcms.idempotency-prune`, `rustcms.media-prune.<disk>`, `rustcms.exports-prune.<disk>`):
 they run only in `serve` with `[schedule] enabled` (the default), once per
 slot across instances (UTC), never in `queue:work`, console commands or
 tests. They show on System → Schedules and in `schedule:list` with their runs
@@ -24,8 +24,8 @@ crash, older than an hour) at start and every 10 minutes;
 |---|---|---|---|
 | auth cleanup (`rustcms.auth-prune`, `serve` only) | hour | next full hour | expired sessions, ended JWT sign-ins, expired reset and invitation links, audit entries past retention |
 | idempotency cleanup (`rustcms.idempotency-prune`, `serve` only) | hour | next full hour | expired idempotency receipts |
-| media cleanup (`rustcms.media-prune`, `serve` only) | minute | next full minute | files of deleted media records, abandoned uploads |
-| exports and imports cleanup (`rustcms.exports-prune`, `serve` only) | 10 minutes | next multiple of 10 minutes | expired exports and imports, with their files |
+| media cleanup (`rustcms.media-prune.<disk>`, `serve` only) | minute | next full minute | files of deleted media records, abandoned uploads |
+| exports and imports cleanup (`rustcms.exports-prune.<disk>`, `serve` only) | 10 minutes | next multiple of 10 minutes | expired exports and imports, with their files |
 | staging sweep (each `serve` and `queue:work`) | 10 minutes | at start | this instance's staged files older than an hour |
 | scheduler (`serve` only, while schedules are registered and `[schedule] enabled`) | hour | after one hour | schedule claims older than 7 days, schedule runs past retention |
 | queue workers (`serve` with workers, `queue:work`) | hour | at start | failed jobs and `once` receipts, job history, schedule runs past retention |
@@ -43,8 +43,8 @@ crash, older than an hour) at start and every 10 minutes;
 | Failed jobs, `once` receipts | `queue.failed_retention_days` (30) | the workers, `queue:work --once` |
 | Job history (`job_runs`) | `queue.history_retention_days` (7; 0 keeps no history) | the workers, `queue:work --once` |
 | Schedule runs (`schedule_runs`) | `schedule.history_retention_days` (7) | the scheduler, the workers, `queue:work --once` |
-| Background exports (file and row) | 24 hours, removed an hour later | exports and imports cleanup, `schedule:run rustcms.exports-prune` |
-| Imports (file, row, report, receipts) | 24 hours from upload, or from the start of the run | exports and imports cleanup, `schedule:run rustcms.exports-prune` |
+| Background exports (file and row) | 24 hours, removed an hour later | exports and imports cleanup, `schedule:run rustcms.exports-prune.<disk>` |
+| Imports (file, row, report, receipts) | 24 hours from upload, or from the start of the run | exports and imports cleanup, `schedule:run rustcms.exports-prune.<disk>` |
 | Media files of deleted media records, interrupted uploads | removed within minutes (queued deletions), an hour (abandoned uploads) | media cleanup, `media:prune` |
 | Uploaded media | until deleted from the Media library (a cover removed from a record, or an abandoned draft's, stays) | by hand |
 
@@ -59,7 +59,7 @@ rustcms schedule:run rustcms.auth-prune   # or: the whole auth cleanup, reset li
 rustcms audit:prune
 rustcms idempotency:prune
 rustcms media:prune         # and this instance's abandoned staged files
-rustcms schedule:run rustcms.exports-prune
+rustcms schedule:run rustcms.exports-prune.local   # or .s3: the disk in use
 rustcms queue:work --once   # failed jobs, receipts, job and schedule history (and the ready jobs)
 ```
 
@@ -67,7 +67,7 @@ rustcms queue:work --once   # failed jobs, receipts, job and schedule history (a
 reset and invitation links included (no other command deletes those), and
 records the run in the schedule history; it does not prune that history, nor
 schedule claims (only `serve`'s scheduler and the workers do).
-`schedule:run rustcms.exports-prune` deletes expired exports and imports the
+`schedule:run rustcms.exports-prune.<disk>` deletes expired exports and imports the
 same way.
 
 ## Personal data

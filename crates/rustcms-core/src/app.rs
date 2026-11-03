@@ -45,6 +45,13 @@ impl AppState {
         &self.0.config
     }
 
+    /// What this instance serves (`app.mode`): in [`AppMode::Api`](crate::AppMode::Api),
+    /// providers mount no admin routes; an application checks it for its own
+    /// UI routes and background services.
+    pub fn mode(&self) -> crate::AppMode {
+        self.config().app.mode
+    }
+
     /// `APP_KEY` and the keys it replaced, for [`crypto::Encrypted`](crate::crypto::Encrypted).
     pub fn keyring(&self) -> &crate::crypto::Keyring {
         &self.0.keyring
@@ -114,6 +121,7 @@ pub struct AppBuilder {
     middleware: Vec<MiddlewareFn>,
     described: Vec<RouteInfo>,
     body_limits: Vec<http::BodyLimit>,
+    panel_paths: Vec<String>,
     jobs: crate::queue::Jobs,
     schedules: crate::schedule::Schedules,
     encrypted: crate::crypto::EncryptedColumns,
@@ -160,6 +168,7 @@ impl AppBuilder {
                 source: "core".into(),
             }],
             body_limits: Vec::new(),
+            panel_paths: Vec::new(),
             jobs: crate::queue::Jobs::default(),
             schedules: crate::schedule::Schedules::default(),
             encrypted: crate::crypto::EncryptedColumns::default(),
@@ -195,6 +204,11 @@ impl AppBuilder {
     /// Configuration.
     pub fn config(&self) -> &Config {
         &self.config
+    }
+
+    /// What this instance serves (`app.mode`, see [`AppState::mode`]).
+    pub fn mode(&self) -> crate::AppMode {
+        self.config.app.mode
     }
 
     /// The shutdown of long-lived tasks (streams, hub producers), cancelled
@@ -234,6 +248,15 @@ impl AppBuilder {
     /// path (e.g. an upload route); every other request keeps `http.body_limit`.
     pub fn body_limit(&mut self, method: axum::http::Method, path: impl Into<String>, bytes: usize) -> &mut Self {
         self.body_limits.push(http::BodyLimit { method, path: path.into(), bytes });
+        self
+    }
+
+    /// Declares a path prefix the admin panel owns (`/admin`). In API mode
+    /// (ADR 0036) every request under it answers a JSON 404 before routing,
+    /// whatever its method, so no route mounted there (the application's
+    /// own included) answers.
+    pub fn panel_path(&mut self, prefix: impl Into<String>) -> &mut Self {
+        self.panel_paths.push(prefix.into().trim_end_matches('/').to_owned());
         self
     }
 
@@ -366,7 +389,8 @@ impl AppBuilder {
         for provider in &self.providers {
             provider.boot(&state).await?;
         }
-        let router = http::router(state.clone(), self.routes, self.middleware, self.body_limits);
+        let panel_paths = if state.mode().is_api() { self.panel_paths } else { Vec::new() };
+        let router = http::router(state.clone(), self.routes, self.middleware, self.body_limits, panel_paths);
         Ok(App { state, router })
     }
 }
@@ -420,8 +444,9 @@ impl App {
         // Schedules: only here, never in console commands or tests. Owned by
         // `drain` below: dropped (a server error), it aborts everything it runs.
         let scheduler = crate::schedule::start(&self.state, grace)?;
-        // This instance's abandoned staged files, whatever the mode (stopped when dropped).
-        let _sweeper = crate::storage::Sweeper::start(&self.state);
+        // This instance's abandoned staged files, whatever the mode: joined on
+        // the signal (within the grace), aborted when dropped.
+        let sweeper = crate::storage::Sweeper::start(&self.state);
         let long_lived = self.state.service::<crate::realtime::Shutdown>();
         let listen = tokio::spawn(async move {
             stop.await;
@@ -450,7 +475,12 @@ impl App {
                     scheduler.shutdown(grace).await;
                 }
             };
-            tokio::join!(workers, schedules);
+            let sweep = async {
+                if let Some(sweeper) = sweeper {
+                    let _ = tokio::time::timeout(grace, sweeper.shutdown()).await;
+                }
+            };
+            tokio::join!(workers, schedules, sweep);
         };
         let mut bounded_signal = signal.clone();
         let mut server = std::pin::pin!(async move {

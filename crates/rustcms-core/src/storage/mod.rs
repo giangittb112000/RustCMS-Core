@@ -218,32 +218,52 @@ pub async fn sweep_staging(state: &crate::AppState) -> Result<u64, StorageError>
     }
 }
 
-/// The periodic [`sweep_staging`] of a long-running process; dropping it stops it.
-pub(crate) struct Sweeper(tokio::task::JoinHandle<()>);
+/// The periodic [`sweep_staging`] of a long-running process. [`shutdown`](Self::shutdown)
+/// stops it after the sweep in progress (a directory scan runs on a blocking
+/// thread and cannot be interrupted); dropping it aborts the task.
+pub(crate) struct Sweeper {
+    stop: tokio::sync::watch::Sender<bool>,
+    task: Option<tokio::task::JoinHandle<()>>,
+}
 
 impl Sweeper {
-    /// Starts sweeping when a storage is bound.
+    /// Starts sweeping (at once, then every 10 minutes) when a storage is bound.
     pub(crate) fn start(state: &crate::AppState) -> Option<Self> {
         of(state)?;
         let state = state.clone();
-        Some(Self(tokio::spawn(async move {
+        let (stop, mut stopped) = tokio::sync::watch::channel(false);
+        let task = tokio::spawn(async move {
             let mut every = tokio::time::interval(SWEEP_EVERY);
             every.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Delay);
             loop {
-                every.tick().await;
+                tokio::select! {
+                    _ = every.tick() => {}
+                    _ = stopped.wait_for(|s| *s) => return,
+                }
                 match sweep_staging(&state).await {
                     Ok(0) => {}
                     Ok(removed) => tracing::info!(removed, "abandoned staged files removed"),
                     Err(err) => tracing::warn!(%err, "sweeping the staging directory failed"),
                 }
             }
-        })))
+        });
+        Some(Self { stop, task: Some(task) })
+    }
+
+    /// Stops sweeping and waits for the sweep in progress, if any.
+    pub(crate) async fn shutdown(mut self) {
+        let _ = self.stop.send(true);
+        if let Some(task) = self.task.take() {
+            let _ = task.await;
+        }
     }
 }
 
 impl Drop for Sweeper {
     fn drop(&mut self) {
-        self.0.abort();
+        if let Some(task) = &self.task {
+            task.abort();
+        }
     }
 }
 

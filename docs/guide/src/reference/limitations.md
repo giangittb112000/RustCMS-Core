@@ -59,15 +59,10 @@ keeps the permissions it started with.
 
 - Schedules run only in `rustcms serve`, never in console commands,
   `queue:work` or tests ([Scheduling](../digging-deeper/scheduling.md)).
-- The auth and idempotency clean-ups are framework schedules, run only by
-  `serve`: a deployment without `serve` runs them from cron
-  ([Data retention](../operations/retention.md#from-cron)). Media, export and
-  import pruning are not schedules yet: they run in a loop of the admin
-  provider in every process that boots the application, including `db:seed`
-  and other console commands. With Redis, a lease keeps one instance running
-  each clean-up at a time; without Redis every instance runs them, and a run
-  that outlasts its lease can overlap the next. They are written to stay
-  correct when that happens.
+- The auth, idempotency, media and exports clean-ups are framework
+  schedules, run only by `serve` with the scheduler: a deployment without it
+  runs them from cron ([Data retention](../operations/retention.md#from-cron)).
+  Each instance sweeps the files it staged itself (`serve`, `queue:work`).
 
 ## Databases
 

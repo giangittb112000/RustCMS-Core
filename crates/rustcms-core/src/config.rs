@@ -39,6 +39,27 @@ pub enum Environment {
     Production,
 }
 
+/// What an instance serves (`[app] mode`, ADR 0036).
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum AppMode {
+    /// The admin panel and the API, with queue workers and the scheduler.
+    #[default]
+    Full,
+    /// The application API only (`ApiRoutes`, `/api/v1/auth/*`, routes the
+    /// application mounts itself): no admin panel, admin API, panel routes,
+    /// streams or sockets; queue workers and the scheduler off unless
+    /// `[queue] enabled` / `[schedule] enabled` turn them on.
+    Api,
+}
+
+impl AppMode {
+    /// Whether this is [`AppMode::Api`].
+    pub fn is_api(self) -> bool {
+        self == Self::Api
+    }
+}
+
 /// `[app]` section.
 #[derive(Debug, Clone, Deserialize)]
 pub struct AppConfig {
@@ -60,6 +81,9 @@ pub struct AppConfig {
     pub previous_keys: Vec<AppKey>,
     /// Address `serve` listens on.
     pub listen: SocketAddr,
+    /// What this instance serves (`full` or `api`; `serve --api-only` sets `api`).
+    #[serde(default)]
+    pub mode: AppMode,
     /// Locale of the admin interface when neither the user nor the browser
     /// names a supported one.
     pub locale: String,
@@ -307,6 +331,19 @@ impl Config {
         self.figment.focus(section).extract().map_err(|e| ConfigError(Box::new(e)))
     }
 
+    /// Whether `[section] enabled` turns a background service on: its explicit
+    /// value, else on in [`AppMode::Full`] and off in [`AppMode::Api`] (the
+    /// queue's workers and the scheduler in `serve`).
+    pub(crate) fn enabled_in_mode(&self, section: &str) -> Result<bool, ConfigError> {
+        #[derive(Default, Deserialize)]
+        #[serde(default)]
+        struct Toggle {
+            enabled: Option<bool>,
+        }
+        let toggle: Toggle = self.section(section)?;
+        Ok(toggle.enabled.unwrap_or(!self.app.mode.is_api()))
+    }
+
     /// Replaces a value, for tests (`with("database.url", "sqlite::memory:")`).
     pub fn with(self, path: &str, value: impl Serialize) -> Result<Self, ConfigError> {
         Self::from_figment(self.figment.merge(Serialized::default(path, value)))
@@ -318,6 +355,46 @@ impl Config {
 mod tests {
     use super::*;
     use figment::Jail;
+
+    #[test]
+    fn background_services_follow_the_mode_unless_set() {
+        Jail::expect_with(|jail| {
+            jail.set_env("APP_KEY", AppKey::generate().encode());
+            jail.set_env("DATABASE_URL", "sqlite::memory:");
+            let base = Config::load().unwrap();
+            assert_eq!(base.app.mode, AppMode::Full, "full by default");
+            let toggles = |c: &Config| {
+                let queue = crate::queue::QueueConfig::of(c).unwrap().enabled;
+                let schedule = crate::schedule::ScheduleConfig::of(c).unwrap().enabled;
+                (queue, schedule)
+            };
+            for (mode, set, expected) in [
+                ("full", None, true),
+                ("full", Some(true), true),
+                ("full", Some(false), false),
+                ("api", None, false),
+                ("api", Some(true), true),
+                ("api", Some(false), false),
+            ] {
+                let mut config = base.clone().with("app.mode", mode).unwrap();
+                if let Some(set) = set {
+                    config = config.with("queue.enabled", set).unwrap().with("schedule.enabled", set).unwrap();
+                }
+                assert_eq!(toggles(&config), (expected, expected), "{mode} {set:?}");
+            }
+            // From the files and the environment, as deployed.
+            jail.create_dir("config")?;
+            jail.create_file("config/app.toml", "mode = \"api\"")?;
+            jail.create_file("config/schedule.toml", "enabled = true")?;
+            let api = Config::load().unwrap();
+            assert_eq!((api.app.mode, toggles(&api)), (AppMode::Api, (false, true)));
+            jail.set_env("RUSTCMS_APP__MODE", "full");
+            assert_eq!(Config::load().unwrap().app.mode, AppMode::Full);
+            jail.set_env("RUSTCMS_APP__MODE", "both");
+            assert!(Config::load().is_err(), "an unknown mode is refused");
+            Ok(())
+        });
+    }
 
     #[test]
     fn layers_files_and_environment() {

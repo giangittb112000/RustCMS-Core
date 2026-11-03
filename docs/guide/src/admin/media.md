@@ -106,7 +106,7 @@ may carry an `Idempotency-Key`.
   (`rustcms::admin::media::MediaItem`). Storage paths are never sent.
 - An upload is recorded before its file is stored and committed with its row.
   A crash in between is cleaned by `media:prune` and by the
-  `rustcms.media-prune` [schedule](../digging-deeper/scheduling.md#framework-schedules),
+  `rustcms.media-prune.<disk>` [schedule](../digging-deeper/scheduling.md#framework-schedules),
   every minute.
 
 | Answer | When |
@@ -426,7 +426,7 @@ Other public items of `rustcms::admin::rich_text`:
   files of interrupted uploads are removed after an hour by the instance that
   staged them (`serve` and `queue:work` sweep every 10 minutes,
   `media:prune` once).
-- Pruning runs every minute as the `rustcms.media-prune` schedule (`serve`
+- Pruning runs every minute as the `rustcms.media-prune.<disk>` schedule (`serve`
   with the scheduler, once per slot across instances). `rustcms media:prune`
   runs it once by hand.
 

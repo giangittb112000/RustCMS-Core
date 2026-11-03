@@ -29,7 +29,7 @@ pub mod telemetry;
 pub mod template;
 
 pub use app::{App, AppBuilder, AppCommand, AppState, Inject, RouteInfo, ServiceProvider};
-pub use config::{Config, Environment};
+pub use config::{AppMode, Config, Environment};
 pub use console::Console;
 pub use error::{AppError, AppResult, ValidationErrors};
 pub use http::{ApiPage, ClientIp, Json, Pagination, Validate, Validated};

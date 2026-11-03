@@ -184,6 +184,7 @@ Start the HTTP server
 | Argument | Description |
 |---|---|
 | `--listen` | Address to listen on (default: `app.listen`) |
+| `--api-only` | Serve the application API only, without the admin panel (`app.mode = "api"`) |
 
 ### `migrate`
 

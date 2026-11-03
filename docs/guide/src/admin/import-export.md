@@ -223,8 +223,9 @@ created or updated has its own entry as usual.
 | Available for | | 24 hours | 24 hours |
 | User checked again every | | 500 rows | 100 rows |
 
-A cleanup pass runs every 10 minutes in every process that boots the
-application (a loop the admin provider starts). It deletes the files of
+A cleanup pass runs every 10 minutes (the `rustcms.exports-prune.<disk>`
+[schedule](../digging-deeper/scheduling.md#framework-schedules), run by
+`serve` with the scheduler, once per slot across instances). It deletes the files of
 exports expired for more than an hour, and expired imports. Each pass
 cleans one disk (`[storage] disk`): it deletes that disk's files, then their
 records, and marks that disk's abandoned exports and imports `unfinished`;

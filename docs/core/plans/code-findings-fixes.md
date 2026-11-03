@@ -152,7 +152,9 @@ B (#3, #8) — narrowed after review:
   `schedules.manage` and is audited.
 - Cron-only deployments (no `serve`): document that `schedule:run` records history but prunes none; keep
   `session:prune`, `idempotency:prune`, `audit:prune` as the cron path.
-- B2 deferred (finding #8 stays open, with a design note): media and exports/imports prunes are per disk and
+- B2 done in the API mode work (2026-11-04, ADR 0031 amendment): schedules `rustcms.media-prune.<disk>` and
+  `rustcms.exports-prune.<disk>` for shared work, a per-instance staging sweep owned by `serve`/`queue:work`.
+  Original note: B2 deferred (finding #8 stays open, with a design note): media and exports/imports prunes are per disk and
   sweep each instance's local staging directory (S3); a cluster-wide slot would leave other instances' staging
   dirs unswept, and the export/import prune does not isolate disks (new finding #16: expired rows of another
   disk lose their metadata while their files stay). Needs its own design (per-instance maintenance vs shared

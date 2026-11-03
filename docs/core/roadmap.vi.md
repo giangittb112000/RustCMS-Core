@@ -66,6 +66,7 @@ Mỗi bản có tag Git; chi tiết trong `docs/core/CHANGELOG.md`.
 | 0.9.0 | `BelongsToManySelect` trong form bản ghi (ADR 0035), `after_trash`/`after_restore`/`after_relation_change`, `media.view_all`, hỏi trước khi rời form |
 | 0.10.0 | Rich text phiên bản 2 (bảng, embed, callout, chú thích ảnh), picker thư viện media, upload nhiều ảnh |
 | 0.10.1 | Trang Media dạng lưới + hàng đợi upload, alt cho media, settings chứa media, `visible_when`, action chính, `message`/`open` của action |
+| (chưa phát hành) | API mode (ADR 0036): `serve --api-only` chỉ phục vụ API để scale ngang sau load balancer; dọn media/exports thành schedule framework; giảm SQL cho PAT; `just bench-api` |
 
 ## Đang hoãn / sau 0.10
 - M18 Excel (XLSX) và M21 Media Range/video, thumbnail: tạm hoãn từ 22/10/2026.

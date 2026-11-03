@@ -191,6 +191,7 @@ pub(crate) fn router(
     routes: Vec<RouteFn>,
     middleware: Vec<MiddlewareFn>,
     body_limits: Vec<BodyLimit>,
+    refused: Vec<String>,
 ) -> Router {
     let http = state.config().http.clone();
     // Extractors may read up to the largest limit; `limit_body` enforces each
@@ -210,6 +211,8 @@ pub(crate) fn router(
         .method_not_allowed_fallback(|| async { AppError::MethodNotAllowed })
         .layer(DefaultBodyLimit::max(largest))
         .layer(middleware::from_fn_with_state(limits, limit_body))
+        // API mode: the panel's paths, before routing (no 405, no body read).
+        .layer(middleware::from_fn_with_state(std::sync::Arc::new(refused), refuse_paths))
         .layer(middleware::from_fn_with_state(Duration::from_secs(http.timeout_secs), with_deadline))
         // Inside the timeout, request id and trace: the 500 keeps the request's
         // id and is logged in its span.
@@ -224,6 +227,16 @@ pub(crate) fn router(
         .layer(SetRequestIdLayer::new(REQUEST_ID, MakeRequestUuid))
         .layer(middleware::from_fn(sanitize_request_id))
         .with_state(state)
+}
+
+/// Answers a JSON 404 for paths under one of `refused` (API mode's panel paths).
+async fn refuse_paths(State(refused): State<std::sync::Arc<Vec<String>>>, req: Request, next: Next) -> Response {
+    let path = req.uri().path();
+    let under = |base: &String| path == base || path.strip_prefix(base.as_str()).is_some_and(|r| r.starts_with('/'));
+    if refused.iter().any(under) {
+        return AppError::NotFound.into_response();
+    }
+    next.run(req).await
 }
 
 /// A handler's (or middleware's) panic: the standard 500 with a fixed log

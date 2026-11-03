@@ -597,8 +597,9 @@ async fn build(job: &JobCtx, row: &entity::Model) -> Result<(), Result<Refused, 
     Ok(())
 }
 
-/// Deletes expired exports of this disk (rows and every run's file), fails
-/// exports whose job never finished, and sweeps abandoned temporary files.
+/// Deletes expired exports of this disk (rows and every run's file) and fails
+/// exports whose job never finished. Temporary files are each instance's own
+/// to sweep (`rustcms_core::storage::sweep_staging`).
 /// Only this disk's files and their records are touched: an export with
 /// objects on another disk keeps its row until that disk's pruning has
 /// deleted them. Returns how many exports were deleted.

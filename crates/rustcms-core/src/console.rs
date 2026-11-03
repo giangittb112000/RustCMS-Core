@@ -10,7 +10,7 @@ use clap::{CommandFactory, Parser, Subcommand};
 use sea_orm_migration::MigratorTrait;
 
 use crate::app::AppBuilder;
-use crate::config::{Config, Environment};
+use crate::config::{AppMode, Config, Environment};
 use crate::key::AppKey;
 
 #[derive(Parser)]
@@ -27,6 +27,9 @@ enum Command {
         /// Address to listen on (default: `app.listen`)
         #[arg(long)]
         listen: Option<SocketAddr>,
+        /// Serve the application API only, without the admin panel (`app.mode = "api"`)
+        #[arg(long)]
+        api_only: bool,
     },
     /// Run pending migrations
     Migrate {
@@ -139,7 +142,9 @@ impl<M: MigratorTrait> Console<M> {
         crate::telemetry::init(&config.log);
         let production = config.app.env == Environment::Production;
         match command {
-            Command::Serve { listen } => {
+            Command::Serve { listen, api_only } => {
+                // Through the configuration's layers, so `section` and `with` keep it.
+                let config = if api_only { config.with("app.mode", AppMode::Api)? } else { config };
                 let app = (self.build)(config).build().await?;
                 app.serve(listen).await
             }

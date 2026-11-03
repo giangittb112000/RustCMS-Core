@@ -159,12 +159,19 @@ impl ServiceProvider for AuthProvider {
         app.bind(crate::realtime::Realtime::new(realtime));
         app.bind(state);
         let admin_path = config.admin_path.clone();
-        app.describe_routes("auth", routes::routes(&admin_path));
-        // Unknown admin API paths: JSON 404 for every method.
-        let any = axum::http::Method::from_bytes(b"ANY").expect("valid method token");
-        let base = format!("{}/api", admin_path.trim_end_matches('/'));
-        app.describe_routes("auth", [(any.clone(), base.clone()), (any, format!("{base}/{{*rest}}"))]);
-        app.routes(move |router| routes::router(router, &admin_path));
+        // API mode (ADR 0036): nothing answers under it but a 404.
+        app.panel_path(&admin_path);
+        app.describe_routes("auth", routes::api_routes());
+        app.routes(routes::api_router);
+        // API mode (ADR 0036): no session routes; the guard answers 404 under the admin path.
+        if !app.mode().is_api() {
+            app.describe_routes("auth", routes::admin_routes(&admin_path));
+            // Unknown admin API paths: JSON 404 for every method.
+            let any = axum::http::Method::from_bytes(b"ANY").expect("valid method token");
+            let base = format!("{}/api", admin_path.trim_end_matches('/'));
+            app.describe_routes("auth", [(any.clone(), base.clone()), (any, format!("{base}/{{*rest}}"))]);
+            app.routes(move |router| routes::admin_router(router, &admin_path));
+        }
         app.middleware(|router, state| router.layer(from_fn_with_state(state, guard::authenticate)));
         // Password resets and invitations: their jobs and mails.
         app.job::<crate::recovery::PasswordResetJob>().job::<crate::recovery::InvitationJob>();

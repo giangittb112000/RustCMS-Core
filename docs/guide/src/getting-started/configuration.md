@@ -52,6 +52,7 @@ for in the working directory, then in its parents.
 | `app.key`                   | — (**required**)       | `base64:` + 32 bytes; `rustcms key:generate` |
 | `app.previous_keys`         | `[]`                   | keys `APP_KEY` replaced, only to open [encrypted values](../digging-deeper/encryption.md) until `key:reencrypt` ran; env `APP_PREVIOUS_KEYS` (comma-separated) |
 | `app.listen`                | `127.0.0.1:8000`       | address of `serve` (`serve --listen` overrides) |
+| `app.mode`                  | `full`                 | `api`: the application API only, no admin panel ([API mode](../digging-deeper/instances.md#api-mode)); `serve --api-only` overrides |
 | `app.locale`                | `en`                   | admin interface language by default ([Languages](../admin/i18n.md)); must be one of `app.locales` |
 | `app.locales`               | `["en", "vi"]`         | languages users may choose (the panel ships `en`, `vi`) |
 | `database.url`              | — (**required**)       | `sqlite://…`, `postgres://…` or `mysql://…` ([MySQL setup](../basics/database.md#mysql)) |
@@ -76,6 +77,8 @@ New applications start from these files (the rest are defaults):
 # config/app.toml (overridden by APP_* variables in .env)
 name = "blog"
 listen = "127.0.0.1:8000"
+# "api": the application API only, without the admin panel (`serve --api-only`).
+# mode = "full"
 
 # config/auth.toml
 admin_path = "/admin"
@@ -169,7 +172,8 @@ rate: see [Mail](../digging-deeper/mail.md#configuration).
 ### `[queue]` (`config/queue.toml`)
 
 Workers and job leases: see [Queues](../digging-deeper/queues.md#configuration).
-`serve` runs `queue.workers` workers (2) when `queue.enabled` (`true`).
+`serve` runs `queue.workers` workers (2) when `queue.enabled` (left out: `true`,
+or `false` in [API mode](../digging-deeper/instances.md#api-mode)).
 
 ### `[redis]` (`config/redis.toml`, feature `redis`)
 
@@ -208,7 +212,7 @@ only; `schedule:run <name>` runs one by hand.
 
 | Key | Default | |
 |---|---|---|
-| `schedule.enabled` | `true` | run the schedules on this instance |
+| `schedule.enabled` | `true` (`false` in [API mode](../digging-deeper/instances.md#api-mode)) | run the schedules on this instance |
 | `schedule.grace_secs` | `30` | how late (1–300 s) a slot may still be claimed; older slots are skipped |
 | `schedule.history_retention_days` | `7` | runs kept on the Schedules page (1–3,650) |
 

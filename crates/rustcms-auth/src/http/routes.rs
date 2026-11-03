@@ -35,6 +35,13 @@ pub const MAX_PASSWORD_LEN: usize = 1024;
 
 /// Every auth route as `(method, path)`, for route listings and the authorization oracle.
 pub fn routes(admin_path: &str) -> Vec<(Method, String)> {
+    let mut routes = admin_routes(admin_path);
+    routes.extend(api_routes());
+    routes
+}
+
+/// The admin panel's auth routes (sessions), not mounted in API mode.
+pub(crate) fn admin_routes(admin_path: &str) -> Vec<(Method, String)> {
     let admin = format!("{}/api/auth", admin_path.trim_end_matches('/'));
     vec![
         (Method::GET, format!("{admin}/csrf")),
@@ -47,6 +54,12 @@ pub fn routes(admin_path: &str) -> Vec<(Method, String)> {
         (Method::POST, format!("{admin}/forgot-password")),
         (Method::POST, format!("{admin}/reset-password")),
         (Method::POST, format!("{admin}/invitation")),
+    ]
+}
+
+/// The API guard's auth routes (tokens, JWTs), mounted in every mode.
+pub(crate) fn api_routes() -> Vec<(Method, String)> {
+    vec![
         (Method::POST, "/api/v1/auth/token".into()),
         (Method::DELETE, "/api/v1/auth/token".into()),
         (Method::GET, "/api/v1/auth/me".into()),
@@ -56,7 +69,8 @@ pub fn routes(admin_path: &str) -> Vec<(Method, String)> {
     ]
 }
 
-pub(crate) fn router(router: Router<AppState>, admin_path: &str) -> Router<AppState> {
+/// The admin panel's auth routes, and the JSON 404 of unknown admin API paths.
+pub(crate) fn admin_router(router: Router<AppState>, admin_path: &str) -> Router<AppState> {
     let base = format!("{}/api", admin_path.trim_end_matches('/'));
     let admin = format!("{base}/auth");
     router
@@ -70,16 +84,21 @@ pub(crate) fn router(router: Router<AppState>, admin_path: &str) -> Router<AppSt
         .route(&format!("{admin}/forgot-password"), post(forgot_password))
         .route(&format!("{admin}/reset-password"), post(reset_password))
         .route(&format!("{admin}/invitation"), post(accept_invitation))
+        // Unknown admin API paths answer JSON 404 inside the admin stack (session
+        // guard, no-store), and never fall through to the panel's HTML pages.
+        .route(&base, any(api_not_found))
+        .route(&format!("{base}/{{*rest}}"), any(api_not_found))
+}
+
+/// The API guard's auth routes.
+pub(crate) fn api_router(router: Router<AppState>) -> Router<AppState> {
+    router
         .route("/api/v1/auth/token", post(issue_token))
         .route("/api/v1/auth/token", delete(revoke_token))
         .route("/api/v1/auth/me", get(me))
         .route("/api/v1/auth/jwt", post(issue_jwt))
         .route("/api/v1/auth/refresh", post(refresh_jwt))
         .route("/api/v1/auth/jwt/logout", post(logout_jwt))
-        // Unknown admin API paths answer JSON 404 inside the admin stack (session
-        // guard, no-store), and never fall through to the panel's HTML pages.
-        .route(&base, any(api_not_found))
-        .route(&format!("{base}/{{*rest}}"), any(api_not_found))
 }
 
 async fn api_not_found() -> AppError {

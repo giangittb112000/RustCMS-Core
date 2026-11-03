@@ -12,7 +12,7 @@ owner's decision. The guide describes the current behaviour honestly until then.
 | 5 | fixed | On MySQL `xact_lock` accepts only the preseeded names `rbac`, `lineage:*`, `idem:*`; nothing tells application authors. | `crates/rustcms-core/src/db/` |
 | 6 | fixed | A background export over 10,000 rows fails as `revoked` instead of a clear limit error. | `crates/rustcms-admin/src/features/exports/mod.rs:443-447` |
 | 7 | fixed | The browser socket send limit is a fixed 64 KiB, independent of `[realtime] max_message_bytes`. | `admin-ui/src/lib/realtime.ts:229` |
-| 8 | P3 (rule) | Media prune (and export/import prune) are `tokio::spawn` loops in `AdminProvider::boot`, not `AppBuilder::schedule`. (idempotency prune moved; media/exports pending, see plan B2) | `crates/rustcms-admin/src/panel/provider.rs:404-440` |
+| 8 | fixed (API mode: framework schedules per disk + per-instance staging sweep, ADR 0031 amendment 2026-11-04) | Media prune (and export/import prune) are `tokio::spawn` loops in `AdminProvider::boot`, not `AppBuilder::schedule`. (idempotency prune moved; media/exports pending, see plan B2) | `crates/rustcms-admin/src/panel/provider.rs:404-440` |
 | 9 | fixed | Stale comment "saves version 2" (the editor writes the lowest version a document needs). | `admin-ui/src/lib/rich-text.ts:5-6,22` |
 | 10 | fixed | Stray text "Haha: " in the LMS course overview template. | `examples/lms/resources/views/admin/course_overview.html:4` |
 | 11 | fixed | A handler panic is not turned into a 500 (no catch-panic layer): the connection drops. | `crates/rustcms-core/src/http/mod.rs:206-222` |

@@ -221,7 +221,8 @@ impl AdminRoutes {
     }
 
     /// Mounts the routes under `{admin_path}/api/x` and describes them for
-    /// `route:list` (source `app`), both from this list.
+    /// `route:list` (source `app`), both from this list. In API mode (`app.mode
+    /// = "api"`, ADR 0036) nothing is mounted: they are the panel's.
     ///
     /// # Panics
     /// When two routes have the same method and path, or `[auth]` is invalid.
@@ -235,6 +236,9 @@ impl AdminRoutes {
             self.list().into_iter().map(|(method, path, _)| (method, join(&base, &path))).collect();
         for (method, path) in &listed {
             assert!(seen.insert((path.clone(), method.to_string())), "admin route {method} {path} is declared twice");
+        }
+        if app.mode().is_api() {
+            return;
         }
         app.describe_routes("app", listed);
         let mut by_path: BTreeMap<String, MethodRouter<AppState>> = BTreeMap::new();

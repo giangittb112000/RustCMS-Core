@@ -145,9 +145,14 @@ unless Redis was configured.
 ## Amendment (Unreleased, 2026-11-04): storage cleanups (API mode)
 
 - The media and exports/imports cleanups move to the scheduler too:
-  `rustcms.media-prune` (every minute) and `rustcms.exports-prune` (every 10
+  `rustcms.media-prune.<disk>` (every minute) and `rustcms.exports-prune.<disk>` (every 10
   minutes), registered in `AdminProvider::register` (media only with
-  `.media()`, exports with a bound storage). Their `tokio::spawn` loops and
+  `.media()`, exports with a bound storage). Each is named after the disk it
+  prunes (`.local`, `.s3`), as the leases were: instances on different disks
+  sharing a database (a change of disk, two applications) never take each
+  other's slots. The exports schedule runs the exports pass, then the imports
+  pass, each bounded to 10 minutes and attempted whatever the other did
+  (`prune_failed` when one fails). Their `tokio::spawn` loops and
   Redis leases in `boot` are gone: boot ran them in every process, commands
   included, and an API-only instance (ADR 0036) cannot tell from its
   configuration whether it stages files.
@@ -159,6 +164,6 @@ unless Redis was configured.
   `queue:work` at start and every 10 minutes, `queue:work --once` and
   `media:prune` once. Commands and `TestApp` sweep nothing on their own.
 - Consequences: without the scheduler, media and exports cleanups need cron
-  (`media:prune`, `schedule:run rustcms.exports-prune`); the queued-deletion
+  (`media:prune`, `schedule:run rustcms.exports-prune.<disk>`); the queued-deletion
   latency stays a minute.
 

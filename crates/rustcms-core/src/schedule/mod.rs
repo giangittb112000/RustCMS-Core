@@ -442,7 +442,8 @@ impl Schedules {
 #[derive(Debug, Clone, Deserialize)]
 #[serde(default)]
 pub struct ScheduleConfig {
-    /// Run the scheduler in `serve` on this instance.
+    /// Run the scheduler in `serve` on this instance (default: yes in
+    /// `app.mode = "full"`, no in `api`).
     pub enabled: bool,
     /// Seconds a slot may still be claimed after its instant (1 to 300).
     pub grace_secs: u64,
@@ -460,7 +461,9 @@ impl ScheduleConfig {
     /// The `[schedule]` section, validated.
     pub fn of(config: &crate::Config) -> anyhow::Result<Self> {
         // An absent section is the defaults; a malformed one is an error.
-        let section: Self = config.section("schedule").map_err(|e| anyhow::anyhow!("invalid [schedule]: {e}"))?;
+        let mut section: Self = config.section("schedule").map_err(|e| anyhow::anyhow!("invalid [schedule]: {e}"))?;
+        // Left out, it follows `app.mode`: on in `full`, off in `api`.
+        section.enabled = config.enabled_in_mode("schedule").map_err(|e| anyhow::anyhow!("invalid [schedule]: {e}"))?;
         anyhow::ensure!((1..=300).contains(&section.grace_secs), "schedule.grace_secs must be 1 to 300");
         anyhow::ensure!(
             (1..=3_650).contains(&section.history_retention_days),

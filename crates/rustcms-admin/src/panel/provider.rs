@@ -285,6 +285,10 @@ impl ServiceProvider for AdminProvider {
             }
         }
         let admin_path = auth.config.admin_path.clone();
+        // API mode (ADR 0036): everything below is declared and bound as in
+        // `full` (permissions, jobs, commands, schedules, the registry for
+        // jobs and commands), but no route of the panel is mounted.
+        let serves_panel = !app.mode().is_api();
         let custom = std::sync::Arc::new(
             crate::custom::CustomPanel::new(
                 &admin_path,
@@ -313,14 +317,22 @@ impl ServiceProvider for AdminProvider {
             auth.permissions.declare(ADMIN_GUARD, crate::media::VIEW_ALL, Some(crate::media::SLUG));
             // The upload route alone accepts bodies up to the upload limit (plus multipart framing).
             let limit = usize::try_from(config.max_upload_bytes).unwrap_or(usize::MAX).saturating_add(64 * 1024);
-            app.body_limit(axum::http::Method::POST, format!("{}/api/media", admin_path.trim_end_matches('/')), limit);
+            if serves_panel {
+                app.body_limit(
+                    axum::http::Method::POST,
+                    format!("{}/api/media", admin_path.trim_end_matches('/')),
+                    limit,
+                );
+            }
             let uploads = tokio::sync::Semaphore::new(config.max_concurrent_uploads.max(1));
+            // One schedule per disk: instances on another disk have their own slots.
+            let name = format!("{MEDIA_PRUNE}.{}", storage.disk());
             app.bind(crate::media::MediaState { storage, config, uploads });
             app.command(MediaPrune);
             // Only `serve` runs it (ADR 0031), once per slot across instances;
             // each instance sweeps its own staged files (`storage::sweep_staging`).
             app.schedule(
-                rustcms_core::schedule::Schedule::every(MEDIA_PRUNE, MEDIA_PRUNE_EVERY)
+                rustcms_core::schedule::Schedule::every(&name, MEDIA_PRUNE_EVERY)
                     .framework()
                     .timeout(STORAGE_PRUNE_TIMEOUT)
                     .task(|ctx| async move {
@@ -337,23 +349,20 @@ impl ServiceProvider for AdminProvider {
         // areas and presets may only name declared ones.
         auth.catalog.check(auth.permissions.all().keys());
         // Background exports keep their files in the application's storage.
-        if app.service::<std::sync::Arc<dyn rustcms_core::storage::Storage>>().is_some() {
+        if let Some(storage) = app.service::<std::sync::Arc<dyn rustcms_core::storage::Storage>>() {
             app.job::<crate::exports::ExportJob>();
             app.job::<crate::imports::ImportJob>();
             app.schedule(
-                rustcms_core::schedule::Schedule::every(EXPORTS_PRUNE, EXPORTS_PRUNE_EVERY)
-                    .framework()
-                    .timeout(STORAGE_PRUNE_TIMEOUT)
-                    .task(|ctx| async move {
-                        let storage = rustcms_core::storage::of(&ctx.state)
-                            .ok_or_else(|| anyhow::anyhow!("no storage is bound"))?;
-                        let exports = crate::exports::prune(ctx.state.db(), storage.as_ref()).await?;
-                        let imports = crate::imports::prune(ctx.state.db(), storage.as_ref()).await?;
-                        Ok(Some(format!("{exports} expired exports, {imports} expired imports")))
-                    }),
+                rustcms_core::schedule::Schedule::every(
+                    &format!("{EXPORTS_PRUNE}.{}", storage.disk()),
+                    EXPORTS_PRUNE_EVERY,
+                )
+                .framework()
+                .timeout(STORAGE_PRUNE_TIMEOUT)
+                .task(|ctx| async move { prune_exports(&ctx.state).await }),
             );
             // Import uploads alone accept files up to their limit.
-            for resource in registry.all().into_iter().filter(|r| r.meta().importable) {
+            for resource in registry.all().into_iter().filter(|r| serves_panel && r.meta().importable) {
                 app.body_limit(
                     axum::http::Method::POST,
                     crate::imports::upload_path(&admin_path, resource.slug()),
@@ -361,8 +370,10 @@ impl ServiceProvider for AdminProvider {
                 );
             }
         }
-        app.describe_routes("admin", http::routes(&admin_path));
-        app.describe_routes("admin", spa::routes(&admin_path));
+        if serves_panel {
+            app.describe_routes("admin", http::routes(&admin_path));
+            app.describe_routes("admin", spa::routes(&admin_path));
+        }
         let locales = &app.config().app.locales;
         if let Some(other) = locales.iter().find(|l| !PANEL_LOCALES.contains(&l.as_str())) {
             panic!("app.locales lists {other:?}, but the admin panel is only written in {PANEL_LOCALES:?}");
@@ -389,19 +400,22 @@ impl ServiceProvider for AdminProvider {
             password_reset: auth.config.password_reset,
             remember: auth.config.remember_days > 0,
         };
-        // Same-origin sockets, also for browsers whose `'self'` misses `ws:`/`wss:`.
-        let csp = spa::content_security_policy(auth.allowed_origins());
-        let extension_timeout = self.extension_timeout;
-        app.routes(move |router| {
-            spa::router(
-                crate::custom::router(
-                    crate::imports::router(
-                        crate::exports::router(
-                            crate::schedules::router(
-                                crate::queue::router(
-                                    crate::audit::router(
-                                        crate::settings::router(
-                                            system::router(http::router(router, &admin_path), &admin_path),
+        if serves_panel {
+            // Same-origin sockets, also for browsers whose `'self'` misses `ws:`/`wss:`.
+            let csp = spa::content_security_policy(auth.allowed_origins());
+            let extension_timeout = self.extension_timeout;
+            app.routes(move |router| {
+                spa::router(
+                    crate::custom::router(
+                        crate::imports::router(
+                            crate::exports::router(
+                                crate::schedules::router(
+                                    crate::queue::router(
+                                        crate::audit::router(
+                                            crate::settings::router(
+                                                system::router(http::router(router, &admin_path), &admin_path),
+                                                &admin_path,
+                                            ),
                                             &admin_path,
                                         ),
                                         &admin_path,
@@ -415,15 +429,14 @@ impl ServiceProvider for AdminProvider {
                         &admin_path,
                     ),
                     &admin_path,
-                ),
-                &admin_path,
-                extensions,
-                &locales,
-                branding,
-                &csp,
-                extension_timeout,
-            )
-        });
+                    extensions,
+                    &locales,
+                    branding,
+                    &csp,
+                    extension_timeout,
+                )
+            });
+        }
         app.command(IdempotencyPrune);
         // Only `serve` runs it (ADR 0031), once per slot across instances.
         app.schedule(
@@ -443,16 +456,54 @@ impl ServiceProvider for AdminProvider {
     }
 }
 
-/// Expired exports and imports of the storage's disk (`exports::prune`, `imports::prune`).
+/// Expired exports and imports of the storage's disk (`exports::prune`,
+/// `imports::prune`); the schedule is named after the disk (`….local`).
 const EXPORTS_PRUNE: &str = "rustcms.exports-prune";
 /// How often expired exports and imports are deleted.
 const EXPORTS_PRUNE_EVERY: std::time::Duration = std::time::Duration::from_secs(600);
-/// Queued media deletions and abandoned uploads (`media::prune`).
+/// Queued media deletions and abandoned uploads (`media::prune`), named
+/// after the disk (`….local`).
 const MEDIA_PRUNE: &str = "rustcms.media-prune";
 /// How often queued media deletions and abandoned uploads are processed.
 const MEDIA_PRUNE_EVERY: std::time::Duration = std::time::Duration::from_secs(60);
 /// Longest run of either: a media pass stops taking work after 5 minutes.
 const STORAGE_PRUNE_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(1_800);
+/// Longest pass over exports, then over imports, within one run: one never
+/// takes the other's time.
+const EXPORTS_PASS_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(600);
+
+/// `rustcms.exports-prune.<disk>`: expired exports, then expired imports, each
+/// attempted (and bounded) whatever the other did.
+async fn prune_exports(state: &AppState) -> anyhow::Result<Option<String>> {
+    let storage = rustcms_core::storage::of(state).ok_or_else(|| anyhow::anyhow!("no storage is bound"))?;
+    let mut failed = false;
+    let mut count = |what: &str, result: Result<rustcms_core::AppResult<u64>, tokio::time::error::Elapsed>| match result
+    {
+        Ok(Ok(n)) => n,
+        Ok(Err(err)) => {
+            tracing::warn!(%err, "pruning {what} failed");
+            failed = true;
+            0
+        }
+        Err(_) => {
+            tracing::warn!("pruning {what} timed out");
+            failed = true;
+            0
+        }
+    };
+    let exports = count(
+        "expired exports",
+        tokio::time::timeout(EXPORTS_PASS_TIMEOUT, crate::exports::prune(state.db(), storage.as_ref())).await,
+    );
+    let imports = count(
+        "expired imports",
+        tokio::time::timeout(EXPORTS_PASS_TIMEOUT, crate::imports::prune(state.db(), storage.as_ref())).await,
+    );
+    if failed {
+        return Err(rustcms_core::queue::Failure::new("prune_failed", "some cleanups failed (see the logs)").into());
+    }
+    Ok(Some(format!("{exports} expired exports, {imports} expired imports")))
+}
 
 /// `media:prune`: deletes queued media objects and abandoned uploads.
 struct MediaPrune;

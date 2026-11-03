@@ -90,6 +90,10 @@ instances, Redis, S3 or mail. Each item links to the page that explains it.
       nothing (they follow the database). Media storage must be shared
       (S3, or one volume mounted by every instance). Without Redis, run one
       instance ([Several instances](../digging-deeper/instances.md)).
+- [ ] [API mode](../digging-deeper/instances.md#api-mode) instances
+      (`serve --api-only`) behind the load balancer: the admin path goes to a
+      `full` instance; every instance has the same `APP_URL`, key, storage and
+      `trusted_proxies`; the pools together fit the database's connection limit.
 - [ ] Password-hashing and upload concurrency limits are per instance (each
       bounds its own CPU and disk).
 - [ ] Queue workers: decide where they run (`serve`, or `queue:work` processes
@@ -97,8 +101,8 @@ instances, Redis, S3 or mail. Each item links to the page that explains it.
       (NTP); `queue:failed` watched; job payloads and error messages carry no
       secrets ([Queues](../digging-deeper/queues.md)).
 - [ ] The clean-ups of sessions, sign-ins, links and old audit entries
-      (`rustcms.auth-prune`), of media (`rustcms.media-prune`) and of exports
-      (`rustcms.exports-prune`) run only in `serve` with `[schedule] enabled`:
+      (`rustcms.auth-prune`), of media (`rustcms.media-prune.<disk>`) and of exports
+      (`rustcms.exports-prune.<disk>`) run only in `serve` with `[schedule] enabled`:
       keep the scheduler on at least one instance, or cron them
       ([Data retention](../operations/retention.md#from-cron)).
 

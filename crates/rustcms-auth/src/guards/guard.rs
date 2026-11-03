@@ -102,6 +102,11 @@ pub(crate) async fn authenticate(State(app): State<AppState>, req: Request, next
     let Some(auth) = app.service::<AuthState>() else {
         return AppError::internal("AuthProvider not registered").into_response();
     };
+    // API mode (ADR 0036): nothing under the admin path, assets included, and
+    // no session is ever loaded. Before the asset bypass below.
+    if app.mode().is_api() && auth.is_admin_path(req.uri().path()) {
+        return AppError::NotFound.into_response();
+    }
     if auth.is_admin_asset_path(req.uri().path()) {
         // Public, immutable files: no session is loaded or renewed, so no cookie
         // ever rides on a cacheable response.

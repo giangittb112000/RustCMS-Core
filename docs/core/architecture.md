@@ -77,13 +77,13 @@ encrypted storage; ADR 0015), `database` (`Seeder`, `Factory`), `realtime`
 the panel's custom pages), `jobs` (best-effort Redis leases for periodic work;
 runs can overlap) and `redis` (feature `redis`). Directories:
 
-- `http/`: the HTTP stack; `api` (`Pagination`, `Validated`, `ApiPage`) for application JSON APIs.
+- `http/`: the HTTP stack; `api` (`Pagination`, `Validated`, `ApiPage`) for application JSON APIs; in API mode (`config::AppMode`, ADR 0036) an outer layer refuses the panel's paths (`AppBuilder::panel_path`).
 - `queue/`: jobs, workers, commands, `manage` (statuses and single-job actions), `history` (`job_runs` written with terminal transitions); ADR 0016.
 - `schedule/`: schedules, slot claims, the scheduler run by `serve`, `runs` (history, Run now, the internal at-most-once job), `schedule:*`; ADR 0031.
 - `crypto/`: the keyring, `Encrypted<T>`, registered columns and `key:reencrypt`; ADR 0030.
 - `mail/` (feature `mail`): config and policy, templates, transports; ADR 0022.
 - `db/`: `connect`, `check` (MySQL setup), `transactions`, `locks` (named locks), `migrations` (`migrate --allow-newer`: migrations of a newer binary after a rollback).
-- `storage/`: the `Storage` trait, `local`, `s3`.
+- `storage/`: the `Storage` trait, `local`, `s3`; `sweep_staging` and the `Sweeper` that `serve` and `queue:work` run (each instance's own staged files).
 
 ### admin-ui (the SPA) and the SDK
 

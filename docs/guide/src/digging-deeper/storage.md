@@ -163,10 +163,10 @@ Never build a key from client input: parse the key you stored.
 ## Pruning
 
 - Files of deleted media and abandoned uploads are removed every minute by
-  the `rustcms.media-prune` schedule, and by `rustcms media:prune` (it stops
+  the `rustcms.media-prune.<disk>` schedule, and by `rustcms media:prune` (it stops
   taking new work after five minutes; the rest waits for the next run).
 - Exports and imports are removed every 10 minutes by the
-  `rustcms.exports-prune` schedule, or `rustcms schedule:run rustcms.exports-prune`.
+  `rustcms.exports-prune.<disk>` schedule, or `rustcms schedule:run rustcms.exports-prune.<disk>`.
 - Each `serve` and `queue:work` removes the files it staged and abandoned
   (older than an hour) every 10 minutes.
 

@@ -174,7 +174,7 @@ impl JobCtx {
 #[derive(Debug, Clone, Deserialize)]
 #[serde(default)]
 pub struct QueueConfig {
-    /// Whether `serve` runs workers.
+    /// Whether `serve` runs workers (default: yes in `app.mode = "full"`, no in `api`).
     pub enabled: bool,
     /// Workers per process (`serve` and `queue:work`); 0: none in `serve`.
     pub workers: usize,
@@ -229,8 +229,11 @@ fn valid_kind(kind: &str) -> bool {
 
 impl QueueConfig {
     /// The `[queue]` section, validated.
+    /// `enabled` left out follows `app.mode`: on in `full`, off in `api`.
     pub fn of(config: &crate::Config) -> anyhow::Result<Self> {
-        config.section::<Self>("queue")?.validated()
+        let mut section = config.section::<Self>("queue")?;
+        section.enabled = config.enabled_in_mode("queue")?;
+        section.validated()
     }
 
     fn validated(self) -> anyhow::Result<Self> {
@@ -396,6 +399,12 @@ impl Jobs {
     /// Whether no job is registered.
     pub fn is_empty(&self) -> bool {
         self.handlers.is_empty()
+    }
+
+    /// The registered kinds, sorted (every instance of a deployment should
+    /// list the same, whatever its mode).
+    pub fn kinds(&self) -> Vec<&'static str> {
+        self.handlers.keys().copied().collect()
     }
 }
 

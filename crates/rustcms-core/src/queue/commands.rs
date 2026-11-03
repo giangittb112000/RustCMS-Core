@@ -57,12 +57,17 @@ impl AppCommand for QueueWork {
             return Ok(());
         }
         let count = args.get_one::<u16>("workers").map_or(config.workers.max(1), |n| usize::from(*n));
-        // This instance's abandoned staged files (stopped when dropped).
-        let _sweeper = crate::storage::Sweeper::start(state);
+        // This instance's abandoned staged files, joined on the signal.
+        let sweeper = crate::storage::Sweeper::start(state);
         let workers = Workers::start(state, &config, queues, count);
         tracing::info!(workers = count, "queue workers started");
         crate::app::shutdown_signal().await;
-        workers.shutdown().await;
+        let sweep = async {
+            if let Some(sweeper) = sweeper {
+                sweeper.shutdown().await;
+            }
+        };
+        tokio::join!(workers.shutdown(), sweep);
         Ok(())
     }
 }

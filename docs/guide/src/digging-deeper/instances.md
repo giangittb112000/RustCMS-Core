@@ -23,6 +23,48 @@ url = "redis://redis.example.com:6379/0"
 prefix = "rustcms:blog"
 ```
 
+## API mode
+
+An instance in API mode serves the application API only: your `ApiRoutes`,
+the API guard's auth routes (`/api/v1/auth/token`, `…/jwt`, `…/refresh`,
+`…/me`) and the routes you mount yourself. Scale these out behind a load
+balancer; keep at least one instance in `full` mode for the admin panel.
+
+```sh
+rustcms serve --api-only        # or [app] mode = "api" / RUSTCMS_APP__MODE=api
+```
+
+- **Left out:** the admin panel and its assets, the admin API, the panel's
+  sign-in routes, and every [`AdminRoutes`](../admin/admin-routes.md) route
+  (streams and sockets too). Every request under `auth.admin_path` answers
+  a JSON 404 before routing, whatever its method, and no session is loaded.
+- **Declared as in `full`:** permissions, job kinds, schedules, commands and
+  encrypted columns, so every instance agrees (`permission:sync` from any
+  of them, jobs enqueued by one and run by another).
+- **Background work off by default:** `queue.enabled` and `schedule.enabled`
+  left out are `false` in API mode; set them to `true` to run workers or
+  the scheduler there. Each instance still sweeps the files it staged.
+- **Your own code:** check `state.mode()` (or `app.mode()` in a provider)
+  before mounting panel-only routes with `app.routes` or starting services
+  only the panel uses.
+- `route:list` lists the routes of the mode it runs in:
+  `RUSTCMS_APP__MODE=api rustcms route:list`.
+
+A typical deployment:
+
+| Instances | Command | Serves |
+|---|---|---|
+| 1 | `rustcms serve` | the admin panel (the load balancer sends `auth.admin_path` here), the scheduler |
+| N | `rustcms serve --api-only` | the API, no sticky sessions needed |
+| M | `rustcms queue:work` | queued jobs (mail, exports, imports, yours) |
+
+All of them share `APP_KEY` (and `APP_PREVIOUS_KEYS`), `DATABASE_URL`, the
+storage, `redis.prefix`, `http.trusted_proxies` (the load balancer's
+addresses) and `APP_URL`: links in mails are built from the `APP_URL` of the
+instance that runs the job, so it must reach a `full` instance. Size
+`database.max_connections` so that all instances together stay under the
+database's limit. Health checks use `GET /health` (it pings the database).
+
 ## Redis configuration
 
 | Key | Default | |
@@ -43,8 +85,8 @@ prefix = "rustcms:blog"
 
 The cleanups need no Redis. The auth, idempotency, media and exports
 cleanups are [framework schedules](scheduling.md#framework-schedules)
-(`rustcms.auth-prune`, `rustcms.idempotency-prune`, `rustcms.media-prune`,
-`rustcms.exports-prune`): each slot is claimed once in the database and run
+(`rustcms.auth-prune`, `rustcms.idempotency-prune`, `rustcms.media-prune.<disk>`,
+`rustcms.exports-prune.<disk>`): each slot is claimed once in the database and run
 only by `serve` with the scheduler. Files an instance stages on its own disk
 (uploads, exports and imports being written) are swept by that instance:
 every `serve` and `queue:work` removes its abandoned ones, older than an hour,

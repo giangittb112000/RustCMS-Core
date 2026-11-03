@@ -6,14 +6,28 @@ All notable changes are documented here. The format follows
 
 ## [Unreleased]
 
+### Added
+- API mode (ADR 0036): `[app] mode = "api"` (`RUSTCMS_APP__MODE`, `serve
+  --api-only`) serves the application API only. Nothing under
+  `auth.admin_path` answers but a JSON 404 (before routing, no session
+  loaded): no panel, admin API, panel sign-in routes or `AdminRoutes`
+  (streams, sockets). Permissions, job kinds, schedules and commands are
+  declared as in `full`. `queue.enabled` and `schedule.enabled` left out are
+  `false` in API mode. `AppState::mode()`, `AppBuilder::mode()`,
+  `AppBuilder::panel_path()`, `queue::Jobs::kinds()`.
+- `just bench-api` (`bench/api`, `scripts/bench-api.sh`): a load test of the
+  application API with `oha` on PostgreSQL.
+
 ### Changed
 - The media and exports/imports cleanups are framework schedules
-  (`rustcms.media-prune` every minute, `rustcms.exports-prune` every 10
-  minutes, timeout 30 min) instead of `tokio::spawn` loops in
+  (`rustcms.media-prune.<disk>` every minute, `rustcms.exports-prune.<disk>` every 10
+  minutes, timeout 30 min; one schedule per storage disk, the exports and
+  imports passes each bounded and attempted independently) instead of
+  `tokio::spawn` loops in
   `AdminProvider::boot` with a Redis lease: run only by `serve` with the
   scheduler, once per slot across instances, never by commands or tests.
   Deployments without the scheduler run `media:prune` and
-  `schedule:run rustcms.exports-prune` from cron.
+  `schedule:run rustcms.exports-prune.<disk>` from cron.
 - Each instance sweeps its own staging directory (`storage::sweep_staging`:
   abandoned uploads, export and import files older than an hour): `serve` in
   any mode and `queue:work` at start and every 10 minutes, `queue:work --once`
