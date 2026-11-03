@@ -34,6 +34,12 @@ All notable changes are documented here. The format follows
   and `media:prune` once. `media::prune`, `exports::prune` and
   `imports::prune` no longer sweep.
 
+- A personal access token is checked with one statement (token and owner
+  joined) and `last_used_at` is written only when the value read is more than
+  a minute old: a request with a token used within the minute sends no
+  `UPDATE` (4 statements before the handler became 2). Refusals are unchanged
+  (wrong secret, revoked, expired, inactive or deleted owner).
+
 ### Fixed
 - The S3 disk's sweep also removes export and import files a crash left in
   `.s3-staging` (it removed only `*.upload`), so exported data no longer stays

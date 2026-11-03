@@ -6,7 +6,10 @@ use chrono::{DateTime, Duration, Utc};
 use rustcms_core::models::user;
 use rustcms_core::{AppError, AppResult};
 use sea_orm::sea_query::Expr;
-use sea_orm::{ActiveModelTrait, ColumnTrait, Condition, ConnectionTrait, EntityTrait, QueryFilter, Set};
+use sea_orm::{
+    ActiveModelTrait, ColumnTrait, Condition, ConnectionTrait, EntityTrait, JoinType, QueryFilter, QuerySelect,
+    RelationDef, Set,
+};
 
 use crate::entities::personal_access_token as entity;
 use crate::secret::{ct_eq, random_string, sha256_hex};
@@ -68,19 +71,27 @@ pub fn abilities(token: &entity::Model) -> HashSet<String> {
 /// Resolves a bearer value to its token and active owner. Any failure is a 401.
 pub async fn authenticate<C: ConnectionTrait>(db: &C, bearer: &str) -> AppResult<(entity::Model, user::Model)> {
     let (id, secret) = parse(bearer).ok_or(AppError::Unauthenticated)?;
-    let token = entity::Entity::find_by_id(id).one(db).await?.ok_or(AppError::Unauthenticated)?;
+    // The token and its owner in one statement (an owner deleted: no row).
+    let owner: RelationDef =
+        entity::Entity::belongs_to(user::Entity).from(entity::Column::UserId).to(user::Column::Id).into();
+    let (token, user) = entity::Entity::find_by_id(id)
+        .join(JoinType::InnerJoin, owner)
+        .select_also(user::Entity)
+        .one(db)
+        .await?
+        .ok_or(AppError::Unauthenticated)?;
+    let now = Utc::now();
     let valid = ct_eq(&token.token_hash, &sha256_hex(secret))
         && token.revoked_at.is_none()
-        && token.expires_at.is_none_or(|at| at > Utc::now());
+        && token.expires_at.is_none_or(|at| at > now);
     if !valid {
         return Err(AppError::Unauthenticated);
     }
-    let user = user::Entity::find_by_id(token.user_id)
-        .one(db)
-        .await?
-        .filter(|u| u.is_active)
-        .ok_or(AppError::Unauthenticated)?;
-    touch(db, token.id).await?;
+    let user = user.filter(|u| u.is_active).ok_or(AppError::Unauthenticated)?;
+    // Recorded at most once a minute: a use just recorded needs no statement.
+    if token.last_used_at.is_none_or(|at| at < now - Duration::seconds(LAST_USED_EVERY_SECS)) {
+        touch(db, token.id).await?;
+    }
     Ok((token, user))
 }
 
