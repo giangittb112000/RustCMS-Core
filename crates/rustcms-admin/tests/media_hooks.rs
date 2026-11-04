@@ -21,11 +21,15 @@ type Seen = (String, MediaEvent, String, Option<String>, Option<Option<String>>)
 static SEEN: Mutex<Vec<Seen>> = Mutex::new(Vec::new());
 
 /// Records every change; refuses alternative text `boom` (rolls back).
+/// Reads the record through `ctx.conn()`: the change's transaction.
 struct Recorder;
 
 #[async_trait::async_trait]
 impl MediaHook for Recorder {
-    async fn changed(&self, _ctx: &Ctx, _txn: &DatabaseTransaction, change: &MediaChange<'_>) -> AppResult<()> {
+    async fn changed(&self, ctx: &Ctx, _txn: &DatabaseTransaction, change: &MediaChange<'_>) -> AppResult<()> {
+        let visible = media::Entity::find_by_id(change.media.id).one(&ctx.conn()).await?;
+        // The change's own transaction: the row as it is now (gone once deleted).
+        assert_eq!(visible.is_some(), change.event != MediaEvent::Deleted, "{:?}", change.event);
         if change.media.alt.as_deref() == Some("boom") {
             return Err(ValidationErrors::field("alt", "is refused by the application").into());
         }
