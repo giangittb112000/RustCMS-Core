@@ -61,6 +61,23 @@ A typical deployment:
 | N | `rustcms serve --api-only` | the API, no sticky sessions needed |
 | M | `rustcms queue:work` | queued jobs (mail, exports, imports, yours) |
 
+The instances run the same build with different configuration. An API
+instance's configuration may add the opt-in caches of
+[Credential revocation](../security/revocation.md#several-instances) when it
+serves heavy authenticated traffic and a second's delay for revocations made
+elsewhere is acceptable:
+
+```toml
+# config/app.toml on API instances (or RUSTCMS_APP__MODE=api)
+mode = "api"
+
+# config/auth.toml on API instances: optional
+permission_generation_cache_ms = 1000
+
+[jwt]
+session_cache_ms = 1000
+```
+
 All of them share `APP_KEY` (and `APP_PREVIOUS_KEYS`), `DATABASE_URL`, the
 storage, `redis.prefix`, `http.trusted_proxies` (the load balancer's
 addresses) and `APP_URL`: links in mails are built from the `APP_URL` of the
@@ -95,11 +112,12 @@ only by `serve` with the scheduler. Files an instance stages on its own disk
 every `serve` and `queue:work` removes its abandoned ones, older than an hour,
 every 10 minutes. See [Data retention](../operations/retention.md).
 
-Permissions need no Redis: a change made on one instance applies there from
-the next request, and on the others within `auth.permission_generation_cache_ms`
-(1 s; the permission cache follows a counter kept in the database, read at
-most that often). JWT sign-outs likewise within `auth.jwt.session_cache_ms`
-([Credential revocation](../security/revocation.md#several-instances)).
+Permissions need no Redis: a change made on one instance applies on every
+instance from the next request (the permission cache follows a counter kept
+in the database). API instances under heavy load may reuse that read, and a
+JWT's sign-in, for a short time with `auth.permission_generation_cache_ms`
+and `auth.jwt.session_cache_ms` (off by default; changes then reach them
+within that time: [Credential revocation](../security/revocation.md#several-instances)).
 
 The queue and the scheduler need no Redis either: they coordinate through
 the database (see [below](#your-own-periodic-jobs)).

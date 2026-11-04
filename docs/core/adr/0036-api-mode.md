@@ -64,4 +64,4 @@ the mode is called API mode.
   `docs/core/reports/api-performance.vi.md`): the cost of an authenticated
   request is its SQL statements. The PAT check was reduced in the same work,
   and, with the owner's approval, the RBAC generation and JWT sign-in reads
-  are reused for a second per instance (ADR 0012 amendment).
+  may be reused per instance (opt-in, off by default; ADR 0012 amendment).

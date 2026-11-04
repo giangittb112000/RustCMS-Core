@@ -37,18 +37,21 @@ application.
   run one instance unless Redis is configured.
 - Media storage must be shared between instances (S3 or one volume).
 
-## Amendment (Unreleased, 2026-11-04): reads reused for a second (ADR 0036)
+## Amendment (Unreleased, 2026-11-04): opt-in reuse of two reads (ADR 0036)
 
 Approved by the owner after the API benchmark
 (`docs/core/reports/api-performance.vi.md`): the generation read is one of
-the statements every authenticated request pays.
+the statements every authenticated request pays. Both settings are **off by
+default** (owner's decision, 2026-11-04): the framework does not weaken every
+project's revocation guarantee for the needs of one deployment; API
+instances opt in (e.g. `1000`).
 
-- `auth.permission_generation_cache_ms` (default 1,000, 0 to 60,000): each
+- `auth.permission_generation_cache_ms` (default 0, 0 to 60,000): each
   instance reuses the database's `auth_generations.rbac` it read for that
   long. A change made through an instance still applies there on the next
   request (its local generation moves after the commit); on the others it
   applies within the period. `0` restores "read on every request".
-- `auth.jwt.session_cache_ms` (default 1,000): a JWT's family and user are
+- `auth.jwt.session_cache_ms` (default 0, 0 to 60,000): a JWT's family and user are
   read together (one join) and reused for that long, keyed by the local
   generation, so `PermissionResolver::evict_all` forgets them (RBAC changes,
   and the sign-out, refresh-replay, password, logout-others, reset and
@@ -58,5 +61,6 @@ the statements every authenticated request pays.
 - Sessions and API tokens are not cached: their revocation is never delayed
   (their permissions follow the generation above).
 - The decision above ("a committed change applies on every instance from its
-  next request") now holds with `0`; by default, within a second.
+  next request") holds by default; with a period set, within that period. The
+  JWT check reads family and user in one join in every case.
 

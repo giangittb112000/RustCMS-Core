@@ -77,9 +77,11 @@ Tách theo từng yếu tố:
 
 ## Hai cache đã được duyệt (ADR 0012 amendment, 2026-11-04)
 
-Anh Đức đã duyệt cả hai cache. Cấu hình mặc định:
+Anh Đức đã duyệt cả hai cache. Sau đó anh chốt **mặc định `0` (opt-in)**: framework không đổi đảm bảo revoke của mọi dự án, node API nào cần thì tự bật. Đo với giá trị `1000`:
 - `auth.permission_generation_cache_ms = 1000`: generation RBAC đọc tối đa 1 lần/giây trên mỗi instance.
 - `auth.jwt.session_cache_ms = 1000`: family và user của JWT được đọc chung trong một câu join, rồi dùng lại trong 1 giây. Cache được khoá theo generation cục bộ.
+
+Lệnh đo: `just bench-api cache RUSTCMS_APP__MODE=api RUSTCMS_AUTH__PERMISSION_GENERATION_CACHE_MS=1000 RUSTCMS_AUTH__JWT__SESSION_CACHE_MS=1000`.
 
 Kết quả ở API mode:
 

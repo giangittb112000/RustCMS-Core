@@ -25,9 +25,9 @@ request with that credential is anonymous (sessions) or refused with 401
 | `APP_KEY` rotated | ended | ended | kept | all ended |
 | Roles or permissions changed | kept | kept | kept; new permissions apply on the next request | kept; new permissions apply on the next request |
 
-On several instances, the rows above apply at once on the instance that made
-the change and, on the others, within the periods [below](#several-instances)
-(1 s by default).
+With the default settings every row applies from the next request on every
+instance. The opt-in caches [below](#several-instances) trade that for
+throughput on API instances.
 
 Every row is covered by the framework's tests
 (`crates/rustcms-auth/tests/`: `auth_flow.rs`, `jwt.rs`, `recovery.rs`,
@@ -59,13 +59,19 @@ through it advances.
 
 ## Several instances
 
-Two reads are reused for a short time on each instance, so that a request
-does not pay for them every time:
+By default, every request reads the RBAC counter, and a JWT's sign-in and
+user: a committed change applies on every instance from its next request. Two
+settings, off by default, let an instance reuse these reads for a short time
+so that a request does not pay for them every time (for example on
+[API mode](../digging-deeper/instances.md#api-mode) instances serving heavy
+traffic; `1000` is a reasonable value):
 
 | Setting | Default | What is reused | A change made on another instance applies |
 |---|---|---|---|
-| `auth.permission_generation_cache_ms` | `1000` | the RBAC counter (`auth_generations.rbac`) | within that time: roles, permissions, and through them every guard |
-| `auth.jwt.session_cache_ms` | `1000` | a JWT's sign-in and user | within that time: sign-out, password change, user disabled or deleted |
+| `auth.permission_generation_cache_ms` | `0` (off) | the RBAC counter (`auth_generations.rbac`) | within that time: roles, permissions, and through them every guard |
+| `auth.jwt.session_cache_ms` | `0` (off) | a JWT's sign-in and user | within that time: sign-out, password change, user disabled or deleted |
+
+When they are on:
 
 - **On the instance that made the change**, it applies on the next request:
   `RbacService`, the sign-out, refresh, password, reset and invitation
@@ -74,9 +80,8 @@ does not pay for them every time:
   their time.
 - Sessions and API tokens are read on every request: their revocation is
   never delayed. Permissions they carry follow the RBAC counter above.
-- `0` reads on every request (the behaviour before these settings): choose it when a revocation
-  must apply everywhere at once, at the cost of one statement per request
-  for each.
+- Leave them at `0` when a revocation must apply everywhere at once; each
+  costs one statement per request.
 
 Session ids and refresh tokens are keyed from `APP_KEY` only, not from
 `APP_PREVIOUS_KEYS`: rotating the key ends them whatever the previous keys

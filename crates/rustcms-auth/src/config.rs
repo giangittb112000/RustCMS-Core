@@ -34,8 +34,9 @@ pub struct AuthConfig {
     /// Seconds a user's resolved permissions are cached (changes also evict immediately).
     pub permission_cache_ttl_secs: u64,
     /// Milliseconds the database's RBAC generation is reused before it is read
-    /// again (0 to 60,000; 0: read on every request). A permission or role
-    /// change made on another instance applies here within this time (ADR 0036).
+    /// again (0 to 60,000; default 0: read on every request). Opt-in for API
+    /// instances: a permission or role change made on another instance then
+    /// applies here within this time (ADR 0012 amendment).
     pub permission_generation_cache_ms: u64,
     /// JWT access and refresh tokens of the API guard (`[auth.jwt]`).
     pub jwt: JwtConfig,
@@ -70,9 +71,9 @@ pub struct JwtConfig {
     /// refreshed (at least `refresh_ttl_days`, at most 365).
     pub refresh_family_days: u64,
     /// Milliseconds an access token's sign-in (family) and user, as read, are
-    /// reused (0 to 60,000; 0: read on every request). A sign-out, password
-    /// change or deactivation made elsewhere applies within this time; one
-    /// made through this instance applies at once (ADR 0036).
+    /// reused (0 to 60,000; default 0: read on every request). Opt-in: a
+    /// sign-out, password change or deactivation made elsewhere then applies
+    /// within this time; one made through this instance applies at once.
     pub session_cache_ms: u64,
 }
 
@@ -83,7 +84,7 @@ impl Default for JwtConfig {
             access_ttl_secs: 900,
             refresh_ttl_days: 14,
             refresh_family_days: 30,
-            session_cache_ms: 1_000,
+            session_cache_ms: 0,
         }
     }
 }
@@ -123,7 +124,7 @@ impl Default for AuthConfig {
             attempts_per_identifier: 5,
             attempts_per_ip: 30,
             permission_cache_ttl_secs: 30,
-            permission_generation_cache_ms: 1_000,
+            permission_generation_cache_ms: 0,
             jwt: JwtConfig::default(),
             password_reset: false,
             password_reset_minutes: 60,
@@ -165,6 +166,17 @@ pub(crate) fn origin_of(url: &str) -> Option<String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn revocation_caches_are_opt_in() {
+        let config = AuthConfig::default();
+        // Off unless a deployment sets them: every request reads the database.
+        assert_eq!((config.permission_generation_cache_ms, config.jwt.session_cache_ms), (0, 0));
+        let mut jwt = JwtConfig { session_cache_ms: 60_001, ..JwtConfig::default() };
+        assert!(jwt.validate().is_err());
+        jwt.session_cache_ms = 60_000;
+        assert!(jwt.validate().is_ok());
+    }
 
     #[test]
     fn admin_paths() {

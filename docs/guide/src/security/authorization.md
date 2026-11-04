@@ -62,9 +62,9 @@ permission, then the token's abilities.
 
 Resolved permissions are cached for at most `auth.permission_cache_ttl_secs`
 (30), keyed by a counter that every RBAC change advances: a committed change
-applies from the next request on the instance that made it, and within
-`auth.permission_generation_cache_ms` (1 s) on the others
-([Credential revocation](revocation.md#several-instances)).
+applies from the next request on every instance (with the opt-in
+`auth.permission_generation_cache_ms`, within that time on the others:
+[Credential revocation](revocation.md#several-instances)).
 
 ## Declaring permissions
 
