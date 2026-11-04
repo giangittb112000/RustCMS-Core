@@ -2,6 +2,7 @@
 //! `pages` (settings pages), `branding` (the panel's name while running).
 
 pub mod branding;
+pub mod media_hooks;
 pub mod pages;
 pub mod resources;
 pub mod slots;

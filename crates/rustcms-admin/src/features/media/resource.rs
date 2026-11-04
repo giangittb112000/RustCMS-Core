@@ -53,9 +53,9 @@ impl Resource for MediaResource {
     /// A new name is cleaned as uploaded names are (no path, quotes or
     /// control and direction characters).
     async fn mutate_before_update(
-        _ctx: &Ctx,
-        _txn: &DatabaseTransaction,
-        _record: &entity::Model,
+        ctx: &Ctx,
+        txn: &DatabaseTransaction,
+        record: &entity::Model,
         mut data: Data,
     ) -> AppResult<Data> {
         if let Some(serde_json::Value::String(name)) = data.get("name") {
@@ -66,6 +66,20 @@ impl Resource for MediaResource {
         // No alternative text is `null`, never an empty string.
         if data.get("alt").and_then(serde_json::Value::as_str).is_some_and(|alt| alt.trim().is_empty()) {
             data.insert("alt".into(), serde_json::Value::Null);
+        }
+        // The application's hooks see the record as it will be stored.
+        if !ctx.registry.media_hooks().is_empty() && !data.is_empty() {
+            let mut next = record.clone();
+            if let Some(serde_json::Value::String(name)) = data.get("name") {
+                next.name = name.clone();
+            }
+            match data.get("alt") {
+                Some(serde_json::Value::String(alt)) => next.alt = Some(alt.clone()),
+                Some(serde_json::Value::Null) => next.alt = None,
+                _ => {}
+            }
+            let change = MediaChange { event: MediaEvent::Updated, media: &next, previous: Some(record) };
+            super::hooks::run(ctx, txn, change).await?;
         }
         Ok(data)
     }
@@ -95,8 +109,20 @@ impl Resource for MediaResource {
         query.filter(entity::Column::OwnerId.eq(owner))
     }
 
-    async fn after_force_delete(_ctx: &Ctx, txn: &DatabaseTransaction, record: &entity::Model) -> AppResult<()> {
-        queue_deletion(txn, &record.disk, &record.key).await
+    async fn after_trash(ctx: &Ctx, txn: &DatabaseTransaction, record: &entity::Model) -> AppResult<()> {
+        let change = MediaChange { event: MediaEvent::Trashed, media: record, previous: None };
+        super::hooks::run(ctx, txn, change).await
+    }
+
+    async fn after_restore(ctx: &Ctx, txn: &DatabaseTransaction, record: &entity::Model) -> AppResult<()> {
+        let change = MediaChange { event: MediaEvent::Restored, media: record, previous: None };
+        super::hooks::run(ctx, txn, change).await
+    }
+
+    async fn after_force_delete(ctx: &Ctx, txn: &DatabaseTransaction, record: &entity::Model) -> AppResult<()> {
+        queue_deletion(txn, &record.disk, &record.key).await?;
+        let change = MediaChange { event: MediaEvent::Deleted, media: record, previous: None };
+        super::hooks::run(ctx, txn, change).await
     }
 }
 

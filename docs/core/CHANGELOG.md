@@ -17,6 +17,11 @@ All notable changes are documented here. The format follows
   `AppBuilder::panel_path()`, `queue::Jobs::kinds()`; `serve` in API mode
   warns about SQLite, a missing Redis and a `local` disk
   (`app::api_mode_warnings`).
+- Media hooks: `AdminProvider::media_hook(impl MediaHook)` runs application
+  code in the transaction of every change to a media record (`MediaEvent`:
+  `Uploaded`, `Updated` with the previous record, `Trashed`, `Restored`,
+  `Deleted`); an error rolls the change back. `Registry::media_hook`,
+  `Registry::media_hooks`.
 - `just bench-api` (`bench/api`, `scripts/bench-api.sh`): a load test of the
   application API with `oha` on PostgreSQL.
 

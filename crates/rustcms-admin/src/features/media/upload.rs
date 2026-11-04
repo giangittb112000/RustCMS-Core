@@ -126,6 +126,10 @@ pub(crate) async fn upload(
     if let Some(claim) = &claim {
         crate::idempotency::complete(&txn, claim, &serde_json::json!({ "key": row.id.to_string() })).await?;
     }
+    // The application's hooks, in the upload's transaction (an error undoes
+    // it; the stored file is left to pruning, its intent still recorded).
+    let change = MediaChange { event: MediaEvent::Uploaded, media: &row, previous: None };
+    super::hooks::run(&ctx, &txn, change).await?;
     let entry = rustcms_core::audit::AuditEntry::new("uploaded", SLUG)
         .key(row.id)
         .meta(UploadMeta { mime: &row.mime, size: row.size });

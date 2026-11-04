@@ -222,6 +222,19 @@ impl AdminProvider {
         self
     }
 
+    /// Runs `hook` in the transaction of every change to a media record
+    /// (upload, rename or alternative text, trash, restore, delete): see
+    /// [`crate::media::MediaHook`]. Needs [`media`](Self::media); several
+    /// hooks run in the order they were added.
+    pub fn media_hook(self, hook: impl crate::media::MediaHook) -> Self {
+        {
+            let mut registry = self.registry.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
+            let current = registry.take().unwrap_or_default();
+            *registry = Some(current.media_hook(hook));
+        }
+        self
+    }
+
     /// Adds a resource.
     ///
     /// # Panics

@@ -14,6 +14,7 @@ mod deletions;
 mod detect;
 mod download;
 pub mod entity;
+mod hooks;
 mod prune;
 mod references;
 mod resource;
@@ -22,6 +23,7 @@ mod uploads;
 
 pub use detect::*;
 pub(crate) use download::*;
+pub use hooks::{MediaChange, MediaEvent, MediaHook};
 pub use prune::*;
 pub(crate) use references::*;
 pub use resource::*;

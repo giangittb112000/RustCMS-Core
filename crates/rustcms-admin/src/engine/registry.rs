@@ -221,12 +221,25 @@ pub struct Registry {
     /// Position of each resource in the lock order (ADR 0018, 0020): rows of
     /// a lower position are locked first. Set by [`Registry::finish`].
     lock_order: HashMap<&'static str, usize>,
+    /// The application's media hooks ([`crate::AdminProvider::media_hook`]).
+    media_hooks: Vec<Arc<dyn crate::media::MediaHook>>,
 }
 
 impl Registry {
     /// Creates an empty registry.
     pub fn new() -> Self {
         Self::default()
+    }
+
+    /// Adds a hook run on every change to a media record.
+    pub fn media_hook(mut self, hook: impl crate::media::MediaHook) -> Self {
+        self.media_hooks.push(Arc::new(hook));
+        self
+    }
+
+    /// The media hooks, in registration order.
+    pub fn media_hooks(&self) -> &[Arc<dyn crate::media::MediaHook>] {
+        &self.media_hooks
     }
 
     /// Registers a resource.

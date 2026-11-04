@@ -18,6 +18,7 @@ pub fn provider() -> AdminProvider {
         // #endregion branding
         // #region media
         .media()
+        .media_hook(crate::admin::media_hooks::MediaChanges)
         // #endregion media
         .resource::<CategoryResource>()
         .resource::<PostResource>()

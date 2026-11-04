@@ -161,6 +161,39 @@ files have none). Code that reads media rows itself uses
 ![A media record: the file, its details, and the name and alt text form](/img/admin/media-record.webp)
 *A RustCMS demo application: a media record page.*
 
+## Media hooks
+
+The media library is the framework's resource, so its hooks are not yours to
+override. `AdminProvider::media_hook` adds code that runs on every change to a
+media record instead:
+
+<<< @/../../../examples/demo/src/admin/media_hooks.rs#media-hook [src/admin/media_hooks.rs]
+
+Register it after `.media()`:
+
+```rust
+AdminProvider::new().media().media_hook(MediaChanges)
+```
+
+| `change.event` | When | `change.media` | `change.previous` |
+|---|---|---|---|
+| `Uploaded` | an upload, in the transaction that inserts its row | the new record | — |
+| `Updated` | a rename or new alternative text, before the row is written | the record as it will be stored | the record as it is |
+| `Trashed` | moved to the trash | as stored | — |
+| `Restored` | restored from the trash | as stored | — |
+| `Deleted` | deleted for good (its file is queued for deletion in the same transaction) | as it was | — |
+
+- Hooks run in the change's transaction, with the acting user's context
+  (`ctx`), in the order they were added. An error rolls the change back and
+  is answered to the user (a validation error as a field error). A refused
+  upload leaves its stored file to [pruning](#limits-and-operations).
+- Write only through `txn`, and keep hooks short: the media row is locked.
+  To tell something outside (a public site, a CDN), dispatch a
+  [queue job](../digging-deeper/queues.md) with
+  `rustcms::queue::dispatch(txn, &job)`: it exists only if the change
+  commits.
+- `MediaEvent` may gain variants: match it with a `_` arm.
+
 ## Downloads
 
 `GET {admin}/api/media/{id}/file` serves the bytes through the application (no

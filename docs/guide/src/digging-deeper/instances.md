@@ -85,6 +85,37 @@ instance that runs the job, so it must reach a `full` instance. Size
 `database.max_connections` so that all instances together stay under the
 database's limit. Health checks use `GET /health` (it pings the database).
 
+### Before you scale out
+
+API mode removes the panel; what a public API needs beyond that is the
+application's to decide. Check these before putting API instances in front of
+a site:
+
+- **Who may read what.** Your API routes filter drafts, scheduled dates and
+  trashed records themselves: a resource's `scope()` and policy protect the
+  panel's operations, not the queries your handlers write.
+- **Files.** The only built-in file route is the panel's (signed-in users,
+  under `auth.admin_path`, refused in API mode). Serve the files your readers
+  may see from an API route of your own (`rustcms::storage::of(&state)`),
+  with your rules for which ones and how long they are cached
+  ([Headless rendering](../admin/media.md#headless-rendering)).
+- **Browsers calling the API.** There is no CORS layer: a frontend server
+  calling the API needs none; for browsers on another origin add one with
+  `app.middleware` (or at the proxy), with the origins you allow.
+- **The reader's address.** When a frontend server calls the API for its
+  readers, every request comes from that server: per-IP limits would count
+  all readers together. List the frontend servers in `http.trusted_proxies`
+  and have them send `X-Forwarded-For`.
+- **Fresh pages.** A frontend that caches pages learns about changes only if
+  you tell it: dispatch a job from your resources' hooks (and
+  [media hooks](../admin/media.md#media-hooks)) that calls it.
+- **Paging.** `ApiPage` pages by number: rows added or removed while a reader
+  pages may repeat or be skipped. Page by key (`id > last`) where that
+  matters.
+- **Releases.** Every instance runs the same build. Run `migrate` once,
+  before the new instances start, with migrations that only add, so the
+  instances still running the previous build keep working.
+
 ## Redis configuration
 
 | Key | Default | |
