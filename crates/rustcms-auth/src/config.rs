@@ -79,13 +79,7 @@ pub struct JwtConfig {
 
 impl Default for JwtConfig {
     fn default() -> Self {
-        Self {
-            enabled: true,
-            access_ttl_secs: 900,
-            refresh_ttl_days: 14,
-            refresh_family_days: 30,
-            session_cache_ms: 0,
-        }
+        Self { enabled: true, access_ttl_secs: 900, refresh_ttl_days: 14, refresh_family_days: 30, session_cache_ms: 0 }
     }
 }
 
