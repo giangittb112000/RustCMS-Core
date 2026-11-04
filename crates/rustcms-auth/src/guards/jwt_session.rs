@@ -332,15 +332,22 @@ impl Sessions {
         within(read.started, self.period).then_some(read.session)
     }
 
-    /// Keeps `read` unless it is already too old, or a newer read is kept.
+    /// Keeps `read` unless it is already too old, or a newer read is kept:
+    /// decided and written under the key's lock, so an older read never
+    /// replaces a newer one (one that saw a revocation, say).
     async fn keep(&self, key: (String, u64), read: Read) {
-        if !within(read.started, self.period) {
-            return;
-        }
-        if self.cache.get(&key).await.is_some_and(|kept| kept.started >= read.started) {
-            return;
-        }
-        self.cache.insert(key, read).await;
+        let period = self.period;
+        self.cache
+            .entry(key)
+            .and_compute_with(|kept| {
+                let replace = replaces(kept.map(|k| k.into_value().started), read.started, period);
+                std::future::ready(if replace {
+                    moka::ops::compute::Op::Put(read)
+                } else {
+                    moka::ops::compute::Op::Nop
+                })
+            })
+            .await;
     }
 }
 
@@ -348,6 +355,12 @@ impl Sessions {
 /// from before its statement, whenever it was cached.
 fn within(started: std::time::Instant, period: std::time::Duration) -> bool {
     started.elapsed() < period
+}
+
+/// Whether a read started at `started` replaces the one kept (started at
+/// `kept`): only a read still within the period, newer than what is kept.
+fn replaces(kept: Option<std::time::Instant>, started: std::time::Instant, period: std::time::Duration) -> bool {
+    within(started, period) && kept.is_none_or(|kept| started > kept)
 }
 
 /// The family `id` and its user, in one statement (no row: unknown family or
@@ -447,6 +460,19 @@ mod tests {
         // A load that stalled past the period is never served, however late it was cached.
         let stalled = now.checked_sub(std::time::Duration::from_millis(250)).unwrap();
         assert!(!within(stalled, period));
+    }
+
+    #[test]
+    fn an_older_read_never_replaces_a_newer_one() {
+        let period = std::time::Duration::from_secs(1);
+        let now = std::time::Instant::now();
+        let older = now.checked_sub(std::time::Duration::from_millis(100)).unwrap();
+        assert!(replaces(None, now, period));
+        assert!(replaces(Some(older), now, period), "a newer read replaces");
+        assert!(!replaces(Some(now), older, period), "an older one does not (it may predate a revocation)");
+        assert!(!replaces(Some(now), now, period));
+        let stale = now.checked_sub(std::time::Duration::from_secs(2)).unwrap();
+        assert!(!replaces(None, stale, period), "a read past the period is not kept");
     }
 
     #[test]
