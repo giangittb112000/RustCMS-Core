@@ -1,7 +1,30 @@
 # Release notes
 
-RustCMS is in pre-release. The current version is **0.11.0**; 0.1.0-alpha.0
+RustCMS is in pre-release. The current version is **0.12.0**; 0.1.0-alpha.0
 was the first published one.
+
+## 0.12.0
+
+Read the [upgrade guide](upgrade.md#from-0110-to-0120) first: the media and
+exports cleanups now need the scheduler. No migration.
+
+- **API mode**: `rustcms serve --api-only` (or `[app] mode = "api"`) serves
+  the application API alone, without the admin panel, to scale it out behind
+  a load balancer; the same build runs the panel instance
+  ([API mode](digging-deeper/instances.md#api-mode)).
+- **Faster API tokens**: a personal access token is checked with one
+  statement, and its last use is written at most once a minute. Two opt-in
+  settings let API instances reuse the permission counter and JWT sign-ins
+  for a short time ([Credential revocation](security/revocation.md#several-instances)).
+- **Media hooks**: `AdminProvider::media_hook` runs your code in the
+  transaction of every upload, edit, trash, restore and delete of a media
+  file ([Media hooks](admin/media.md#media-hooks)).
+- **Cleanups are schedules**: the media and exports cleanups run as
+  `rustcms.media-prune.<disk>` and `rustcms.exports-prune.<disk>`; every
+  `serve` and `queue:work` removes the temporary files it left
+  ([Data retention](operations/retention.md)).
+- Abandoned export and import files on an S3 disk's staging directory are
+  removed too.
 
 ## 0.11.0
 

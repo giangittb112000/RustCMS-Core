@@ -6,6 +6,8 @@ All notable changes are documented here. The format follows
 
 ## [Unreleased]
 
+## [0.12.0] — 2026-11-04
+
 ### Added
 - API mode (ADR 0036): `[app] mode = "api"` (`RUSTCMS_APP__MODE`, `serve
   --api-only`) serves the application API only. Nothing under

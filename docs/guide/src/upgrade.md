@@ -29,6 +29,30 @@
    To upgrade to another version than the command's, install that command
    first (`rustcms self-update --version vX.Y.Z`).
 
+## From 0.11.0 to 0.12.0
+
+No migration. To roll back, install 0.11.0 again; no data changes shape.
+
+- **Behaviour change: the media and exports cleanups need the scheduler.**
+  They are now framework schedules, `rustcms.media-prune.<disk>` (every
+  minute) and `rustcms.exports-prune.<disk>` (every 10 minutes), run only by
+  `serve` with `[schedule] enabled`, once per slot across instances. They no
+  longer run in `queue:work` or console commands and take no Redis lease. If
+  no instance runs `serve` with the scheduler, cron `media:prune` and
+  `schedule:run rustcms.exports-prune.local` (or `.s3`).
+- Temporary files an instance staged (uploads, exports, imports) are removed
+  by that instance after an hour: every `serve` and `queue:work`, every 10
+  minutes. `media::prune`, `exports::prune` and `imports::prune` no longer
+  sweep them; call `rustcms::storage::sweep_staging` if your code relied on
+  it.
+- New `[app] mode` (`full` by default, nothing changes). In `api` mode
+  (`serve --api-only`), `queue.enabled` and `schedule.enabled` left out are
+  `false` ([API mode](digging-deeper/instances.md#api-mode)).
+- New opt-in settings `auth.permission_generation_cache_ms` and
+  `auth.jwt.session_cache_ms`, both `0` (unchanged behaviour).
+- `MediaResource` now implements `after_trash` and `after_restore` (for
+  media hooks); nothing changes for applications.
+
 ## From 0.10.3 to 0.11.0
 
 No migration. Read the first points before upgrading: they can make a
