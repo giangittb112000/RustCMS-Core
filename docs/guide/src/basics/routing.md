@@ -24,8 +24,9 @@ use rustcms::prelude::*;
 use crate::http::controllers; // the routes `make:api` adds use it
 
 pub fn routes() -> ApiRoutes {
-    ApiRoutes::new("/api/v1").get("/ping", Access::public(), ping)
-    // rustcms:api-routes
+    ApiRoutes::new("/api/v1")
+        // rustcms:api-routes
+        .get("/ping", Access::public(), ping)
 }
 
 async fn ping() -> Json<serde_json::Value> {
@@ -145,9 +146,9 @@ fn posts() -> ApiRoutes {
 
 pub fn routes() -> ApiRoutes {
     ApiRoutes::new("/api/v1")
+        // rustcms:api-routes
         .get("/ping", Access::public(), ping)
         .nest("/posts", posts())
-        // rustcms:api-routes
 }
 ```
 

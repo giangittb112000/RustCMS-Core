@@ -237,6 +237,21 @@ mod tests {
         assert!(ci.contains("${{ runner.os }}"), "GitHub expressions kept: {ci}");
     }
 
+    /// The application CI runs `cargo fmt --check`: a new application passes it
+    /// with the `rustfmt.toml` it gets, whatever the length of its name.
+    #[test]
+    fn a_new_application_is_formatted() {
+        let dir = tempfile::tempdir().unwrap();
+        for name in ["blog", "bootstrap", "a-much-longer-application-name-than-most"] {
+            new_app(name, dir.path(), &NewOptions { rustcms_path: None, in_workspace: false, fetch: false }).unwrap();
+            let app = dir.path().join(name);
+            assert!(app.join("rustfmt.toml").is_file());
+            let out =
+                std::process::Command::new(env!("CARGO")).current_dir(&app).args(["fmt", "--check"]).output().unwrap();
+            assert!(out.status.success(), "{name}: cargo fmt --check\n{}", String::from_utf8_lossy(&out.stdout));
+        }
+    }
+
     #[test]
     fn resolution_failures_are_classified() {
         let tag = "error: failed to get `rustcms` as a dependency\n  failed to find tag `v9.9.9`\n  network failure seems to have happened";

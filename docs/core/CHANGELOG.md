@@ -6,6 +6,12 @@ All notable changes are documented here. The format follows
 
 ## [Unreleased]
 
+### Fixed
+- `rustcms new`: the application gets a `rustfmt.toml` (the framework's) and
+  passes the `cargo fmt --check` of its own CI, whatever its name (crate
+  imports in their own group, generator markers inside the builder chains of
+  `admin_panel_provider.rs` and `routes/api.rs`).
+
 ## [0.12.0] — 2026-11-04
 
 ### Added

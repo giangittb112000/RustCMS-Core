@@ -15,6 +15,7 @@ blog/
 ├── .env, .env.example           # secrets and per-machine values (.env is git-ignored)
 ├── .gitignore                   # target, .env, *.sqlite, /storage
 ├── .github/workflows/ci.yml     # CI: formatting, lints and the tests on SQLite
+├── rustfmt.toml                 # the formatting CI checks (`cargo fmt`)
 ├── README.md                    # the commands and this layout, for your team
 ├── config/                      # app.toml, auth.toml, http.toml, log.toml
 ├── lang/vi.toml                 # translations of your admin labels and messages
@@ -77,6 +78,9 @@ More folders appear when a generator first needs them, or when you add them:
 | `resources/admin/src/`, `sdk/` | React pages and the admin SDK they build with ([React pages](../admin/react-pages.md)) | `make:page --react`, `make:sdk` |
 | `storage/app/` | uploaded files on the `local` disk, once `StorageProvider` is registered ([File storage](../digging-deeper/storage.md)) | created at start |
 
+Generators append lines (`pub mod`, routes, resources) without formatting
+them: run `cargo fmt` before you commit, as the generated CI checks it.
+
 A module you add by hand needs its `pub mod` line, as in any Rust crate
 (`pub mod admin;` in `src/routes/mod.rs` for `src/routes/admin.rs`).
 
@@ -107,11 +111,11 @@ anchors generators write at:
 pub fn provider() -> AdminProvider {
     AdminProvider::new()
         .brand("blog")
-        // Labels in Vietnamese (`rustcms lang:missing vi` lists what is missing).
-        .translations("vi", include_str!("../../lang/vi.toml"))
         // rustcms:resources
         // rustcms:pages
         // rustcms:extensions
+        // Labels in Vietnamese (`rustcms lang:missing vi` lists what is missing).
+        .translations("vi", include_str!("../../lang/vi.toml"))
 }
 ```
 

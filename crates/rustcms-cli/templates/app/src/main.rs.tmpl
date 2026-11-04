@@ -1,4 +1,7 @@
+// `build`, not the `bootstrap` module: an application named `bootstrap` would shadow its crate.
+use {{ crate_name }}::bootstrap::build;
+use {{ crate_name }}::database::migrations::Migrator;
+
 fn main() -> std::process::ExitCode {
-    rustcms::Console::<{{ crate_name }}::database::migrations::Migrator>::new({{ crate_name }}::bootstrap::build)
-        .run_blocking()
+    rustcms::Console::<Migrator>::new(build).run_blocking()
 }
