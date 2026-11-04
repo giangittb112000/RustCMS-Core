@@ -120,6 +120,7 @@ Uploads and the media library: see [File storage](../digging-deeper/storage.md).
 | `auth.attempts_per_identifier`       | `5`                | failed sign-ins per account+IP per minute |
 | `auth.attempts_per_ip`               | `30`               | failed sign-ins per IP per minute       |
 | `auth.permission_cache_ttl_secs`     | `30`               | upper bound; changes apply on the next request |
+| `auth.permission_generation_cache_ms` | `1000`            | 0–60,000: how long the RBAC counter is reused; other instances see a change within it (0: read every request) |
 | `auth.remember_days`                 | `30`               | "Remember me" keeps a session this long (0: no such box) |
 | `auth.password_reset`                | `false`            | "Forgot password?" (needs mail)         |
 | `auth.password_reset_minutes`        | `60`               | how long a reset link works             |
@@ -128,6 +129,7 @@ Uploads and the media library: see [File storage](../digging-deeper/storage.md).
 | `auth.reset_requests_per_email`      | `3`                | reset requests per address per minute   |
 | `auth.reset_cooldown_secs`           | `60`               | at most one reset mail per user this often |
 | `auth.jwt.enabled`                   | `true`             | JWT sign-in endpoints and bearer JWTs   |
+| `auth.jwt.session_cache_ms`          | `1000`             | 0–60,000: how long a JWT's sign-in is reused; other instances see a sign-out within it |
 | `auth.jwt.access_ttl_secs`           | `900`              | access token lifetime (60–3600)         |
 | `auth.jwt.refresh_ttl_days`          | `14`               | an unused refresh token expires (1–90)  |
 | `auth.jwt.refresh_family_days`       | `30`               | a sign-in ends, however often refreshed (≥ refresh_ttl_days, ≤ 365) |

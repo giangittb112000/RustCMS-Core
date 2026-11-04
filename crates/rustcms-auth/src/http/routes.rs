@@ -355,6 +355,8 @@ async fn change_password(
         &audit,
     )
     .await?;
+    // Cached JWT sign-ins of this instance go at once (others within their period).
+    auth.resolver.evict_all();
     session.restamp(version);
     Ok(StatusCode::NO_CONTENT)
 }
@@ -376,6 +378,7 @@ async fn logout_others(
     confirm_password(&auth, &current.user, input.password).await?;
     let audit = AuditContext::new(AuditActor::user(&current.principal), request);
     let version = credentials::logout_everywhere(app.db(), &current.user, &audit).await?;
+    auth.resolver.evict_all();
     session.restamp(version);
     Ok(StatusCode::NO_CONTENT)
 }
@@ -658,6 +661,8 @@ async fn use_token(
         crate::recovery::Accept { name: input.name, revoke_api_tokens: auth.config.revoke_tokens_on_password_change };
     // Every session and token of the user ends with it (their credential version moves).
     crate::recovery::consume(app.db(), key, purpose, &input.token, &checked, hash, accept, request).await?;
+    // The password changed: cached JWT sign-ins of this instance go at once.
+    auth.resolver.evict_all();
     Ok(StatusCode::NO_CONTENT)
 }
 

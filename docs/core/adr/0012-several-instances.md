@@ -36,3 +36,27 @@ application.
 - Without Redis, several instances work but each keeps its own rate limits:
   run one instance unless Redis is configured.
 - Media storage must be shared between instances (S3 or one volume).
+
+## Amendment (Unreleased, 2026-11-04): reads reused for a second (ADR 0036)
+
+Approved by the owner after the API benchmark
+(`docs/core/reports/api-performance.vi.md`): the generation read is one of
+the statements every authenticated request pays.
+
+- `auth.permission_generation_cache_ms` (default 1,000, 0 to 60,000): each
+  instance reuses the database's `auth_generations.rbac` it read for that
+  long. A change made through an instance still applies there on the next
+  request (its local generation moves after the commit); on the others it
+  applies within the period. `0` restores "read on every request".
+- `auth.jwt.session_cache_ms` (default 1,000): a JWT's family and user are
+  read together (one join) and reused for that long, keyed by the local
+  generation, so `PermissionResolver::evict_all` forgets them (RBAC changes,
+  and the sign-out, refresh-replay, password, logout-others, reset and
+  invitation endpoints call it after their commit). Sign-outs and account
+  changes made elsewhere apply within the period. A load that started before
+  a local eviction is not kept.
+- Sessions and API tokens are not cached: their revocation is never delayed
+  (their permissions follow the generation above).
+- The decision above ("a committed change applies on every instance from its
+  next request") now holds with `0`; by default, within a second.
+

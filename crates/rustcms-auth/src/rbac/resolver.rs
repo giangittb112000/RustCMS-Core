@@ -17,15 +17,27 @@ pub struct Grants {
 /// Loads [`Grants`] with a short-lived cache, evicted on every RBAC change.
 ///
 /// Entries are keyed by two generations that every change advances: the
-/// database's (`auth_generations.rbac`, advanced inside each RBAC transaction,
-/// read on every request, so every instance sees a committed change on its next
-/// request) and this process's (advanced after commit). A load that started
-/// before a change can only populate a previous generation, which no later
-/// request reads, so eviction cannot be undone by an in-flight load.
+/// database's (`auth_generations.rbac`, advanced inside each RBAC transaction)
+/// and this process's (advanced after commit). A load that started before a
+/// change can only populate a previous generation, which no later request
+/// reads, so eviction cannot be undone by an in-flight load.
+///
+/// The database's generation is read at most once per
+/// [`with_generation_cache`](Self::with_generation_cache) period (ADR 0036):
+/// a change committed on another instance applies here within that period; a
+/// change made through this instance applies on its next request (the local
+/// generation). With no period, it is read on every request (ADR 0012).
 #[derive(Clone)]
 pub struct PermissionResolver {
     cache: Cache<(String, i64, i64, u64), Arc<Grants>>,
     generation: Arc<AtomicU64>,
+    shared: Option<Arc<SharedGeneration>>,
+}
+
+/// The database's generation as last read, and when.
+struct SharedGeneration {
+    period: Duration,
+    read: std::sync::Mutex<Option<(i64, std::time::Instant)>>,
 }
 
 impl PermissionResolver {
@@ -34,12 +46,42 @@ impl PermissionResolver {
         Self {
             cache: Cache::builder().time_to_live(ttl).max_capacity(10_000).build(),
             generation: Arc::new(AtomicU64::new(0)),
+            shared: None,
         }
+    }
+
+    /// Reads the database's generation at most once per `period` (zero: on
+    /// every request): changes made on other instances apply within it.
+    #[must_use]
+    pub fn with_generation_cache(mut self, period: Duration) -> Self {
+        self.shared =
+            (!period.is_zero()).then(|| Arc::new(SharedGeneration { period, read: std::sync::Mutex::new(None) }));
+        self
     }
 
     /// Grants of `user_id` in `guard`.
     pub async fn grants(&self, db: &DatabaseConnection, guard: &str, user_id: i64) -> AppResult<Arc<Grants>> {
-        self.get_or_load(guard, user_id, || shared_generation(db), || load_grants(db, guard, user_id)).await
+        self.get_or_load(guard, user_id, || self.shared_generation(db), || load_grants(db, guard, user_id)).await
+    }
+
+    /// The database's generation, from the last read when it is recent enough.
+    async fn shared_generation(&self, db: &DatabaseConnection) -> AppResult<i64> {
+        let Some(shared) = &self.shared else { return shared_generation(db).await };
+        let recent = *shared.read.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
+        if let Some((value, at)) = recent
+            && at.elapsed() < shared.period
+        {
+            return Ok(value);
+        }
+        // Timed from before the read: the value is never older than the period.
+        let started = std::time::Instant::now();
+        let value = shared_generation(db).await?;
+        let mut read = shared.read.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
+        // Concurrent reads: keep the newest generation (it only grows).
+        if read.is_none_or(|(kept, _)| value >= kept) {
+            *read = Some((value, started));
+        }
+        Ok(value)
     }
 
     async fn get_or_load<G, GFut, F, Fut>(
@@ -92,7 +134,14 @@ impl PermissionResolver {
         })
     }
 
-    /// Forgets every cached entry, including loads still in flight.
+    /// This instance's generation, advanced by [`evict_all`](Self::evict_all):
+    /// other caches of credentials key on it to be evicted with it.
+    pub(crate) fn local_generation(&self) -> u64 {
+        self.generation.load(Ordering::SeqCst)
+    }
+
+    /// Forgets every cached entry, including loads still in flight (cached JWT
+    /// sign-ins too).
     pub fn evict_all(&self) {
         self.generation.fetch_add(1, Ordering::SeqCst);
         self.cache.invalidate_all();

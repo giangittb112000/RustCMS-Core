@@ -75,7 +75,35 @@ Tách theo từng yếu tố:
 - **(b) Tắt worker và scheduler** (đo ở baseline-quiet) không thay đổi throughput trong 15 giây đo. Lợi ích là pool DB không bị việc nền chiếm, và có ý nghĩa khi có job thật.
 - **jwt_read** không đổi (2400), vì vẫn tốn 2 câu SQL: kiểm tra family (revoke) và generation.
 
-## Đề xuất (chờ anh duyệt, đụng ADR 0012)
+## Hai cache đã được duyệt (ADR 0012 amendment, 2026-11-04)
+
+Anh Đức đã duyệt cả hai cache. Cấu hình mặc định:
+- `auth.permission_generation_cache_ms = 1000`: generation RBAC đọc tối đa 1 lần/giây trên mỗi instance.
+- `auth.jwt.session_cache_ms = 1000`: family và user của JWT được đọc chung trong một câu join, rồi dùng lại trong 1 giây. Cache được khoá theo generation cục bộ.
+
+Kết quả ở API mode:
+
+| Kịch bản | req/s | p50 ms | p99 ms | non-2xx | CPU s | RSS MiB |
+|---|---:|---:|---:|---:|---:|---:|
+| public | 99597 | 0.31 | 0.73 | 0 | 70.96 | 41 |
+| pat_read | 4370 | 7.09 | 10.6 | 0 | 16.93 | 46 |
+| jwt_read | 8425 | 3.66 | 6.24 | 0 | 19.19 | 46 |
+| pat_write | 4479 | 6.9 | 10.67 | 0 | 17.14 | 47 |
+| admin_path | 109360 | 0.28 | 0.67 | tất cả (404) | 64.87 | 47 |
+
+So với baseline:
+- **pat_read:** 1921 → 4370 (×2,3).
+- **pat_write:** 1941 → 4479 (×2,3).
+- **jwt_read:** 2369 → 8425 (×3,6).
+
+Lúc này request JWT chỉ còn câu SQL của chính handler. Request PAT còn 1 câu (token join user) cộng với câu của handler.
+
+**Đánh đổi:**
+- Trên instance thực hiện thay đổi, thay đổi có hiệu lực ngay ở request kế tiếp. Các instance khác thấy thay đổi trong vòng 1 giây.
+- Đặt `0` để quay lại hành vi cũ (đọc DB trên mỗi request).
+- Session và PAT không bị cache, nên revoke chúng không bao giờ bị trễ.
+
+## Đề xuất ban đầu (đã làm 1 và 2, xem mục trên)
 
 1. **Câu đọc generation RBAC trên mỗi request.** Có thể cache vài trăm ms theo từng instance.
    - Lợi ích: PAT còn 1 câu, JWT còn 1 câu, khoảng +30–50% theo cách đo này.

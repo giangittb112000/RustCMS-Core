@@ -141,6 +141,10 @@ impl ServiceProvider for AuthProvider {
         config.admin_path = normalize_admin_path(&config.admin_path).unwrap_or_else(|e| panic!("{e}"));
         config.jwt.validate().unwrap_or_else(|e| panic!("{e}"));
         assert!(
+            config.permission_generation_cache_ms <= 60_000,
+            "auth.permission_generation_cache_ms must be between 0 and 60000"
+        );
+        assert!(
             (1..=crate::recovery::MAX_INVITATION_DAYS).contains(&config.invitation_days),
             "auth.invitation_days must be between 1 and {}",
             crate::recovery::MAX_INVITATION_DAYS

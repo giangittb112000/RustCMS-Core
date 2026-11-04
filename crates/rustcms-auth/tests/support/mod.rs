@@ -180,6 +180,11 @@ pub async fn super_admin_role(app: &TestApp, guard: &str) -> role::Model {
         .unwrap()
 }
 
+/// The seed data on an app built elsewhere.
+pub async fn seed_app(app: &TestApp) -> Seed {
+    seed(app).await
+}
+
 async fn seed(app: &TestApp) -> Seed {
     let db = app.state().db();
     let auth = auth(app);

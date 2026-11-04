@@ -25,6 +25,9 @@ request with that credential is anonymous (sessions) or refused with 401
 | `APP_KEY` rotated | ended | ended | kept | all ended |
 | Roles or permissions changed | kept | kept | kept; new permissions apply on the next request | kept; new permissions apply on the next request |
 
+On several instances, the rows above apply at once on the instance that made
+the change and within a second on the others ([below](#several-instances)).
+
 Every row is covered by the framework's tests
 (`crates/rustcms-auth/tests/`: `auth_flow.rs`, `jwt.rs`, `recovery.rs`,
 `rbac.rs`, `instances.rs`).
@@ -50,8 +53,29 @@ only: JWT sign-ins always end, like sessions.
 
 Resolved permissions are cached for at most `permission_cache_ttl_secs` (30),
 keyed by a counter (`auth_generations.rbac`) that every RBAC change advances in
-its own transaction and every request reads: on any number of instances, a
-committed change applies from the next request.
+its own transaction, and by a counter of the instance that every change made
+through it advances.
+
+## Several instances
+
+Two reads are reused for a short time on each instance, so that a request
+does not pay for them every time (ADR 0036):
+
+| Setting | Default | What is reused | A change made on another instance applies |
+|---|---|---|---|
+| `auth.permission_generation_cache_ms` | `1000` | the RBAC counter (`auth_generations.rbac`) | within that time: roles, permissions, and through them every guard |
+| `auth.jwt.session_cache_ms` | `1000` | a JWT's sign-in and user | within that time: sign-out, password change, user disabled or deleted |
+
+- **On the instance that made the change**, it applies on the next request:
+  `RbacService`, the sign-out, refresh, password, reset and invitation
+  endpoints forget this instance's cached reads. Credential functions called
+  directly from your code (`credentials::logout_everywhere`, …) leave them to
+  their time.
+- Sessions and API tokens are read on every request: their revocation is
+  never delayed. Permissions they carry follow the RBAC counter above.
+- `0` reads on every request (the behaviour before these settings): choose it when a revocation
+  must apply everywhere at once, at the cost of one statement per request
+  for each.
 
 Session ids and refresh tokens are keyed from `APP_KEY` only, not from
 `APP_PREVIOUS_KEYS`: rotating the key ends them whatever the previous keys

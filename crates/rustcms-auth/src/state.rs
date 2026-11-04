@@ -96,6 +96,8 @@ pub struct AuthState {
     pub(crate) refresh_key: [u8; 32],
     /// Failed sign-ins of the current minute: `(minute, recorded, skipped)`.
     pub(crate) failed_sign_ins: std::sync::Mutex<(i64, u64, u64)>,
+    /// JWT sign-ins as read (`auth.jwt.session_cache_ms`), if cached.
+    pub(crate) jwt_sessions: Option<crate::guards::jwt_session::Sessions>,
 }
 
 impl AuthState {
@@ -115,7 +117,8 @@ impl AuthState {
         };
         let secure_cookies = config.secure_cookies.unwrap_or_else(|| app_url.starts_with("https://"));
         Self {
-            resolver: PermissionResolver::new(Duration::from_secs(config.permission_cache_ttl_secs)),
+            resolver: PermissionResolver::new(Duration::from_secs(config.permission_cache_ttl_secs))
+                .with_generation_cache(Duration::from_millis(config.permission_generation_cache_ms)),
             passwords: Passwords::new(),
             limiter: RateLimiter::default(),
             permissions: PermissionRegistry::default(),
@@ -127,6 +130,7 @@ impl AuthState {
             jwt_key: crate::guards::jwt::JwtKey::derive(key),
             refresh_key: crate::guards::jwt::derive(key, "rustcms/refresh/v1"),
             failed_sign_ins: std::sync::Mutex::default(),
+            jwt_sessions: crate::guards::jwt_session::Sessions::new(Duration::from_millis(config.jwt.session_cache_ms)),
             config,
         }
     }

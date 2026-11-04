@@ -36,6 +36,13 @@ All notable changes are documented here. The format follows
   and `media:prune` once. `media::prune`, `exports::prune` and
   `imports::prune` no longer sweep.
 
+- The RBAC generation is read at most once per
+  `auth.permission_generation_cache_ms` (1,000) per instance, and a JWT's
+  sign-in and user (now one joined statement) are reused for
+  `auth.jwt.session_cache_ms` (1,000) (ADR 0012 amendment). Changes made
+  through an instance apply there on the next request; on other instances
+  within that time (before: on every instance from the next request; set `0`
+  for that). Sessions and API tokens are not cached.
 - A personal access token is checked with one statement (token and owner
   joined) and `last_used_at` is written only when the value read is more than
   a minute old: a request with a token used within the minute sends no

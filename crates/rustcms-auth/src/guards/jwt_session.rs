@@ -13,7 +13,7 @@ use rustcms_core::{AppError, AppResult};
 use sea_orm::sea_query::Expr;
 use sea_orm::{
     ActiveModelTrait, ColumnTrait, ConnectionTrait, DatabaseConnection, DatabaseTransaction, DbBackend, EntityTrait,
-    QueryFilter, QuerySelect, Set,
+    JoinType, QueryFilter, QuerySelect, RelationDef, Set,
 };
 
 use crate::entities::{jwt_family as family, jwt_refresh_token as refresh};
@@ -243,6 +243,8 @@ pub async fn rotate(
         // once, when it ended a live family (later replays change nothing).
         let ended = revoke_family(&txn, &family.id, now).await?;
         txn.commit().await?;
+        // This instance forgets the family at once (others within their period).
+        auth.resolver.evict_all();
         if ended {
             let entry = AuditEntry::new("jwt.reuse_detected", "user")
                 .key(family.user_id)
@@ -270,6 +272,7 @@ pub async fn logout(auth: &AuthState, db: &DatabaseConnection, plain: &str, requ
     let (_, family, _) = lock_all(&txn, token.id, &family.id, family.user_id).await?;
     let ended = revoke_family(&txn, &family.id, Utc::now()).await?;
     txn.commit().await?;
+    auth.resolver.evict_all();
     if ended {
         audit(db, request, &family, "jwt.signed_out").await;
     }
@@ -290,13 +293,61 @@ pub async fn verify_access(auth: &AuthState, db: &DatabaseConnection, token: &st
     {
         return Err(AppError::Unauthenticated);
     }
-    let family = family::Entity::find_by_id(claims.fam.clone()).one(db).await?.ok_or(AppError::Unauthenticated)?;
-    let user = user::Entity::find_by_id(user_id).one(db).await?.ok_or(AppError::Unauthenticated)?;
-    if !live(&family, &user, now) || claims.ver != family.auth_version {
+    let session = session(auth, db, &claims.fam).await?;
+    let (family, user) = (&session.0, &session.1);
+    if user.id != user_id || !live(family, user, now) || claims.ver != family.auth_version {
         return Err(AppError::Unauthenticated);
     }
-    let abilities = abilities_of(&family).into_iter().collect();
-    Ok(Verified { user, abilities, family: family.id })
+    let abilities = abilities_of(family).into_iter().collect();
+    Ok(Verified { user: user.clone(), abilities, family: family.id.clone() })
+}
+
+/// JWT sign-ins (family and user) as read, reused for `auth.jwt.session_cache_ms`.
+/// Keyed by this instance's RBAC generation, so every local eviction
+/// (`PermissionResolver::evict_all`: RBAC changes, sign-outs, password
+/// changes) forgets them too, loads in flight included.
+pub(crate) struct Sessions {
+    cache: moka::future::Cache<(String, u64), std::sync::Arc<(family::Model, user::Model)>>,
+}
+
+impl Sessions {
+    /// `None` for a zero period: read on every request.
+    pub(crate) fn new(period: std::time::Duration) -> Option<Self> {
+        (!period.is_zero())
+            .then(|| Self { cache: moka::future::Cache::builder().time_to_live(period).max_capacity(100_000).build() })
+    }
+}
+
+/// The family `id` and its user, in one statement (no row: unknown family or
+/// deleted user), from the cache when recent enough.
+async fn session(
+    auth: &AuthState,
+    db: &DatabaseConnection,
+    id: &str,
+) -> AppResult<std::sync::Arc<(family::Model, user::Model)>> {
+    let load = || async {
+        let owner: RelationDef =
+            family::Entity::belongs_to(user::Entity).from(family::Column::UserId).to(user::Column::Id).into();
+        let (family, user) = family::Entity::find_by_id(id.to_owned())
+            .join(JoinType::InnerJoin, owner)
+            .select_also(user::Entity)
+            .one(db)
+            .await?
+            .ok_or(AppError::Unauthenticated)?;
+        Ok::<_, AppError>(std::sync::Arc::new((family, user.ok_or(AppError::Unauthenticated)?)))
+    };
+    let Some(sessions) = &auth.jwt_sessions else { return load().await };
+    let generation = auth.resolver.local_generation();
+    let key = (id.to_owned(), generation);
+    if let Some(found) = sessions.cache.get(&key).await {
+        return Ok(found);
+    }
+    let loaded = load().await?;
+    // An eviction while it loaded: the read may predate the change.
+    if auth.resolver.local_generation() == generation {
+        sessions.cache.insert(key, loaded.clone()).await;
+    }
+    Ok(loaded)
 }
 
 /// Revokes every live family of `user_id` (inside the transaction that

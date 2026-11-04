@@ -164,7 +164,8 @@ Error bodies (401, 403, 422, 429) follow the [error format](../basics/errors.md)
 
 Password change, sign-out everywhere and disabling the user end every JWT
 sign-in, and revoke API tokens (for a password change, unless
-`auth.revoke_tokens_on_password_change = false`), from the next request. A
+`auth.revoke_tokens_on_password_change = false`), from the next request (JWTs:
+within `auth.jwt.session_cache_ms` on other instances). A
 request already running is not aborted: your endpoints, like admin resource
 writes, finish with the credentials checked when they started. Account and
 RBAC changes made through `RbacService` are the exception when the whole

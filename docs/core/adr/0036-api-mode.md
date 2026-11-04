@@ -62,4 +62,6 @@ the mode is called API mode.
   method under the admin path, before any body limit.
 - API mode does not make API requests cheaper by itself (measured in
   `docs/core/reports/api-performance.vi.md`): the cost of an authenticated
-  request is its SQL statements. The PAT check was reduced in the same work.
+  request is its SQL statements. The PAT check was reduced in the same work,
+  and, with the owner's approval, the RBAC generation and JWT sign-in reads
+  are reused for a second per instance (ADR 0012 amendment).

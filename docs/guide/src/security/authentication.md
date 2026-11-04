@@ -249,8 +249,10 @@ answer 404 and bearer JWTs are refused (401).
 
 Access tokens are HS256 with a key derived from `APP_KEY` (rotating it ends
 every sign-in); only that exact header is accepted. Each request still checks
-the user (active, same `auth_version`) and the sign-in (not ended), so
-revocation applies from the next request, as for sessions. Abilities are fixed
+the user (active, same `auth_version`) and the sign-in (not ended), read
+together and reused for `session_cache_ms` (1 s): a revocation applies on the
+next request of the instance that made it, and within that time on the
+others ([Credential revocation](revocation.md#several-instances)). Abilities are fixed
 per sign-in and narrow the user's API permissions like a token's.
 
 | Key (`[auth.jwt]`) | Default | Bounds (boot fails outside) |
@@ -259,6 +261,7 @@ per sign-in and narrow the user's API permissions like a token's.
 | `access_ttl_secs` | `900` | 60–3,600 |
 | `refresh_ttl_days` | `14` | 1–90 |
 | `refresh_family_days` | `30` | `refresh_ttl_days`–365 |
+| `session_cache_ms` | `1000` | 0–60,000; 0: the sign-in is read on every request |
 
 ## Throttling
 

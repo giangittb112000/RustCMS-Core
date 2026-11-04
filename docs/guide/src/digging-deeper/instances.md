@@ -95,9 +95,11 @@ only by `serve` with the scheduler. Files an instance stages on its own disk
 every `serve` and `queue:work` removes its abandoned ones, older than an hour,
 every 10 minutes. See [Data retention](../operations/retention.md).
 
-Permissions need no Redis: a change made on one instance applies on every
-instance from the next request (the permission cache follows a counter kept
-in the database).
+Permissions need no Redis: a change made on one instance applies there from
+the next request, and on the others within `auth.permission_generation_cache_ms`
+(1 s; the permission cache follows a counter kept in the database, read at
+most that often). JWT sign-outs likewise within `auth.jwt.session_cache_ms`
+([Credential revocation](../security/revocation.md#several-instances)).
 
 The queue and the scheduler need no Redis either: they coordinate through
 the database (see [below](#your-own-periodic-jobs)).

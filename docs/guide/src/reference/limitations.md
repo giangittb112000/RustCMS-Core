@@ -51,7 +51,9 @@ does not surprise you in production.
 
 Signing out one session, or revoking one API token, does not abort a change
 that the same credential already started. Sign-out everywhere, password
-changes and disabling a user apply from the next request, and changes made
+changes and disabling a user apply from the next request (within a second on
+other instances for JWTs and permissions, see
+[Credential revocation](../security/revocation.md#several-instances)), and changes made
 through `RbacService` re-check the credential under lock. A resource write
 keeps the permissions it started with.
 

@@ -280,3 +280,31 @@ db_test!(an_unused_refresh_token_expires, migrate = Migrator, |db: TestDb| async
     expired.update(app.state().db()).await.unwrap();
     refresh(&app, &signed["refreshToken"]).await.assert_status(StatusCode::UNAUTHORIZED);
 });
+
+// Sign-ins read once, reused `auth.jwt.session_cache_ms` (300 here): a
+// sign-out applies at once where it was made, within the period elsewhere,
+// and at once everywhere with no cache.
+db_test!(cached_sign_ins_end_within_the_period_elsewhere, migrate = Migrator, |db: TestDb| async move {
+    let pool = db.reopen().await;
+    let cached = |config: rustcms_core::Config| support::build(config.with("auth.jwt.session_cache_ms", 300).unwrap());
+    let a = TestApp::new(cached, db).await;
+    let _seed = support::seed_app(&a).await;
+    let b = TestApp::with_config(support::build, a.state().config().clone(), pool).await;
+    let one = sign_in(&a, "admin@example.test", None).await;
+    me(&a, &one["accessToken"]).await.assert_status(StatusCode::OK);
+    me(&b, &one["accessToken"]).await.assert_status(StatusCode::OK);
+    let logout = json!({"refreshToken": one["refreshToken"]});
+    a.client().post_json("/api/v1/auth/jwt/logout", &logout).await.assert_status(StatusCode::NO_CONTENT);
+    me(&a, &one["accessToken"]).await.assert_status(StatusCode::UNAUTHORIZED);
+    tokio::time::sleep(std::time::Duration::from_millis(350)).await;
+    me(&b, &one["accessToken"]).await.assert_status(StatusCode::UNAUTHORIZED);
+
+    // Without the cache, B sees it at once.
+    let uncached = b.state().config().clone().with("auth.jwt.session_cache_ms", 0).unwrap();
+    let c = TestApp::with_config(support::build, uncached, b.db().reopen().await).await;
+    let two = sign_in(&a, "admin@example.test", None).await;
+    me(&c, &two["accessToken"]).await.assert_status(StatusCode::OK);
+    let logout = json!({"refreshToken": two["refreshToken"]});
+    a.client().post_json("/api/v1/auth/jwt/logout", &logout).await.assert_status(StatusCode::NO_CONTENT);
+    me(&c, &two["accessToken"]).await.assert_status(StatusCode::UNAUTHORIZED);
+});

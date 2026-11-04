@@ -33,6 +33,10 @@ pub struct AuthConfig {
     pub attempts_per_ip: u32,
     /// Seconds a user's resolved permissions are cached (changes also evict immediately).
     pub permission_cache_ttl_secs: u64,
+    /// Milliseconds the database's RBAC generation is reused before it is read
+    /// again (0 to 60,000; 0: read on every request). A permission or role
+    /// change made on another instance applies here within this time (ADR 0036).
+    pub permission_generation_cache_ms: u64,
     /// JWT access and refresh tokens of the API guard (`[auth.jwt]`).
     pub jwt: JwtConfig,
     /// "Forgot password?": reset links by mail (needs a mail driver).
@@ -65,11 +69,22 @@ pub struct JwtConfig {
     /// A sign-in (refresh family) ends after this many days, however often it is
     /// refreshed (at least `refresh_ttl_days`, at most 365).
     pub refresh_family_days: u64,
+    /// Milliseconds an access token's sign-in (family) and user, as read, are
+    /// reused (0 to 60,000; 0: read on every request). A sign-out, password
+    /// change or deactivation made elsewhere applies within this time; one
+    /// made through this instance applies at once (ADR 0036).
+    pub session_cache_ms: u64,
 }
 
 impl Default for JwtConfig {
     fn default() -> Self {
-        Self { enabled: true, access_ttl_secs: 900, refresh_ttl_days: 14, refresh_family_days: 30 }
+        Self {
+            enabled: true,
+            access_ttl_secs: 900,
+            refresh_ttl_days: 14,
+            refresh_family_days: 30,
+            session_cache_ms: 1_000,
+        }
     }
 }
 
@@ -84,6 +99,9 @@ impl JwtConfig {
         }
         if !(self.refresh_ttl_days..=365).contains(&self.refresh_family_days) {
             return Err("auth.jwt.refresh_family_days must be between refresh_ttl_days and 365".into());
+        }
+        if self.session_cache_ms > 60_000 {
+            return Err("auth.jwt.session_cache_ms must be between 0 and 60000".into());
         }
         Ok(())
     }
@@ -105,6 +123,7 @@ impl Default for AuthConfig {
             attempts_per_identifier: 5,
             attempts_per_ip: 30,
             permission_cache_ttl_secs: 30,
+            permission_generation_cache_ms: 1_000,
             jwt: JwtConfig::default(),
             password_reset: false,
             password_reset_minutes: 60,
