@@ -10,7 +10,7 @@ use rustcms_auth::{API_GUARD, Actor, RbacService};
 use rustcms_core::AppKey;
 use rustcms_migration::Migrator;
 use rustcms_testing::{TestApp, TestDb, TestResponse, db_test};
-use sea_orm::{ActiveModelTrait, EntityTrait, PaginatorTrait, Set};
+use sea_orm::{ActiveModelTrait, ColumnTrait, EntityTrait, PaginatorTrait, QueryFilter, Set};
 use serde_json::{Value, json};
 use support::{PASSWORD, auth, setup};
 
@@ -307,4 +307,77 @@ db_test!(cached_sign_ins_end_within_the_period_elsewhere, migrate = Migrator, |d
     let logout = json!({"refreshToken": two["refreshToken"]});
     a.client().post_json("/api/v1/auth/jwt/logout", &logout).await.assert_status(StatusCode::NO_CONTENT);
     me(&c, &two["accessToken"]).await.assert_status(StatusCode::UNAUTHORIZED);
+});
+
+/// A long period: only the endpoint's eviction can end a cached sign-in at once.
+fn long_cache(config: rustcms_core::Config) -> rustcms_core::AppBuilder {
+    support::build_with_mail(config.with("auth.jwt.session_cache_ms", 60_000).unwrap())
+}
+
+db_test!(credential_endpoints_forget_cached_sign_ins_at_once, migrate = Migrator, |db: TestDb| async move {
+    let (app, seed) = support::setup_with(long_cache, db, &[]).await;
+    let admin = |access: &Value| app.client().bearer(access.as_str().unwrap());
+    let fresh = "another long passphrase";
+
+    // Password change (the panel's endpoint).
+    let one = sign_in(&app, "member@example.test", None).await;
+    me(&app, &one["accessToken"]).await.assert_status(StatusCode::OK);
+    let member = app.acting_as(&seed.member).await;
+    let body = json!({"current_password": PASSWORD, "password": fresh, "password_confirmation": fresh});
+    member.post_json(&app.admin_api("auth/password"), &body).await.assert_status(StatusCode::NO_CONTENT);
+    me(&app, &one["accessToken"]).await.assert_status(StatusCode::UNAUTHORIZED);
+
+    // Sign-out everywhere.
+    let two = sign_in(&app, "admin@example.test", None).await;
+    admin(&two["accessToken"]).get("/api/v1/auth/me").await.assert_status(StatusCode::OK);
+    let session = app.acting_as(&seed.admin).await;
+    session
+        .post_json(&app.admin_api("auth/logout-others"), &json!({"password": PASSWORD}))
+        .await
+        .assert_status(StatusCode::NO_CONTENT);
+    me(&app, &two["accessToken"]).await.assert_status(StatusCode::UNAUTHORIZED);
+
+    // A password reset by link.
+    let three = sign_in(&app, "editor@example.test", None).await;
+    me(&app, &three["accessToken"]).await.assert_status(StatusCode::OK);
+    let client = app.client();
+    client.fetch_csrf().await;
+    client
+        .post_json(&app.admin_api("auth/forgot-password"), &json!({"email": "editor@example.test"}))
+        .await
+        .assert_status(StatusCode::ACCEPTED);
+    rustcms_core::queue::run_until_idle(app.state(), None, 20).await.unwrap();
+    let mails = app.take_mails();
+    let text = &mails.last().expect("a reset mail").text;
+    let start = text.find("/admin/reset-password#token=").expect("a link") + "/admin/reset-password#token=".len();
+    let token = text[start..].split_whitespace().next().unwrap();
+    let body = json!({"token": token, "password": fresh, "password_confirmation": fresh});
+    client.post_json(&app.admin_api("auth/reset-password"), &body).await.assert_status(StatusCode::NO_CONTENT);
+    me(&app, &three["accessToken"]).await.assert_status(StatusCode::UNAUTHORIZED);
+
+    // JWT sign-out, and a deleted owner (no row from the join).
+    let four = sign_in(&app, "reader@example.test", None).await;
+    me(&app, &four["accessToken"]).await.assert_status(StatusCode::OK);
+    let logout = json!({"refreshToken": four["refreshToken"]});
+    app.client().post_json("/api/v1/auth/jwt/logout", &logout).await.assert_status(StatusCode::NO_CONTENT);
+    me(&app, &four["accessToken"]).await.assert_status(StatusCode::UNAUTHORIZED);
+});
+
+db_test!(a_deleted_owner_ends_a_sign_in, migrate = Migrator, |db: TestDb| async move {
+    // Without the cache: the join finds no row.
+    let uncached = |config: rustcms_core::Config| support::build(config.with("auth.jwt.session_cache_ms", 0).unwrap());
+    let (app, _) = support::setup_with(uncached, db, &[]).await;
+    let one = sign_in(&app, "member@example.test", None).await;
+    me(&app, &one["accessToken"]).await.assert_status(StatusCode::OK);
+    let db = app.state().db();
+    let member = rustcms_core::models::user::Entity::find()
+        .filter(rustcms_core::models::user::Column::Email.eq("member@example.test"))
+        .one(db)
+        .await
+        .unwrap()
+        .unwrap();
+    // Its sign-ins go with it where foreign keys cascade; the row is gone either way.
+    let _ = jwt_family::Entity::delete_many().filter(jwt_family::Column::UserId.eq(member.id)).exec(db).await;
+    rustcms_core::models::user::Entity::delete_by_id(member.id).exec(db).await.unwrap();
+    me(&app, &one["accessToken"]).await.assert_status(StatusCode::UNAUTHORIZED);
 });

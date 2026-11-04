@@ -26,7 +26,8 @@ request with that credential is anonymous (sessions) or refused with 401
 | Roles or permissions changed | kept | kept | kept; new permissions apply on the next request | kept; new permissions apply on the next request |
 
 On several instances, the rows above apply at once on the instance that made
-the change and within a second on the others ([below](#several-instances)).
+the change and, on the others, within the periods [below](#several-instances)
+(1 s by default).
 
 Every row is covered by the framework's tests
 (`crates/rustcms-auth/tests/`: `auth_flow.rs`, `jwt.rs`, `recovery.rs`,
@@ -59,7 +60,7 @@ through it advances.
 ## Several instances
 
 Two reads are reused for a short time on each instance, so that a request
-does not pay for them every time (ADR 0036):
+does not pay for them every time:
 
 | Setting | Default | What is reused | A change made on another instance applies |
 |---|---|---|---|

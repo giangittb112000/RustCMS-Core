@@ -119,7 +119,7 @@ Uploads and the media library: see [File storage](../digging-deeper/storage.md).
 | `auth.revoke_tokens_on_password_change` | `true`          |                                         |
 | `auth.attempts_per_identifier`       | `5`                | failed sign-ins per account+IP per minute |
 | `auth.attempts_per_ip`               | `30`               | failed sign-ins per IP per minute       |
-| `auth.permission_cache_ttl_secs`     | `30`               | upper bound; changes apply on the next request |
+| `auth.permission_cache_ttl_secs`     | `30`               | upper bound; changes apply on the next request of the instance that made them, within `permission_generation_cache_ms` on the others |
 | `auth.permission_generation_cache_ms` | `1000`            | 0–60,000: how long the RBAC counter is reused; other instances see a change within it (0: read every request) |
 | `auth.remember_days`                 | `30`               | "Remember me" keeps a session this long (0: no such box) |
 | `auth.password_reset`                | `false`            | "Forgot password?" (needs mail)         |

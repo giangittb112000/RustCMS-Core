@@ -101,6 +101,23 @@ pub(crate) fn api_router(router: Router<AppState>) -> Router<AppState> {
         .route("/api/v1/auth/jwt/logout", post(logout_jwt))
 }
 
+/// Runs `work` (a credential change that commits), then forgets this
+/// instance's cached reads (JWT sign-ins, grants): both run to the end even if
+/// the request is cancelled, and the eviction even when `work` fails (a lost
+/// COMMIT answer leaves its outcome unknown).
+async fn evicting<T: Send + 'static>(
+    auth: &AuthState,
+    work: impl std::future::Future<Output = AppResult<T>> + Send + 'static,
+) -> AppResult<T> {
+    let resolver = auth.resolver.clone();
+    let done = tokio::spawn(async move {
+        let result = work.await;
+        resolver.evict_all();
+        result
+    });
+    done.await.map_err(|e| AppError::internal(format!("credential task: {e}")))?
+}
+
 async fn api_not_found() -> AppError {
     AppError::NotFound
 }
@@ -347,16 +364,10 @@ async fn change_password(
     errors.into_result()?;
     let hash = auth.passwords.hash(input.password).await?;
     let audit = AuditContext::new(AuditActor::user(&current.principal), request);
-    let version = credentials::change_password(
-        app.db(),
-        &current.user,
-        hash,
-        auth.config.revoke_tokens_on_password_change,
-        &audit,
-    )
-    .await?;
+    let (db, user, revoke) = (app.db().clone(), current.user.clone(), auth.config.revoke_tokens_on_password_change);
     // Cached JWT sign-ins of this instance go at once (others within their period).
-    auth.resolver.evict_all();
+    let version =
+        evicting(&auth, async move { credentials::change_password(&db, &user, hash, revoke, &audit).await }).await?;
     session.restamp(version);
     Ok(StatusCode::NO_CONTENT)
 }
@@ -377,8 +388,8 @@ async fn logout_others(
     let auth = auth_state(&app)?;
     confirm_password(&auth, &current.user, input.password).await?;
     let audit = AuditContext::new(AuditActor::user(&current.principal), request);
-    let version = credentials::logout_everywhere(app.db(), &current.user, &audit).await?;
-    auth.resolver.evict_all();
+    let (db, user) = (app.db().clone(), current.user.clone());
+    let version = evicting(&auth, async move { credentials::logout_everywhere(&db, &user, &audit).await }).await?;
     session.restamp(version);
     Ok(StatusCode::NO_CONTENT)
 }
@@ -660,9 +671,12 @@ async fn use_token(
     let accept =
         crate::recovery::Accept { name: input.name, revoke_api_tokens: auth.config.revoke_tokens_on_password_change };
     // Every session and token of the user ends with it (their credential version moves).
-    crate::recovery::consume(app.db(), key, purpose, &input.token, &checked, hash, accept, request).await?;
     // The password changed: cached JWT sign-ins of this instance go at once.
-    auth.resolver.evict_all();
+    let (db, key, text) = (app.db().clone(), key.clone(), input.token.clone());
+    evicting(&auth, async move {
+        crate::recovery::consume(&db, &key, purpose, &text, &checked, hash, accept, request).await
+    })
+    .await?;
     Ok(StatusCode::NO_CONTENT)
 }
 

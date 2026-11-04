@@ -242,9 +242,8 @@ pub async fn rotate(
         // The revocation commits first: the log never holds it back. Recorded
         // once, when it ended a live family (later replays change nothing).
         let ended = revoke_family(&txn, &family.id, now).await?;
-        txn.commit().await?;
         // This instance forgets the family at once (others within their period).
-        auth.resolver.evict_all();
+        commit_and_evict(auth, txn).await?;
         if ended {
             let entry = AuditEntry::new("jwt.reuse_detected", "user")
                 .key(family.user_id)
@@ -271,8 +270,7 @@ pub async fn logout(auth: &AuthState, db: &DatabaseConnection, plain: &str, requ
     let txn = rustcms_core::db::begin_write(db).await?;
     let (_, family, _) = lock_all(&txn, token.id, &family.id, family.user_id).await?;
     let ended = revoke_family(&txn, &family.id, Utc::now()).await?;
-    txn.commit().await?;
-    auth.resolver.evict_all();
+    commit_and_evict(auth, txn).await?;
     if ended {
         audit(db, request, &family, "jwt.signed_out").await;
     }
@@ -307,15 +305,49 @@ pub async fn verify_access(auth: &AuthState, db: &DatabaseConnection, token: &st
 /// (`PermissionResolver::evict_all`: RBAC changes, sign-outs, password
 /// changes) forgets them too, loads in flight included.
 pub(crate) struct Sessions {
-    cache: moka::future::Cache<(String, u64), std::sync::Arc<(family::Model, user::Model)>>,
+    period: std::time::Duration,
+    cache: moka::future::Cache<(String, u64), Read>,
+}
+
+/// A sign-in as read, and when the read started.
+#[derive(Clone)]
+struct Read {
+    session: std::sync::Arc<(family::Model, user::Model)>,
+    started: std::time::Instant,
 }
 
 impl Sessions {
     /// `None` for a zero period: read on every request.
     pub(crate) fn new(period: std::time::Duration) -> Option<Self> {
-        (!period.is_zero())
-            .then(|| Self { cache: moka::future::Cache::builder().time_to_live(period).max_capacity(100_000).build() })
+        (!period.is_zero()).then(|| Self {
+            period,
+            cache: moka::future::Cache::builder().time_to_live(period).max_capacity(100_000).build(),
+        })
     }
+
+    /// A read still within the period, counted from when it started (the
+    /// cache's own time to live counts from the insertion, later).
+    async fn get(&self, key: &(String, u64)) -> Option<std::sync::Arc<(family::Model, user::Model)>> {
+        let read = self.cache.get(key).await?;
+        within(read.started, self.period).then_some(read.session)
+    }
+
+    /// Keeps `read` unless it is already too old, or a newer read is kept.
+    async fn keep(&self, key: (String, u64), read: Read) {
+        if !within(read.started, self.period) {
+            return;
+        }
+        if self.cache.get(&key).await.is_some_and(|kept| kept.started >= read.started) {
+            return;
+        }
+        self.cache.insert(key, read).await;
+    }
+}
+
+/// Whether a read started at `started` may still be used: the period counts
+/// from before its statement, whenever it was cached.
+fn within(started: std::time::Instant, period: std::time::Duration) -> bool {
+    started.elapsed() < period
 }
 
 /// The family `id` and its user, in one statement (no row: unknown family or
@@ -339,15 +371,31 @@ async fn session(
     let Some(sessions) = &auth.jwt_sessions else { return load().await };
     let generation = auth.resolver.local_generation();
     let key = (id.to_owned(), generation);
-    if let Some(found) = sessions.cache.get(&key).await {
+    if let Some(found) = sessions.get(&key).await {
         return Ok(found);
     }
+    // Timed from before the statement: a read is never kept longer than the
+    // period after it could have seen the database.
+    let started = std::time::Instant::now();
     let loaded = load().await?;
     // An eviction while it loaded: the read may predate the change.
     if auth.resolver.local_generation() == generation {
-        sessions.cache.insert(key, loaded.clone()).await;
+        sessions.keep(key, Read { session: loaded.clone(), started }).await;
     }
     Ok(loaded)
+}
+
+/// Commits `txn`, then forgets this instance's cached reads, both run to the
+/// end even if the request is cancelled meanwhile, and the eviction even when
+/// COMMIT fails (its outcome is then unknown), as `RbacService` does.
+pub(crate) async fn commit_and_evict(auth: &AuthState, txn: DatabaseTransaction) -> AppResult<()> {
+    let resolver = auth.resolver.clone();
+    let done = tokio::spawn(async move {
+        let result = txn.commit().await;
+        resolver.evict_all();
+        result
+    });
+    Ok(done.await.map_err(|e| AppError::internal(format!("commit task: {e}")))??)
 }
 
 /// Revokes every live family of `user_id` (inside the transaction that
@@ -390,6 +438,16 @@ pub async fn prune(db: &DatabaseConnection) -> AppResult<u64> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_read_counts_from_before_its_statement() {
+        let period = std::time::Duration::from_millis(200);
+        let now = std::time::Instant::now();
+        assert!(within(now, period));
+        // A load that stalled past the period is never served, however late it was cached.
+        let stalled = now.checked_sub(std::time::Duration::from_millis(250)).unwrap();
+        assert!(!within(stalled, period));
+    }
 
     #[test]
     fn refresh_tokens_are_parsed_strictly() {
