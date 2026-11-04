@@ -6,6 +6,8 @@ All notable changes are documented here. The format follows
 
 ## [Unreleased]
 
+## [0.12.1] — 2026-11-05
+
 ### Fixed
 - `rustcms new`: the application gets a `rustfmt.toml` (the framework's) and
   passes the `cargo fmt --check` of its own CI, whatever its name (crate

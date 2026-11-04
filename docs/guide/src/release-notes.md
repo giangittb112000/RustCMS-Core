@@ -1,7 +1,13 @@
 # Release notes
 
-RustCMS is in pre-release. The current version is **0.12.0**; 0.1.0-alpha.0
+RustCMS is in pre-release. The current version is **0.12.1**; 0.1.0-alpha.0
 was the first published one.
+
+## 0.12.1
+
+- A new application (`rustcms new`) passes the `cargo fmt --check` of its own
+  CI: it gets a `rustfmt.toml`, whatever its name
+  ([Directory structure](getting-started/directory-structure.md)).
 
 ## 0.12.0
 

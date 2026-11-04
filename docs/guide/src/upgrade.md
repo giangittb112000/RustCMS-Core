@@ -29,6 +29,15 @@
    To upgrade to another version than the command's, install that command
    first (`rustcms self-update --version vX.Y.Z`).
 
+## From 0.12.0 to 0.12.1
+
+No migration. To roll back, install 0.12.0 again.
+
+- Only new applications change. To format an existing one as new ones are,
+  copy [`rustfmt.toml`](https://github.com/irisvn/RustCMS-Core/blob/v0.12.1/rustfmt.toml)
+  to its root and run `cargo fmt`; generators find their markers wherever
+  they sit in the builder chains.
+
 ## From 0.11.0 to 0.12.0
 
 No migration. To roll back, install 0.11.0 again; no data changes shape.
