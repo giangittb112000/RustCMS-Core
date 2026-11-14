@@ -66,6 +66,7 @@ Reading it, in the demo's runtime branding:
 | Modifier | |
 |---|---|
 | `.required()`, `.nullable()`, `.max_length(n)`, `.max_items(n)` | rules |
+| `.min(n)`, `.max(n)`, `.step(n)` | an `integer` setting's range (checked on save) and the step of its input ([number bounds](forms.md#number-bounds)); the boot refuses them on other kinds, a default outside them, and other bounds on the page's form input |
 | `.label(…)`, `.help(…)`, `.placeholder(…)` | presentation |
 | `.email()`, `.url()` | the value's format |
 | `.accept(&[…])`, `.max_size(bytes)` | media settings |

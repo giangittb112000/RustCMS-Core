@@ -6,12 +6,12 @@ use std::collections::BTreeMap;
 
 use serde::Serialize;
 
-use crate::ui::{ColumnType, FilterType, FormWidth, InputType, LayoutType, SelectOption};
+use crate::ui::{ColumnType, FilterType, FormWidth, InputType, LayoutType, NumberBounds, SelectOption};
 
 /// Version of the schema structure.
 pub const SCHEMA_VERSION: u32 = 2;
 /// Version of the component, column and filter vocabulary.
-pub const VOCABULARY_VERSION: u32 = 11;
+pub const VOCABULARY_VERSION: u32 = 12;
 
 /// Navigation entry and identity of a resource.
 #[derive(Debug, Clone, PartialEq, Serialize)]
@@ -176,6 +176,11 @@ pub struct InputSchema {
     #[cfg_attr(feature = "ts", ts(optional))]
     #[serde(skip_serializing_if = "Option::is_none")]
     pub suffix: Option<String>,
+    /// Bounds and step of a number input (vocabulary 12); `min` and `max`
+    /// are checked again by the server on every client write.
+    #[cfg_attr(feature = "ts", ts(optional))]
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub number: Option<NumberBounds>,
 }
 
 /// The changes a `belongs_to_many` input may send (checked again by the

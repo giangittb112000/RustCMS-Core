@@ -58,7 +58,7 @@ impl SettingsPage for GeneralSettings {
             SettingField::text("site_name").required().max_length(20),
             SettingField::text("motto").nullable(),
             SettingField::boolean("open"),
-            SettingField::integer("class_size").help("Learners per class"),
+            SettingField::integer("class_size").help("Learners per class").max(200).step(5),
             SettingField::select("level", [("basic", "Basic"), ("advanced", "Advanced")]),
             SettingField::key_value("links").max_items(3),
             SettingField::date("starts").nullable(),

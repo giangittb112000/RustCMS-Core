@@ -16,6 +16,7 @@ mod resource;
 mod scaffold;
 mod self_update;
 mod upgrade;
+mod watch;
 
 use std::path::PathBuf;
 use std::process::ExitCode;
@@ -177,7 +178,8 @@ enum Command {
     /// Print the command reference as Markdown
     #[command(name = "docs:cli")]
     DocsCli,
-    /// Any other command runs in the application (`serve`, `migrate`, `key:generate`, …)
+    /// Any other command runs in the application (`serve`, `migrate`, `key:generate`, …);
+    /// `serve --watch` rebuilds and restarts the server when the application's files change
     #[command(external_subcommand)]
     App(Vec<String>),
 }
@@ -243,7 +245,14 @@ fn main() -> ExitCode {
             print!("{}", docs::markdown(&Cli::command(), &runtime, &auth, &admin));
             Ok(ExitCode::SUCCESS)
         }
-        Command::App(args) => project::Project::find().and_then(|p| p.forward(&args)),
+        Command::App(args) => project::Project::find().and_then(|p| match args.split_first() {
+            // `serve --watch`: this CLI rebuilds and restarts the server; the rest goes to
+            // `serve`. After `--`, arguments belong to the application, `--watch` too.
+            Some((command, rest)) if command == "serve" && watch::requested(rest) => {
+                watch::run(&p, &watch::without_flag(rest))
+            }
+            _ => p.forward(&args),
+        }),
     };
     match result {
         Ok(code) => code,

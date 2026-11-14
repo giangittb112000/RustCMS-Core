@@ -45,6 +45,8 @@ export const en = {
   "issue.timestamp": "must be an RFC 3339 timestamp",
   "issue.out_of_range": "is out of range",
   "issue.between": "must be between 1 and {max}",
+  "issue.min_value": "must be at least {min}",
+  "issue.max_value": "may not be greater than {max}",
   "issue.email": "must be a valid email address",
   "issue.control_characters": "may not contain control characters",
   "issue.name_format": "must be at most {max} characters, without control characters",

@@ -81,15 +81,16 @@ export function RecordHistory({ slug, recordKey }: { slug: string; recordKey: st
   const history = useHistory(slug, recordKey, open);
   const entries = history.data?.pages.flatMap((p) => p.data) ?? [];
   return (
-    <Card className="min-w-0">
-      <CardHeader className="flex flex-row items-center justify-between gap-3">
+    <Card className="min-w-0 overflow-hidden">
+      {/* Padded below: when closed the header is all the card holds. */}
+      <CardHeader className="flex flex-row flex-wrap items-center justify-between gap-3 pb-5">
         <CardTitle>{t("audit.history")}</CardTitle>
         <Button variant="outline" size="sm" aria-expanded={open} onClick={() => setOpen(!open)}>
           {open ? t("audit.hideHistory") : t("audit.showHistory")}
         </Button>
       </CardHeader>
       {open && (
-        <CardContent className="p-0">
+        <CardContent className="border-t border-border p-0">
           {history.isLoading ? <Loading /> : history.error && !history.data ? <ErrorState error={history.error} /> : (
             <AuditEntries entries={entries} showSubject={false} />
           )}

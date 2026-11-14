@@ -44,6 +44,8 @@ export const vi: Record<keyof typeof en, string> = {
   "issue.timestamp": "phải là thời điểm RFC 3339",
   "issue.out_of_range": "nằm ngoài khoảng cho phép",
   "issue.between": "phải từ 1 đến {max}",
+  "issue.min_value": "phải lớn hơn hoặc bằng {min}",
+  "issue.max_value": "không được lớn hơn {max}",
   "issue.email": "phải là địa chỉ email hợp lệ",
   "issue.control_characters": "không được chứa ký tự điều khiển",
   "issue.name_format": "tối đa {max} ký tự, không chứa ký tự điều khiển",

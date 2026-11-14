@@ -158,6 +158,24 @@ command's own names (`new`, `make:*`, `doctor`, `upgrade`, `self-update`,
 application. Once built, the binary takes the same commands: `./blog migrate`,
 `./blog serve`. Every command is listed in the [CLI reference](../reference/cli.md).
 
+### Rebuilding on changes
+
+```sh
+rustcms serve --watch
+```
+
+`rustcms serve --watch` builds and starts the server, then watches `src/`,
+`config/`, `lang/`, `resources/`, `Cargo.toml`, `Cargo.lock`, `build.rs` and
+`.env`. When one of them changes, it rebuilds; if the build succeeds, it stops
+the running server (as on a deploy: it finishes its requests) and starts the
+new one. A build that fails leaves the previous server running, and the next
+change tries again. Other options go to `serve` (`rustcms serve --watch
+--api-only`; after `--`, arguments go to the application as written). Admin sessions live in the database, so a reload of the page
+after a restart keeps you signed in.
+
+It is a development tool: a Rust server cannot swap code while it runs, so
+each change costs a build. `target/` and `node_modules/` are not watched.
+
 ## Your first resource
 
 ```sh

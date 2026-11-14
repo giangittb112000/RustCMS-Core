@@ -138,6 +138,7 @@ impl<R: Resource> ResourceAdapter<R> {
                     links: None,
                     prefix: None,
                     suffix: None,
+                    number: None,
                 })
             })
             .collect();
@@ -160,6 +161,7 @@ fn canonical(
         key_value: None,
         rich_text: false,
         options: (!options.is_empty()).then_some(Options::One { values: &options, scale: None }),
+        bounds: None,
     };
     // A key may be written as a number (`12`) or text (`"12"`).
     let value = match (field.belongs_to, value) {

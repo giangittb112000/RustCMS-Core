@@ -129,6 +129,7 @@ impl<R: Resource> ResourceAdapter<R> {
                 key_value: None,
                 rich_text: false,
                 options: None,
+                bounds: None,
             };
             check_input(name, &rule, value, &mut errors);
         }

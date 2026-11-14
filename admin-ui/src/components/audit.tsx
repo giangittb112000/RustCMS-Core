@@ -64,7 +64,7 @@ function Entry({ entry, showSubject }: { entry: AuditEntryView; showSubject: boo
       : entry.actor.kind === "system" ? t("audit.system") : t("audit.guest");
   const details = entry.changes || entry.meta || entry.ip || entry.userAgent || entry.requestId;
   return (
-    <li className="border-b border-border px-4 py-3 last:border-0">
+    <li className="border-b border-border px-5 py-3 last:border-0">
       <div className="flex min-w-0 flex-wrap items-center gap-x-3 gap-y-1 text-sm">
         {details ? (
           <Button variant="ghost" size="icon" className="size-6" aria-expanded={open} aria-label={open ? t("audit.hide") : t("audit.show")} onClick={() => setOpen(!open)}>

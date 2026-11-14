@@ -200,6 +200,25 @@ impl SettingField {
         self
     }
 
+    /// Smallest value of an integer setting (checked on save; the boot
+    /// refuses bounds on other kinds, `min` above `max`, a default outside).
+    pub fn min(mut self, value: impl Into<f64>) -> Self {
+        self.input = self.input.min(value);
+        self
+    }
+
+    /// Largest value of an integer setting (checked on save).
+    pub fn max(mut self, value: impl Into<f64>) -> Self {
+        self.input = self.input.max(value);
+        self
+    }
+
+    /// Step of an integer setting's arrows and keyboard (a hint, not checked).
+    pub fn step(mut self, value: impl Into<f64>) -> Self {
+        self.input = self.input.step(value);
+        self
+    }
+
     /// Longest text, in characters (for key/value: of each value).
     pub fn max_length(mut self, max: usize) -> Self {
         match &mut self.key_value {
@@ -270,6 +289,7 @@ impl SettingField {
             key_value: self.key_value,
             rich_text: false,
             options: None,
+            bounds: self.input.number.as_deref().map(|&range| crate::engine::validate::Bounds::new(range, None)),
         }
     }
 
@@ -463,14 +483,31 @@ impl<T: SettingsPage> SettingsAdapter<T> {
                 (true, _) => panic!("settings `{group}`: `{name}` is nullable, so its type must be an `Option`"),
                 (false, _) => panic!("settings `{group}`: `{name}` accepts `null`: declare it `.nullable()`"),
             }
-            let mut errors = ValidationErrors::new();
+            if let Some(range) = field.input.number.as_deref() {
+                assert!(
+                    field.kind == SettingKind::Integer,
+                    "settings `{group}`: `min`, `max` and `step` are for integer settings (`{name}`)"
+                );
+                crate::engine::validate::check_bounds(
+                    &format!("settings `{group}`"),
+                    name,
+                    range,
+                    field.kind.value_kind(),
+                );
+            }
+            // The default fits its kind, then its bounds (each with its own message).
+            let fits = |rule: &InputRule<'_>| {
+                let mut errors = ValidationErrors::new();
+                crate::engine::validate::check_input(name, rule, &defaults[name], &mut errors);
+                errors.is_empty()
+            };
             let rule = InputRule { required: false, ..field.rule() };
-            crate::engine::validate::check_input(name, &rule, &defaults[name], &mut errors);
             assert!(
-                errors.is_empty(),
+                fits(&InputRule { bounds: None, ..rule }),
                 "settings `{group}`: the default of `{name}` does not fit its kind ({:?})",
                 field.kind
             );
+            assert!(fits(&rule), "settings `{group}`: the default of `{name}` is outside its `min` and `max`");
             // A default is never checked against the library: no file by default.
             if field.media.is_some() {
                 assert!(
@@ -491,6 +528,14 @@ impl<T: SettingsPage> SettingsAdapter<T> {
             let compatible = input.kind == field.kind.input_type()
                 || (field.kind == SettingKind::Text && input.kind == InputType::Textarea);
             assert!(compatible, "settings `{group}`: input `{}` does not match its field's kind", input.name);
+            // One range: the field's bounds are the ones shown and checked.
+            if let Some(range) = input.number.as_deref() {
+                assert!(
+                    field.input.number.as_deref() == Some(range),
+                    "settings `{group}`: input `{}` has other bounds than its field (declare them on the SettingField)",
+                    input.name
+                );
+            }
             // One set of values: what the form offers is what the server accepts.
             if !input.options.is_empty() {
                 let shown: BTreeSet<String> = input.options.iter().map(|o| o.value.to_string()).collect();

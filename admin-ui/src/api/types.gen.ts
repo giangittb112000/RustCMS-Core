@@ -24,6 +24,20 @@ value: JsonValue,
  */
 label: string, };
 
+export type NumberBounds = { 
+/**
+ * Smallest value a client may write.
+ */
+min?: number, 
+/**
+ * Largest value a client may write.
+ */
+max?: number, 
+/**
+ * Increment of the input's arrows and keyboard (a hint, not checked).
+ */
+step?: number, };
+
 export type ResourceInfo = { 
 /**
  * URL slug.
@@ -276,7 +290,12 @@ prefix?: string,
 /**
  * Fixed text shown inside the input after the value (text inputs, vocabulary 11).
  */
-suffix?: string, };
+suffix?: string, 
+/**
+ * Bounds and step of a number input (vocabulary 12); `min` and `max`
+ * are checked again by the server on every client write.
+ */
+number?: NumberBounds, };
 
 export type LayoutSchema = { 
 /**

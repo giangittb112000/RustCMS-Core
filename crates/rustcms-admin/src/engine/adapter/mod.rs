@@ -91,6 +91,8 @@ pub(crate) struct ResourceAdapter<R: Resource> {
     secrets: HashMap<String, secrets::SecretField>,
     /// Static options of selects and checkbox lists, by field.
     static_options: HashMap<String, input::FieldOptions>,
+    /// Bounds of number inputs, by field.
+    number_bounds: HashMap<String, crate::engine::validate::Bounds>,
     table_ui: Table,
     limits: Limits,
     _resource: PhantomData<fn() -> R>,
@@ -278,6 +280,7 @@ impl<R: Resource> ResourceAdapter<R> {
         }
         check_form_layout(&format!("resource `{slug}`"), &form);
         let static_options = input::static_options(slug, &mut form, &fields, &columns);
+        let number_bounds = input::number_bounds(slug, &form, &columns);
         for input in form.inputs().into_iter().filter(|i| i.kind == InputType::Custom) {
             let widget = input.widget.as_deref().unwrap_or_default();
             assert!(crate::ui::valid_widget(widget), "resource `{slug}`: invalid widget name `{widget}`");
@@ -396,6 +399,7 @@ impl<R: Resource> ResourceAdapter<R> {
             key_values,
             secrets,
             static_options,
+            number_bounds,
             table_ui,
             limits: Limits::default(),
             _resource: PhantomData,

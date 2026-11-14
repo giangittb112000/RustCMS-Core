@@ -230,6 +230,7 @@ impl<R: Resource> ResourceAdapter<R> {
             // Shown as written (`/posts/`, `.html`): not translated.
             prefix: input.prefix.clone(),
             suffix: input.suffix.clone(),
+            number: input.number.as_deref().copied(),
         })
     }
 
@@ -297,6 +298,7 @@ impl<R: Resource> ResourceAdapter<R> {
             links: Some(links),
             prefix: None,
             suffix: None,
+            number: None,
         })
     }
 
@@ -468,5 +470,6 @@ fn pivot_input_schema(
         links: None,
         prefix: None,
         suffix: None,
+        number: None,
     }
 }

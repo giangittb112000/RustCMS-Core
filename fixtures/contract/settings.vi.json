@@ -67,6 +67,10 @@
         "label": "Class size",
         "name": "class_size",
         "nullable": false,
+        "number": {
+          "max": 200.0,
+          "step": 5.0
+        },
         "rules": [],
         "type": "number_input",
         "valueType": "i32"
@@ -152,5 +156,5 @@
     "smtp_password": "unset"
   },
   "version": "0",
-  "vocabularyVersion": 11
+  "vocabularyVersion": 12
 }

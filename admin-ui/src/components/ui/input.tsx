@@ -27,10 +27,13 @@ export function Textarea({ className, ...props }: React.ComponentProps<"textarea
 
 /** Native select: Radix Select injects an inline <style>, which the panel's CSP forbids. */
 export function NativeSelect({ className, ...props }: React.ComponentProps<"select">) {
+  // A list box (multiple, or several rows shown) has no arrow to draw.
+  const listBox = Boolean(props.multiple) || Number(props.size ?? 1) > 1;
   return (
     <select
       className={cn(
-        "flex h-10 min-w-0 w-full rounded-md border border-input bg-card px-3 py-1 text-sm shadow-xs focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-60 aria-invalid:border-destructive",
+        "flex h-10 min-w-0 w-full rounded-md border border-input bg-card py-1 text-sm shadow-xs focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-60 aria-invalid:border-destructive",
+        listBox ? "px-3" : "admin-select pl-3 pr-9",
         className,
       )}
       {...props}

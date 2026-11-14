@@ -2,6 +2,7 @@
 //! claims and database errors mapped to field errors.
 
 use super::*;
+use crate::engine::validate::Bounds;
 
 impl<R: Resource> ResourceAdapter<R> {
     /// The idempotency claim of a create (through a relation: of that parent).
@@ -38,6 +39,7 @@ impl<R: Resource> ResourceAdapter<R> {
             key_value: self.key_values.get(name).copied(),
             rich_text: field.is_some_and(|f| f.rich_text),
             options: None,
+            bounds: None,
         }
     }
 
@@ -72,9 +74,10 @@ impl<R: Resource> ResourceAdapter<R> {
                 secrets::check_operation(name, kind, op, nullable, value, &mut errors);
                 continue;
             }
-            // Static options bound client input only: hooks may write any value.
+            // Static options and number bounds bound client input only: hooks may write any value.
             let options = self.input_options(name);
-            let rule = InputRule { options, ..self.rule(name, field.required) };
+            let bounds = self.number_bounds.get(name).copied();
+            let rule = InputRule { options, bounds, ..self.rule(name, field.required) };
             if check_input(name, &rule, value, &mut errors)
                 && !value.is_null()
                 && let Some(Options::One { scale, .. }) = options
@@ -279,6 +282,46 @@ pub(super) fn static_options<C: ColumnTrait>(
             "resource `{slug}`: field `{name}` appears in several inputs that do not offer the same options"
         );
         out.insert(name, first);
+    }
+    out
+}
+
+/// The bounds client writes must respect, by field: from the number inputs of
+/// `form` with `min`, `max` or `step`, with the scale of decimal columns.
+/// Panics on declarations that cannot hold: bounds on another input or a
+/// non-number column, `min` above `max`, a step that is not positive, or a
+/// field whose inputs disagree.
+pub(super) fn number_bounds<C: ColumnTrait>(
+    slug: &str,
+    form: &Form,
+    columns: &HashMap<String, ColumnInfo<C>>,
+) -> HashMap<String, Bounds> {
+    let mut out: HashMap<String, Bounds> = HashMap::new();
+    let context = format!("resource `{slug}`");
+    for input in form.inputs() {
+        let Some(range) = input.number.as_deref().copied() else { continue };
+        let name = &input.name;
+        assert!(
+            input.kind == InputType::NumberInput,
+            "resource `{slug}`: `min`, `max` and `step` are for number inputs (`{name}`)"
+        );
+        let column = columns.get(name);
+        assert!(
+            column.is_some_and(|c| matches!(
+                c.kind,
+                FieldKind::I32 | FieldKind::I64 | FieldKind::F64 | FieldKind::Decimal
+            )),
+            "resource `{slug}`: number input `{name}` with bounds needs a number column"
+        );
+        let column = column.expect("a number column");
+        crate::engine::validate::check_bounds(&context, name, &range, column.kind);
+        let scale = crate::wire::decimal_scale(column.column.def().get_column_type());
+        if let Some(previous) = out.insert(name.clone(), Bounds::new(range, scale)) {
+            assert!(
+                previous.range == range,
+                "resource `{slug}`: field `{name}` appears in several inputs that do not have the same bounds"
+            );
+        }
     }
     out
 }
