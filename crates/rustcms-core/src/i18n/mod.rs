@@ -12,7 +12,7 @@ mod catalog;
 mod issues;
 
 pub use catalog::{Tr, Translator};
-pub use issues::{CUSTOM, Issue, TEMPLATES};
+pub use issues::{CUSTOM, Issue, TEMPLATES, is_number};
 
 /// The locale to use: `preferred` (a user's saved choice) when supported, else
 /// the best supported `Accept-Language` entry, else `default`.

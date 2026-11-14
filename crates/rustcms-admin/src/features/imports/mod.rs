@@ -113,12 +113,13 @@ pub struct RowIssue {
 }
 
 impl RowIssue {
-    /// Only known messages whose placeholders are numbers (limits) are kept:
-    /// others (a hook's text, a value of the file quoted back) are `is invalid`.
+    /// Only known messages whose placeholders are numbers (limits, number
+    /// bounds such as `-2` or `0.5`) are kept: others (a hook's text, a value
+    /// of the file quoted back) are `is invalid`.
     fn new(row: u32, field: Option<String>, message: &str) -> Self {
         let issue = rustcms_core::i18n::Issue::of(message);
-        let safe = issue.code != rustcms_core::i18n::CUSTOM
-            && issue.params.values().all(|v| !v.is_empty() && v.bytes().all(|b| b.is_ascii_digit()));
+        let safe =
+            issue.code != rustcms_core::i18n::CUSTOM && issue.params.values().all(|v| rustcms_core::i18n::is_number(v));
         if !safe {
             return Self::new(row, field, "is invalid");
         }
@@ -909,6 +910,18 @@ pub async fn prune(db: &sea_orm::DatabaseConnection, storage: &dyn Storage) -> A
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn row_issues_keep_numeric_limits_only() {
+        for message in ["may not be longer than 20 characters", "must be at least -2", "may not be greater than 0.5"] {
+            assert_eq!(RowIssue::new(2, None, message).message, message);
+        }
+        // An application's text, or a file's value quoted back: never shown as written.
+        for message in ["must be at least 18 years old", "cannot sort by `secret`", "Alice is not allowed here"] {
+            let issue = RowIssue::new(2, None, message);
+            assert_eq!((issue.message.as_str(), issue.code.as_str()), ("is invalid", "invalid"), "{message}");
+        }
+    }
 
     fn cells(rows: &[Vec<Cell>]) -> Vec<Vec<(&str, bool)>> {
         rows.iter().map(|r| r.iter().map(|c| (c.text.as_str(), c.quoted)).collect()).collect()

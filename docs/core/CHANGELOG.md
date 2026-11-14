@@ -22,6 +22,9 @@ All notable changes are documented here. The format follows
 - Validation issues: `{min}`, `{max}` and `{bytes}` placeholders only match
   numbers, so an application's message such as "must be at least 18 years
   old" stays `custom`.
+- CSV import reports keep messages whose numbers are negative or decimal
+  (`must be at least 0.5`) instead of showing `is invalid`; other text is
+  still never quoted back.
 
 ### Fixed
 - Admin panel: a record's History card had no space under its "Show history"
