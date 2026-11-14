@@ -36,11 +36,23 @@ pub struct Layout {
     pub(crate) compact: bool,
     /// Splits: the aside first on narrow screens.
     pub(crate) aside_first: bool,
+    /// When the layout and everything in it are shown (ADR 0037).
+    pub(crate) shown_when: Option<Box<super::Condition>>,
 }
 
 impl Layout {
     fn of(kind: LayoutType, id: Option<String>, label: Option<String>, columns: u8) -> Self {
-        Self { kind, id, label, columns, children: Vec::new(), collapsed: None, compact: false, aside_first: false }
+        Self {
+            kind,
+            id,
+            label,
+            columns,
+            children: Vec::new(),
+            collapsed: None,
+            compact: false,
+            aside_first: false,
+            shown_when: None,
+        }
     }
 
     /// Number of columns.
@@ -60,6 +72,13 @@ impl Layout {
     /// opens by itself when one of its inputs has an error. Sections only.
     pub fn collapsible(mut self, collapsed: bool) -> Self {
         self.collapsed = Some(collapsed);
+        self
+    }
+
+    /// Shows the layout, and everything in it, only when `condition` holds
+    /// (ADR 0037); see [`Input::shown_when`](super::Input::shown_when).
+    pub fn shown_when(mut self, condition: super::Condition) -> Self {
+        self.shown_when = Some(Box::new(condition));
         self
     }
 

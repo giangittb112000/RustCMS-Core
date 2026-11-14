@@ -191,13 +191,10 @@ impl<R: Resource> DynResource for ResourceAdapter<R> {
     }
 
     async fn lookup(&self, ctx: &Ctx, search: Option<&str>, keys: &[String]) -> AppResult<Vec<(String, String)>> {
-        let Some(title) = &self.meta.title_field else { return Ok(Vec::new()) };
-        if !self.field(title).is_some_and(|f| f.can_read(ctx))
-            || !self.policy.allows(ctx, ability::VIEW_ANY, None).await
-        {
+        let Some(title) = self.readable_title(ctx) else { return Ok(Vec::new()) };
+        if !self.policy.allows(ctx, ability::VIEW_ANY, None).await {
             return Ok(Vec::new());
         }
-        let title_column = self.column(title).column;
         let mut select = self.base(ctx, Trashed::Without);
         if !keys.is_empty() {
             select = select.filter(self.pk.is_in(self.decode_keys(keys)?));
@@ -205,19 +202,35 @@ impl<R: Resource> DynResource for ResourceAdapter<R> {
             if search.chars().count() > self.limits.search_len {
                 return Err(ValidationErrors::field("search", "is too long").into());
             }
-            let pattern = format!("%{}%", escape_like(search));
-            let kind = self.column(title).kind;
-            select = select.filter(search_match(ctx.db.get_database_backend(), title_column, kind, &pattern));
+            // Each word matches a field of the title (ADR 0038): "Math 10"
+            // finds "Math (grade 10)". One word: as before.
+            let backend = ctx.db.get_database_backend();
+            let mut matches = sea_orm::Condition::all();
+            for word in search.split_whitespace() {
+                let pattern = format!("%{}%", escape_like(word));
+                let mut any = sea_orm::Condition::any();
+                for field in title.fields() {
+                    let column = self.column(field);
+                    any = any.add(search_match(backend, column.column, column.kind, &pattern));
+                }
+                matches = matches.add(any);
+            }
+            select = select.filter(matches);
         }
         // The policy may deny records the scope lets through: read in stable
         // batches until enough authorized options are found (bounded work).
-        let select = select.order_by(title_column, Order::Asc).order_by(self.pk, Order::Asc);
+        for field in title.fields() {
+            select = select.order_by(self.column(field).column, Order::Asc);
+        }
+        let select = select.order_by(self.pk, Order::Asc);
         let (keys, complete) = self.read_candidate_keys(&ctx.db, &select, MAX_OPTIONS, MAX_OPTION_BATCHES).await?;
         let mut out = Vec::new();
         'chunks: for chunk in keys.chunks(LOAD_CHUNK) {
             for (model, record) in self.load_ordered(ctx, &select, chunk).await? {
                 if self.policy.allows(ctx, ability::VIEW, Some(&record)).await {
-                    out.push((self.key_of(&model), title_text(&record[title.as_str()])));
+                    let key = self.key_of(&model);
+                    let label = title.render(&record).unwrap_or_else(|| format!("#{key}"));
+                    out.push((key, label));
                     if out.len() as u64 == MAX_OPTIONS {
                         break 'chunks;
                     }
@@ -413,7 +426,9 @@ impl<R: Resource> DynResource for ResourceAdapter<R> {
             input.insert(field.clone(), value.clone());
         }
         // The usual rules apply to the bound key too (writable, typed, required).
-        let input = self.accept_input(&wctx, Operation::Create, input)?;
+        let mut input = self.accept_input(&wctx, Operation::Create, input)?;
+        // Conditions (ADR 0037) on the input and the columns' defaults.
+        self.apply_conditions(&wctx, Operation::Create, &mut input, None)?;
         let parents = self.lock_parents(&wctx, &txn, self.parent_of_data(&input).flatten()).await?;
         let data = R::mutate_before_create(&wctx, &txn, input).await?;
         self.check_parent_written(&wctx, &data, &parents)?;
@@ -490,6 +505,9 @@ impl<R: Resource> DynResource for ResourceAdapter<R> {
             .find_authorized_locked_moving(&wctx, &txn, key, ability::UPDATE, Trashed::Without, Some(&input))
             .await?;
         let before = self.audit_snapshot(&model);
+        // Conditions (ADR 0037) on the locked record merged with the input.
+        let mut input = input;
+        self.apply_conditions(&wctx, Operation::Update, &mut input, Some(&self.record(&model)))?;
         let data = R::mutate_before_update(&wctx, &txn, &model, input).await?;
         self.check_parent_written(&wctx, &data, &parents)?;
         self.check_written(&wctx, &txn, &data).await?;
@@ -698,18 +716,19 @@ impl<R: Resource> DynResource for ResourceAdapter<R> {
     }
 
     async fn titles(&self, ctx: &Ctx, keys: &[String]) -> AppResult<BTreeMap<String, String>> {
-        let Some(title) = &self.meta.title_field else {
+        let Some(title) = self.readable_title(ctx) else {
             return Ok(BTreeMap::new());
         };
-        if !self.field(title).is_some_and(|f| f.can_read(ctx))
-            || !self.policy.allows(ctx, ability::VIEW_ANY, None).await
-        {
+        if !self.policy.allows(ctx, ability::VIEW_ANY, None).await {
             return Ok(BTreeMap::new());
         }
         let mut out = BTreeMap::new();
         for (model, record) in self.models_in_scope(ctx, &ctx.db, keys).await? {
             if self.policy.allows(ctx, ability::VIEW, Some(&record)).await {
-                out.insert(self.key_of(&model), title_text(&record[title.as_str()]));
+                // No title (every field empty): the panel shows the key.
+                if let Some(text) = title.render(&record) {
+                    out.insert(self.key_of(&model), text);
+                }
             }
         }
         Ok(out)

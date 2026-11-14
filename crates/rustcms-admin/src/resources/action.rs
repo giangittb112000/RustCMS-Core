@@ -457,6 +457,14 @@ impl ActionField {
         self
     }
 
+    /// Asks for the field only when `condition` holds on the dialog's values
+    /// (ADR 0037): hidden, it reaches the handler as `null`, and `required`
+    /// applies only when shown.
+    pub fn shown_when(mut self, condition: crate::ui::Condition) -> Self {
+        self.input = self.input.shown_when(condition);
+        self
+    }
+
     /// Value used when the field is left out, in wire format (checked at boot).
     pub fn default(mut self, value: impl Into<serde_json::Value>) -> Self {
         self.default = Some(value.into());

@@ -14,7 +14,8 @@ impl<R: Resource> ResourceAdapter<R> {
                 vec![BTreeMap::new(); models.len()]
             }
         };
-        let title_readable = self.meta.title_field.as_ref().filter(|t| readable.iter().any(|f| &f.name == *t));
+        // Every field of the title readable, or no title (ADR 0038).
+        let title = self.title.as_ref().filter(|t| t.fields().all(|f| readable.iter().any(|r| r.name == f)));
         let mut out = Vec::with_capacity(models.len());
         for (model, labels) in models.iter().zip(labels) {
             let record = self.record(model);
@@ -42,7 +43,7 @@ impl<R: Resource> ResourceAdapter<R> {
             // only if the user may view the record; blind writes get key and abilities.
             out.push(Envelope {
                 key: self.key_of(model),
-                title: title_readable.filter(|_| viewable).map(|t| title_text(&record[t.as_str()])),
+                title: title.filter(|_| viewable).and_then(|t| t.render(&record)),
                 abilities,
                 data: if viewable {
                     let mut data: Data = readable

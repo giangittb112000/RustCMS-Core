@@ -19,7 +19,7 @@ import { cn } from "@/lib/utils";
 import { Components, ReadOnlyComponents, formWidthClass, gridCols } from "@/renderers/form";
 import { MEDIA_SLUG, MediaPreview } from "@/renderers/media-library";
 import { ActionNoticeView, RecordActions, useActionRunner } from "@/components/actions";
-import { type FormValues, defaultValues, inputsOf, payloadOf, protectLossyJson, relabel } from "@/schema/form";
+import { type FormValues, defaultValues, hiddenNames, inputsOf, payloadOf, protectLossyJson, relabel } from "@/schema/form";
 import { errorText, show, type Text, useLocale, useT } from "@/i18n";
 import { editResolver } from "@/schema/resolver";
 import type { PendingWrite } from "@/app/session";
@@ -114,7 +114,10 @@ function RecordForm({
   const blind = editing && !record;
   const touched = useRef(new Set<string>());
   const dirty = useRef<(name: string) => boolean>(() => true);
-  const resolver = useMemo(() => editResolver(inputs, editing, (name) => dirty.current(name)), [inputs, editing]);
+  const resolver = useMemo(
+    () => editResolver(inputs, editing, (name) => dirty.current(name), components),
+    [inputs, editing, components],
+  );
   const form = useForm<FormValues>({ defaultValues: defaultValues(inputs, record?.data), resolver });
   // Placeholders are not values: on create (database defaults apply to untouched
   // fields), on a blind edit, and for write-only inputs, only what the user
@@ -219,7 +222,8 @@ function RecordForm({
     setFormErrors(() => () => []);
     refused.current = null;
     const changed = Object.fromEntries(inputs.map((i) => [i.name, dirty.current(i.name)]));
-    const payload = payloadOf(inputs, values, changed);
+    // Inputs hidden by their conditions are never sent (ADR 0037).
+    const payload = payloadOf(inputs, values, changed, hiddenNames(components, values));
     // An untouched declared default goes out exactly as the server stated it
     // (no round trip through the input's text form).
     if (!editing) {

@@ -77,7 +77,10 @@ impl<R: Resource> ResourceAdapter<R> {
             // Static options and number bounds bound client input only: hooks may write any value.
             let options = self.input_options(name);
             let bounds = self.number_bounds.get(name).copied();
-            let rule = InputRule { options, bounds, ..self.rule(name, field.required) };
+            // Under a condition, `required` means "required when shown": checked once
+            // the resulting values are known (`apply_conditions`).
+            let required = field.required && !self.conditions.is_conditional(name);
+            let rule = InputRule { options, bounds, ..self.rule(name, required) };
             if check_input(name, &rule, value, &mut errors)
                 && !value.is_null()
                 && let Some(Options::One { scale, .. }) = options
@@ -87,7 +90,11 @@ impl<R: Resource> ResourceAdapter<R> {
             }
         }
         if op == Operation::Create {
-            for field in self.fields.iter().filter(|f| f.required && f.can_write(op, ctx)) {
+            for field in self
+                .fields
+                .iter()
+                .filter(|f| f.required && f.can_write(op, ctx) && !self.conditions.is_conditional(&f.name))
+            {
                 if !input.contains_key(&field.name) {
                     errors.add(field.name.as_str(), "is required");
                 }
@@ -97,6 +104,52 @@ impl<R: Resource> ResourceAdapter<R> {
         let mut input = input;
         input.extend(canonical);
         Ok(input)
+    }
+
+    /// Applies the form's conditions (ADR 0037) to accepted `input`, on the
+    /// resulting values: `stored` (the locked record of an update) or, on
+    /// create, the columns' declared defaults, merged with the input. Values
+    /// sent for hidden inputs are dropped (never stored); a hidden
+    /// `clear_when_hidden` input's field takes its cleared value (update);
+    /// a shown required field without a value is "required". Runs before
+    /// the hooks, which write what they decide.
+    pub(super) fn apply_conditions(
+        &self,
+        ctx: &Ctx,
+        op: Operation,
+        input: &mut Data,
+        stored: Option<&Data>,
+    ) -> AppResult<()> {
+        let mut conditional = self.conditions.conditional().peekable();
+        if conditional.peek().is_none() {
+            return Ok(());
+        }
+        let mut resulting = match stored {
+            Some(record) => record.clone(),
+            None => self.columns.iter().filter_map(|(name, c)| Some((name.clone(), c.default.clone()?))).collect(),
+        };
+        resulting.extend(input.iter().map(|(k, v)| (k.clone(), v.clone())));
+        let hidden = self.conditions.hidden(&resulting);
+        let mut errors = ValidationErrors::new();
+        for (name, clear) in conditional {
+            if hidden.contains(name) {
+                input.remove(name);
+                // Cleared only for a user who may write the field (the field rules hold).
+                if clear
+                    && op == Operation::Update
+                    && self.field(name).is_some_and(|f| f.can_write(op, ctx))
+                    && let Some(value) = self.columns.get(name).and_then(cleared_value)
+                    && resulting.get(name) != Some(&value)
+                {
+                    input.insert(name.to_owned(), value);
+                }
+            } else if self.field(name).is_some_and(|f| f.required && f.can_write(op, ctx))
+                && resulting.get(name).is_none_or(serde_json::Value::is_null)
+            {
+                errors.add(name, "is required");
+            }
+        }
+        errors.into_result()
     }
 
     /// Writes trusted data (validated input, possibly changed by hooks) into
@@ -324,6 +377,64 @@ pub(super) fn number_bounds<C: ColumnTrait>(
         }
     }
     out
+}
+
+/// The conditions of `form` (ADR 0037). Panics, besides the checks of
+/// [`FormConditions::new`](crate::engine::conditions::FormConditions::new),
+/// on a condition reading an encrypted field, an input under a condition
+/// whose column is not nullable and has no default (a create could not store
+/// it while hidden), or a `clear_when_hidden` input without a storable
+/// cleared value.
+pub(super) fn form_conditions<C: ColumnTrait>(
+    slug: &str,
+    form: &Form,
+    columns: &HashMap<String, ColumnInfo<C>>,
+    secrets: &HashMap<String, super::secrets::SecretField>,
+    fields: &[Field],
+) -> crate::engine::conditions::FormConditions {
+    let kind_of = |name: &str| {
+        let column = columns.get(name).filter(|_| !secrets.contains_key(name))?;
+        Some((column.kind, crate::wire::decimal_scale(column.column.def().get_column_type())))
+    };
+    let conditions =
+        crate::engine::conditions::FormConditions::new(&format!("resource `{slug}`"), &form.components, &kind_of);
+    for (name, clear) in conditions.conditional() {
+        let Some(column) = columns.get(name) else { continue };
+        // Encrypted values never reach the conditions (records hold them as null).
+        assert!(!secrets.contains_key(name), "resource `{slug}`: encrypted field `{name}` cannot have a condition");
+        // Clearing a key would move the record (scope, parent) after those were checked and locked.
+        assert!(
+            !clear || fields.iter().find(|f| f.name == name).is_none_or(|f| f.belongs_to.is_none()),
+            "resource `{slug}`: relationship field `{name}` cannot have `clear_when_hidden`"
+        );
+        assert!(
+            column.nullable || column.has_default,
+            "resource `{slug}`: input `{name}` has a condition but its column is not nullable and has no default \
+             (a record created while it is hidden could not be stored): declare a default or make it nullable"
+        );
+        assert!(
+            !clear || cleared_value(column).is_some(),
+            "resource `{slug}`: input `{name}` has `clear_when_hidden` but its column (not nullable, no declared \
+             default) has no empty value"
+        );
+    }
+    conditions
+}
+
+/// What `clear_when_hidden` writes: the declared default, else `null`, else
+/// an empty text or list.
+pub(super) fn cleared_value<C>(column: &ColumnInfo<C>) -> Option<serde_json::Value> {
+    if let Some(default) = &column.default {
+        Some(default.clone())
+    } else if column.nullable {
+        Some(serde_json::Value::Null)
+    } else {
+        match column.kind {
+            FieldKind::String => Some(serde_json::Value::String(String::new())),
+            FieldKind::Json => Some(serde_json::Value::Array(Vec::new())),
+            _ => None,
+        }
+    }
 }
 
 /// Whether the column stores `canonical` (a select option in canonical form)

@@ -170,9 +170,12 @@ A form can mix field kinds:
 | `belongs_to(field, target)` | the key of a record of `target` the user may view, as text (`"12"`, a UUID) |
 
 Every field takes `.label(…)` (default: the name in words), `.help(…)`,
-`.placeholder(…)`, `.required()`, `.max_length(n)` and `.default(value)`.
+`.placeholder(…)`, `.required()`, `.max_length(n)`, `.default(value)` and
+`.shown_when(condition)` ([conditions](forms.md#showing-inputs-under-conditions):
+`ActionField::text("reason").required().shown_when(when("verdict").eq("other"))`).
 `data` holds every field of the form: fields left empty are `null`
-(`.required()` refuses that), or their `.default(…)`. The server checks the
+(`.required()` refuses that), or their `.default(…)`; a field hidden by its
+condition is `null`, whatever was sent, and is not required. The server checks the
 form in this order:
 
 1. The user may run the action at all (`requires_permission`, then the

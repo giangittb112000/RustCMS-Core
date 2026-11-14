@@ -45,10 +45,10 @@ pub use resource::{
 };
 pub use schema::{ResourceInfo, ResourceSchema, SchemaOperation};
 pub use ui::{
-    BadgeColumn, BelongsToManySelect, BooleanColumn, Breakpoint, Checkbox, CheckboxList, CustomInput, DateColumn,
-    DatePicker, DateRangeFilter, DateTimePicker, FileUpload, Form, FormWidth, Grid, Hidden, KeyValue, NumberInput,
-    RichEditor, SecretInput, SecretMapInput, Section, SelectFilter, SelectInput, Split, Tab, Table, Tabs,
-    TernaryFilter, TextColumn, TextInput, Textarea, Toggle,
+    BadgeColumn, BelongsToManySelect, BooleanColumn, Breakpoint, Checkbox, CheckboxList, Condition, CustomInput,
+    DateColumn, DatePicker, DateRangeFilter, DateTimePicker, FileUpload, Form, FormWidth, Grid, Hidden, KeyValue,
+    NumberInput, RichEditor, SecretInput, SecretMapInput, Section, SelectFilter, SelectInput, Split, Tab, Table, Tabs,
+    TernaryFilter, TextColumn, TextInput, Textarea, Toggle, When, when,
 };
 
 /// A JSON object in wire format (input, hook data, trusted records).

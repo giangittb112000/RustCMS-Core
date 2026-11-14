@@ -83,6 +83,8 @@ pub(crate) struct ResourceAdapter<R: Resource> {
     soft: Option<(Column<R>, String, FieldKind)>,
     policy: Arc<dyn Policy>,
     actions: Vec<Action<Entity<R>>>,
+    /// Conditions of each action's form, by action name (ADR 0037).
+    action_conditions: HashMap<&'static str, crate::engine::conditions::FormConditions>,
     relations: Vec<Relation>,
     form: Form,
     /// Key/value fields: most pairs and longest value.
@@ -93,6 +95,10 @@ pub(crate) struct ResourceAdapter<R: Resource> {
     static_options: HashMap<String, input::FieldOptions>,
     /// Bounds of number inputs, by field.
     number_bounds: HashMap<String, crate::engine::validate::Bounds>,
+    /// Conditions under which inputs are shown (ADR 0037).
+    conditions: crate::engine::conditions::FormConditions,
+    /// The record title (ADR 0038).
+    title: Option<crate::engine::title::TitleTemplate>,
     table_ui: Table,
     limits: Limits,
     _resource: PhantomData<fn() -> R>,
@@ -150,8 +156,12 @@ impl<R: Resource> ResourceAdapter<R> {
             "resource `{slug}`: the primary key identifies records in the audit log and cannot be \
              `.audit_redact()`; use an opaque key or `ResourceMeta::audit(false)`"
         );
-        if let Some(title) = &meta.title_field {
-            assert!(seen.contains(title.as_str()), "resource `{slug}`: title field `{title}` is not a field");
+        let title = meta.title.as_deref().map(|template| {
+            crate::engine::title::TitleTemplate::parse(template)
+                .unwrap_or_else(|e| panic!("resource `{slug}`: the title `{template}` {e}"))
+        });
+        for name in title.iter().flat_map(|t| t.fields()) {
+            assert!(seen.contains(name), "resource `{slug}`: title field `{name}` is not a field");
         }
         let soft = meta.soft_delete.as_deref().map(|name| {
             let info = columns
@@ -200,7 +210,7 @@ impl<R: Resource> ResourceAdapter<R> {
                     && field.media.is_none()
                     && !field.rich_text
                     && name != pk_name
-                    && meta.title_field.as_deref() != Some(name)
+                    && !title.iter().flat_map(|t| t.fields()).any(|f| f == name)
                     && meta.import_key.as_deref() != Some(name)
                     && !meta.constraints.iter().any(|c| c.columns.iter().any(|col| col == name)),
                 "resource `{slug}`: encrypted field `{name}` cannot be a key, a title, a relation, media, rich \
@@ -281,6 +291,7 @@ impl<R: Resource> ResourceAdapter<R> {
         check_form_layout(&format!("resource `{slug}`"), &form);
         let static_options = input::static_options(slug, &mut form, &fields, &columns);
         let number_bounds = input::number_bounds(slug, &form, &columns);
+        let conditions = input::form_conditions(slug, &form, &columns, &secrets, &fields);
         for input in form.inputs().into_iter().filter(|i| i.kind == InputType::Custom) {
             let widget = input.widget.as_deref().unwrap_or_default();
             assert!(crate::ui::valid_widget(widget), "resource `{slug}`: invalid widget name `{widget}`");
@@ -361,6 +372,7 @@ impl<R: Resource> ResourceAdapter<R> {
         }
         let actions = R::actions();
         let mut action_names = HashSet::new();
+        let mut action_conditions = HashMap::new();
         for action in &actions {
             assert!(action_names.insert(action.name), "resource `{slug}`: action `{}` declared twice", action.name);
             assert!(action.name.len() <= 57, "resource `{slug}`: action `{}` is longer than 57 bytes", action.name);
@@ -381,6 +393,7 @@ impl<R: Resource> ResourceAdapter<R> {
                 action.name
             );
             action_form::check_action_form(slug, action.name, &action.form);
+            action_conditions.insert(action.name, action_form::form_conditions(slug, action.name, &action.form));
         }
 
         Self {
@@ -400,6 +413,9 @@ impl<R: Resource> ResourceAdapter<R> {
             secrets,
             static_options,
             number_bounds,
+            conditions,
+            action_conditions,
+            title,
             table_ui,
             limits: Limits::default(),
             _resource: PhantomData,
@@ -430,6 +446,12 @@ impl<R: Resource> ResourceAdapter<R> {
                 (c.as_str().to_owned(), value)
             })
             .collect()
+    }
+
+    /// The title template, when the user of `ctx` may read every field of it
+    /// (ADR 0038: otherwise no title).
+    fn readable_title(&self, ctx: &Ctx) -> Option<&crate::engine::title::TitleTemplate> {
+        self.title.as_ref().filter(|t| t.fields().all(|f| self.field(f).is_some_and(|f| f.can_read(ctx))))
     }
 
     /// The encrypted columns of this resource (for `key:reencrypt`).
@@ -620,10 +642,6 @@ fn auto_columns<C>(fields: &[Field], columns: &HashMap<String, ColumnInfo<C>>) -
             _ => TextColumn::make(&f.name),
         })
         .collect()
-}
-
-fn title_text(value: &serde_json::Value) -> String {
-    value.as_str().map_or_else(|| value.to_string(), str::to_owned)
 }
 
 /// Page sizes offered by the table.

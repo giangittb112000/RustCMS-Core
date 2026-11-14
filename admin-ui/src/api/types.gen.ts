@@ -38,6 +38,48 @@ max?: number,
  */
 step?: number, };
 
+export type Condition = { "op": "eq", 
+/**
+ * Input name.
+ */
+name: string, 
+/**
+ * Compared value.
+ */
+value: JsonValue, } | { "op": "ne", 
+/**
+ * Input name.
+ */
+name: string, 
+/**
+ * Compared value.
+ */
+value: JsonValue, } | { "op": "is_in", 
+/**
+ * Input name.
+ */
+name: string, 
+/**
+ * Allowed values.
+ */
+values: Array<JsonValue>, } | { "op": "filled", 
+/**
+ * Input name.
+ */
+name: string, } | { "op": "is_true", 
+/**
+ * Input name.
+ */
+name: string, } | { "op": "all", 
+/**
+ * Combined conditions.
+ */
+conditions: Array<Condition>, } | { "op": "any", 
+/**
+ * Combined conditions.
+ */
+conditions: Array<Condition>, };
+
 export type ResourceInfo = { 
 /**
  * URL slug.
@@ -60,9 +102,13 @@ icon?: string,
  */
 group?: string, 
 /**
- * Field used as record title.
+ * Field used as record title (a title of one field; see `title_fields`).
  */
 titleField?: string, 
+/**
+ * Fields of a record title of several fields, in template order (ADR 0038).
+ */
+titleFields?: Array<string>, 
 /**
  * Navigation position (`ResourceMeta::sort`), absent when 0.
  */
@@ -295,7 +341,16 @@ suffix?: string,
  * Bounds and step of a number input (vocabulary 12); `min` and `max`
  * are checked again by the server on every client write.
  */
-number?: NumberBounds, };
+number?: NumberBounds, 
+/**
+ * Shown only when this holds (vocabulary 13, ADR 0037): evaluated on
+ * every change; the server drops values sent for hidden inputs.
+ */
+shownWhen?: Condition, 
+/**
+ * Hidden after a write, the field is cleared by the server (vocabulary 13).
+ */
+clearWhenHidden?: boolean, };
 
 export type LayoutSchema = { 
 /**
@@ -329,7 +384,11 @@ compact?: boolean,
 /**
  * Splits: the aside first on narrow screens (vocabulary 11).
  */
-asideFirst?: boolean, };
+asideFirst?: boolean, 
+/**
+ * Shown, with everything in it, only when this holds (vocabulary 13).
+ */
+shownWhen?: Condition, };
 
 export type ComponentSchema = InputSchema | LayoutSchema;
 

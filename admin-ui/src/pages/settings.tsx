@@ -13,7 +13,7 @@ import { Card, CardContent } from "@/components/ui/card";
 import { cn } from "@/lib/utils";
 import { Components, formWidthClass, gridCols } from "@/renderers/form";
 import { type SecretIntent, secretPayload } from "@/renderers/secret";
-import { type FormValues, defaultValues, inputsOf, payloadOf, relabel } from "@/schema/form";
+import { type FormValues, defaultValues, hiddenNames, inputsOf, payloadOf, relabel } from "@/schema/form";
 import { editResolver } from "@/schema/resolver";
 import { useLocale, useT } from "@/i18n";
 
@@ -46,7 +46,7 @@ function SettingsForm({ group, latest, refreshError, refetch }: {
   const editable = latest.abilities.update && !compatibility(latest).readOnly && !compatibility(base).readOnly;
   // Only changed fields are sent, so only they are checked.
   const dirty = useRef<(name: string) => boolean>(() => true);
-  const resolver = useMemo(() => editResolver(inputs, true, (name) => dirty.current(name)), [inputs]);
+  const resolver = useMemo(() => editResolver(inputs, true, (name) => dirty.current(name), components), [inputs, components]);
   const form = useForm<FormValues>({ defaultValues: defaultValues(inputs, base.data), resolver });
   dirty.current = (name) => form.getFieldState(name).isDirty;
   const [intents, setIntents] = useState<Record<string, SecretIntent>>({});
@@ -107,7 +107,10 @@ function SettingsForm({ group, latest, refreshError, refetch }: {
       return;
     }
     const dirty = Object.fromEntries(inputs.map((i) => [i.name, form.getFieldState(i.name).isDirty]));
-    const data = { ...payloadOf(inputs, values, dirty), ...secretPayload(intents) };
+    // Inputs hidden by their conditions are never sent, secrets included (ADR 0037).
+    const hidden = hiddenNames(components, values);
+    const secrets = Object.fromEntries(Object.entries(secretPayload(intents)).filter(([name]) => !hidden.has(name)));
+    const data = { ...payloadOf(inputs, values, dirty, hidden), ...secrets };
     try {
       const saved = await save.mutateAsync({ version: base.version, data });
       if (!mounted.current) return;

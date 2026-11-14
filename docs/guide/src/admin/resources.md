@@ -167,6 +167,7 @@ form shows: see [Authorization](authorization.md).
 | `::new("Post")` | singular label |
 | `.plural("Posts")` | plural label (default: label + `s`) |
 | `.title("title")` | the field used as a record's title (labels, options, the record page) |
+| `.title_template("{name} (grade {grade})")` | a title from several fields, for records that share a name ([below](#titles-from-several-fields)) |
 | `.group("Content")`, `.icon("file-text")` | [navigation](overview.md#navigation) |
 | `.sort(10)`, `.navigation(false)` | [order](overview.md#order), [hidden from the navigation](overview.md#hiding-a-resource) |
 | `.key(KeyStrategy::…)` | [primary keys](#primary-keys) |
@@ -176,6 +177,26 @@ form shows: see [Authorization](authorization.md).
 | `.exportable()`, `.importable()` | CSV [export and import](import-export.md) (abilities `export`, `import`) |
 | `.import_key(field)` | imported rows matching a record by `field` update it ([import](import-export.md#importing)); implies `.importable()` |
 | `.audit(false)` | writes are not recorded in the [audit log](../digging-deeper/audit-log.md) (on by default) |
+
+### Titles from several fields
+
+When records share a name (a subject per grade, a product per variant), build
+the title from several fields:
+
+```rust
+ResourceMeta::new("Subject").title_template("{name} (grade {grade})")
+```
+
+The title then reads "Math (grade 10)" wherever the panel shows one: the
+record's heading and breadcrumb, row menus, relationship selects and labels.
+A relationship select searches every field of the template (each word typed
+must match one of them, so "Math 10" finds it) and lists records in the
+template's order. A `null` field shows as empty ("Math (grade )"). A user who may not read
+one of the fields sees no title (the record's key instead), and cannot search
+by that field: build titles from fields every user of the panel may read.
+
+The boot stops when a placeholder is not a field, is an encrypted field, or a
+brace is not closed, or when the template names no field.
 
 ### Unique constraints
 

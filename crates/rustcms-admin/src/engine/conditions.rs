@@ -1,0 +1,449 @@
+//! Which fields of a form are shown for given values (ADR 0037): shared by
+//! resources, settings pages and action forms. The SPA evaluates the same
+//! conditions (`admin-ui/src/schema/conditions.ts`); both run the cases of
+//! `fixtures/conditions`.
+
+use std::collections::{BTreeMap, BTreeSet, HashMap};
+
+use serde_json::Value;
+
+use super::wire::{self, FieldKind};
+use crate::Data;
+use crate::ui::{Component, Condition, InputType};
+
+/// How a condition reads a field's value: its kind and decimal scale.
+pub(crate) type KindOf<'a> = &'a dyn Fn(&str) -> Option<(FieldKind, Option<u32>)>;
+
+/// The conditions of a form, checked at boot.
+#[derive(Debug, Clone, Default)]
+pub(crate) struct FormConditions {
+    /// Fields whose every input is under a condition, dependencies first:
+    /// the field is shown when one of the conditions holds.
+    fields: Vec<ConditionalField>,
+    /// The kind of each field a condition reads.
+    kinds: HashMap<String, (FieldKind, Option<u32>)>,
+}
+
+#[derive(Debug, Clone)]
+struct ConditionalField {
+    name: String,
+    /// One per input of the field (the input's own condition and its layouts').
+    conditions: Vec<Condition>,
+    clear_when_hidden: bool,
+}
+
+impl FormConditions {
+    /// The conditions of `components`. Panics, naming `context`, on a
+    /// condition that names no field input of the form, an operator that does
+    /// not fit the field's kind (`is_true` on booleans; `eq`, `ne`, `is_in` on
+    /// scalar kinds, with values of that kind), conditions depending on each
+    /// other in a cycle, a condition on a `belongs_to_many` input, or
+    /// `clear_when_hidden` on an input without a condition.
+    pub(crate) fn new(context: &str, components: &[Component], kind_of: KindOf<'_>) -> Self {
+        // Every input with its effective condition (its layouts' and its own).
+        let mut inputs: Vec<(String, InputType, Option<Condition>, bool)> = Vec::new();
+        walk(components, None, &mut inputs);
+        let names: BTreeSet<&str> = inputs.iter().map(|(name, ..)| name.as_str()).collect();
+
+        let mut kinds = HashMap::new();
+        let mut by_field: BTreeMap<String, (Vec<Condition>, bool, bool)> = BTreeMap::new();
+        for (name, kind, condition, clear) in &inputs {
+            assert!(
+                !(*clear && condition.is_none()),
+                "{context}: input `{name}` has `clear_when_hidden` but no condition (`shown_when`)"
+            );
+            let entry = by_field.entry(name.clone()).or_insert((Vec::new(), false, false));
+            entry.2 |= *clear;
+            let Some(condition) = condition else {
+                // Shown without condition through this input: always shown.
+                entry.1 = true;
+                continue;
+            };
+            assert!(
+                *kind != InputType::BelongsToMany,
+                "{context}: input `{name}`: conditions on belongs-to-many inputs are not supported"
+            );
+            entry.0.push(check(context, name, condition, &names, kind_of, &mut kinds));
+        }
+        let mut fields: Vec<ConditionalField> = by_field
+            .into_iter()
+            .filter(|(_, (_, always, _))| !always)
+            .map(|(name, (conditions, _, clear_when_hidden))| ConditionalField { name, conditions, clear_when_hidden })
+            .collect();
+        order(context, &mut fields);
+        Self { fields, kinds }
+    }
+
+    /// Whether field `name` is shown only under a condition.
+    pub(crate) fn is_conditional(&self, name: &str) -> bool {
+        self.fields.iter().any(|f| f.name == name)
+    }
+
+    /// The fields under a condition, with their `clear_when_hidden`.
+    pub(crate) fn conditional(&self) -> impl Iterator<Item = (&str, bool)> {
+        self.fields.iter().map(|f| (f.name.as_str(), f.clear_when_hidden))
+    }
+
+    /// The fields hidden for `values` (missing values count as `null`; a
+    /// hidden field's value counts as `null` for the conditions after it).
+    pub(crate) fn hidden(&self, values: &Data) -> BTreeSet<String> {
+        let mut hidden = BTreeSet::new();
+        for field in &self.fields {
+            let value = |name: &str| -> Value {
+                if hidden.contains(name) { Value::Null } else { values.get(name).cloned().unwrap_or(Value::Null) }
+            };
+            if !field.conditions.iter().any(|c| self.holds(c, &value)) {
+                hidden.insert(field.name.clone());
+            }
+        }
+        hidden
+    }
+
+    fn holds(&self, condition: &Condition, value: &dyn Fn(&str) -> Value) -> bool {
+        match condition {
+            Condition::Eq { name, value: expected } => self.canonical(name, &value(name)) == *expected,
+            Condition::Ne { name, value: expected } => self.canonical(name, &value(name)) != *expected,
+            Condition::IsIn { name, values } => values.contains(&self.canonical(name, &value(name))),
+            Condition::Filled { name } => filled(&value(name)),
+            Condition::IsTrue { name } => value(name) == Value::Bool(true),
+            Condition::All { conditions } => conditions.iter().all(|c| self.holds(c, value)),
+            Condition::Any { conditions } => conditions.iter().any(|c| self.holds(c, value)),
+        }
+    }
+
+    /// `value` as compared for field `name` (as is when it does not decode:
+    /// it then equals no declared value).
+    fn canonical(&self, name: &str, value: &Value) -> Value {
+        match self.kinds.get(name) {
+            Some((kind, _)) if !value.is_null() => comparable(*kind, value).unwrap_or(value.clone()),
+            _ => value.clone(),
+        }
+    }
+}
+
+/// `value` as conditions compare it: its canonical wire form, decimals as
+/// written without trailing zeros and never rounded to the column's scale
+/// (`"10.50"` is `"10.5"`, `"10.504"` stays itself), as the SPA compares them.
+fn comparable(kind: FieldKind, value: &Value) -> Result<Value, wire::DecodeError> {
+    let canonical = wire::canonical(kind, None, value)?;
+    Ok(match (kind, &canonical) {
+        (FieldKind::Decimal, Value::String(text)) => match text.parse::<rust_decimal::Decimal>() {
+            Ok(d) => Value::String(d.normalize().to_string()),
+            Err(_) => canonical,
+        },
+        _ => canonical,
+    })
+}
+
+/// Set: not `null`, `""` (or blank), `[]` or `{}`.
+fn filled(value: &Value) -> bool {
+    match value {
+        Value::Null => false,
+        Value::String(s) => !s.trim().is_empty(),
+        Value::Array(a) => !a.is_empty(),
+        Value::Object(o) => !o.is_empty(),
+        _ => true,
+    }
+}
+
+fn walk(
+    components: &[Component],
+    inherited: Option<&Condition>,
+    out: &mut Vec<(String, InputType, Option<Condition>, bool)>,
+) {
+    let combine = |own: Option<&Condition>| match (inherited, own) {
+        (Some(a), Some(b)) => Some(a.clone().and(b.clone())),
+        (a, b) => a.or(b).cloned(),
+    };
+    for component in components {
+        match component {
+            Component::Input(input) => {
+                out.push((
+                    input.name.clone(),
+                    input.kind,
+                    combine(input.shown_when.as_deref()),
+                    input.clear_when_hidden,
+                ));
+            }
+            Component::Layout(layout) => walk(&layout.children, combine(layout.shown_when.as_deref()).as_ref(), out),
+        }
+    }
+}
+
+/// Checks `condition` of input `input` and returns it with its values in
+/// canonical form.
+fn check(
+    context: &str,
+    input: &str,
+    condition: &Condition,
+    names: &BTreeSet<&str>,
+    kind_of: KindOf<'_>,
+    kinds: &mut HashMap<String, (FieldKind, Option<u32>)>,
+) -> Condition {
+    let mut kind = |name: &str| -> (FieldKind, Option<u32>) {
+        assert!(
+            names.contains(name),
+            "{context}: the condition of `{input}` names `{name}`, which is not an input of the form"
+        );
+        let found = kind_of(name).unwrap_or_else(|| {
+            panic!("{context}: the condition of `{input}` names `{name}`, whose value conditions cannot read")
+        });
+        kinds.insert(name.to_owned(), found);
+        found
+    };
+    let mut value_of = |name: &str, value: &Value| -> Value {
+        let (field_kind, _) = kind(name);
+        assert!(
+            matches!(
+                field_kind,
+                FieldKind::String
+                    | FieldKind::I32
+                    | FieldKind::I64
+                    | FieldKind::F64
+                    | FieldKind::Decimal
+                    | FieldKind::Bool
+                    | FieldKind::Uuid
+                    | FieldKind::Date
+            ),
+            "{context}: the condition of `{input}` compares `{name}`, whose kind ({}) has no comparable values",
+            field_kind.name()
+        );
+        if value.is_null() {
+            return Value::Null;
+        }
+        comparable(field_kind, value).unwrap_or_else(|_| {
+            panic!("{context}: the condition of `{input}` compares `{name}` with {value}, not a value of its kind")
+        })
+    };
+    match condition {
+        Condition::Eq { name, value } => Condition::Eq { name: name.clone(), value: value_of(name, value) },
+        Condition::Ne { name, value } => Condition::Ne { name: name.clone(), value: value_of(name, value) },
+        Condition::IsIn { name, values } => {
+            assert!(!values.is_empty(), "{context}: the condition of `{input}` lists no values for `{name}`");
+            Condition::IsIn { name: name.clone(), values: values.iter().map(|v| value_of(name, v)).collect() }
+        }
+        Condition::Filled { name } => {
+            kind(name);
+            condition.clone()
+        }
+        Condition::IsTrue { name } => {
+            let (field_kind, _) = kind(name);
+            assert!(
+                field_kind == FieldKind::Bool,
+                "{context}: the condition of `{input}` uses `is_true` on `{name}`, which is not a boolean"
+            );
+            condition.clone()
+        }
+        Condition::All { conditions } | Condition::Any { conditions } => {
+            assert!(!conditions.is_empty(), "{context}: the condition of `{input}` combines no conditions");
+            let checked = conditions.iter().map(|c| check(context, input, c, names, kind_of, kinds)).collect();
+            match condition {
+                Condition::All { .. } => Condition::All { conditions: checked },
+                _ => Condition::Any { conditions: checked },
+            }
+        }
+    }
+}
+
+/// Sorts `fields` so that a field comes after the conditional fields its
+/// conditions read; panics on a cycle.
+fn order(context: &str, fields: &mut Vec<ConditionalField>) {
+    let index: HashMap<String, usize> = fields.iter().enumerate().map(|(i, f)| (f.name.clone(), i)).collect();
+    let depends: Vec<Vec<usize>> = fields
+        .iter()
+        .map(|f| {
+            let mut deps: Vec<usize> =
+                f.conditions.iter().flat_map(|c| c.names()).filter_map(|n| index.get(n).copied()).collect();
+            deps.sort_unstable();
+            deps.dedup();
+            deps
+        })
+        .collect();
+    // 0: not visited, 1: in progress, 2: done.
+    let mut state = vec![0u8; fields.len()];
+    let mut sorted = Vec::with_capacity(fields.len());
+    fn visit(
+        i: usize,
+        context: &str,
+        fields: &[ConditionalField],
+        depends: &[Vec<usize>],
+        state: &mut [u8],
+        sorted: &mut Vec<usize>,
+    ) {
+        match state[i] {
+            2 => return,
+            1 => panic!("{context}: the conditions of `{}` depend on each other in a cycle", fields[i].name),
+            _ => {}
+        }
+        state[i] = 1;
+        for &d in &depends[i] {
+            visit(d, context, fields, depends, state, sorted);
+        }
+        state[i] = 2;
+        sorted.push(i);
+    }
+    for i in 0..fields.len() {
+        visit(i, context, fields, &depends, &mut state, &mut sorted);
+    }
+    let mut taken: Vec<Option<ConditionalField>> = std::mem::take(fields).into_iter().map(Some).collect();
+    *fields = sorted.into_iter().map(|i| taken[i].take().expect("each field once")).collect();
+}
+
+#[cfg(test)]
+mod tests {
+    use serde_json::json;
+
+    use super::*;
+    use crate::ui::{Section, TextInput, Toggle, when};
+
+    fn kinds(name: &str) -> Option<(FieldKind, Option<u32>)> {
+        match name {
+            "on_sale" | "featured" => Some((FieldKind::Bool, None)),
+            "price" => Some((FieldKind::Decimal, Some(2))),
+            "count" => Some((FieldKind::I64, None)),
+            _ => Some((FieldKind::String, None)),
+        }
+    }
+
+    fn data(value: Value) -> Data {
+        value.as_object().unwrap().clone()
+    }
+
+    #[test]
+    fn hides_inputs_and_layouts_whose_conditions_fail() {
+        let components = crate::components![
+            TextInput::make("type"),
+            TextInput::make("url").shown_when(when("type").eq("external")),
+            Toggle::make("on_sale"),
+            Section::make("Sale")
+                .shown_when(when("on_sale").is_true())
+                .schema(crate::components![TextInput::make("code").shown_when(when("type").ne("internal"))]),
+        ];
+        let conditions = FormConditions::new("t", &components, &kinds);
+        let hidden = |v: Value| conditions.hidden(&data(v)).into_iter().collect::<Vec<_>>();
+        assert_eq!(hidden(json!({"type": "external", "on_sale": true})), Vec::<String>::new());
+        assert_eq!(hidden(json!({"type": "internal", "on_sale": true})), ["code", "url"]);
+        assert_eq!(hidden(json!({"type": "external", "on_sale": false})), ["code"]);
+        assert_eq!(hidden(json!({})), ["code", "url"], "missing values are null");
+        assert!(conditions.is_conditional("url") && !conditions.is_conditional("type"));
+    }
+
+    #[test]
+    fn compares_canonical_values_and_chains_hidden_fields() {
+        let components = crate::components![
+            TextInput::make("price"),
+            TextInput::make("count"),
+            Toggle::make("featured").shown_when(when("price").is_in(["10.5", "20"])),
+            TextInput::make("badge").shown_when(when("featured").is_true()),
+            TextInput::make("note").shown_when(when("count").eq("7")),
+        ];
+        let conditions = FormConditions::new("t", &components, &kinds);
+        let hidden = |v: Value| conditions.hidden(&data(v)).into_iter().collect::<Vec<_>>();
+        // Decimals compare by value: "10.50" is "10.5", "20.00" is "20".
+        assert_eq!(hidden(json!({"price": "10.50", "featured": true, "count": "007"})), Vec::<String>::new());
+        // `featured` hidden: its stored `true` counts as null, so `badge` is hidden too.
+        assert_eq!(hidden(json!({"price": "1", "featured": true, "count": "7"})), ["badge", "featured"]);
+    }
+
+    #[test]
+    fn a_field_with_an_unconditional_input_is_always_shown() {
+        let components = crate::components![
+            Toggle::make("on_sale"),
+            TextInput::make("code").shown_when(when("on_sale").is_true()),
+            Section::make("Other").schema(crate::components![TextInput::make("code")]),
+        ];
+        assert!(!FormConditions::new("t", &components, &kinds).is_conditional("code"));
+    }
+
+    /// The cases shared with the SPA (`admin-ui/tests/conditions.test.ts`).
+    #[test]
+    fn shared_cases() {
+        let cases: Value = serde_json::from_str(include_str!(concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/../../fixtures/conditions/cases.json"
+        )))
+        .unwrap();
+        fn components(list: &Value, kinds: &mut HashMap<String, String>) -> Vec<Component> {
+            list.as_array()
+                .unwrap()
+                .iter()
+                .map(|c| {
+                    let condition = c.get("shownWhen").map(|w| serde_json::from_value::<Condition>(w.clone()).unwrap());
+                    if let Some(name) = c["name"].as_str() {
+                        kinds.insert(name.to_owned(), c["valueType"].as_str().unwrap().to_owned());
+                        let input = TextInput::make(name);
+                        Component::Input(match condition {
+                            Some(condition) => input.shown_when(condition),
+                            None => input,
+                        })
+                    } else {
+                        let section = Section::make("s").schema(components(&c["components"], kinds));
+                        Component::Layout(match condition {
+                            Some(condition) => section.shown_when(condition),
+                            None => section,
+                        })
+                    }
+                })
+                .collect()
+        }
+        for form in cases["forms"].as_array().unwrap() {
+            let mut kinds = HashMap::new();
+            let components = components(&form["components"], &mut kinds);
+            let kind_of = |name: &str| -> Option<(FieldKind, Option<u32>)> {
+                Some(match kinds.get(name)?.as_str() {
+                    "bool" => (FieldKind::Bool, None),
+                    "i32" => (FieldKind::I32, None),
+                    "i64" => (FieldKind::I64, None),
+                    "decimal" => (FieldKind::Decimal, Some(2)),
+                    _ => (FieldKind::String, None),
+                })
+            };
+            let conditions = FormConditions::new("t", &components, &kind_of);
+            for case in form["cases"].as_array().unwrap() {
+                let hidden: Vec<String> = conditions.hidden(&data(case["values"].clone())).into_iter().collect();
+                let expected: Vec<String> = serde_json::from_value(case["hidden"].clone()).unwrap();
+                assert_eq!(hidden, expected, "{}: {}", form["name"], case["values"]);
+            }
+        }
+    }
+
+    #[test]
+    #[should_panic(expected = "names `nope`, which is not an input of the form")]
+    fn names_must_be_inputs() {
+        let components = crate::components![TextInput::make("a").shown_when(when("nope").filled())];
+        FormConditions::new("t", &components, &kinds);
+    }
+
+    #[test]
+    #[should_panic(expected = "uses `is_true` on `type`, which is not a boolean")]
+    fn is_true_needs_a_boolean() {
+        let components =
+            crate::components![TextInput::make("type"), TextInput::make("a").shown_when(when("type").is_true())];
+        FormConditions::new("t", &components, &kinds);
+    }
+
+    #[test]
+    #[should_panic(expected = "not a value of its kind")]
+    fn values_must_decode() {
+        let components =
+            crate::components![TextInput::make("count"), TextInput::make("a").shown_when(when("count").eq("x"))];
+        FormConditions::new("t", &components, &kinds);
+    }
+
+    #[test]
+    #[should_panic(expected = "depend on each other in a cycle")]
+    fn cycles_are_refused() {
+        let components = crate::components![
+            TextInput::make("a").shown_when(when("b").filled()),
+            TextInput::make("b").shown_when(when("a").filled()),
+        ];
+        FormConditions::new("t", &components, &kinds);
+    }
+
+    #[test]
+    #[should_panic(expected = "has `clear_when_hidden` but no condition")]
+    fn clearing_needs_a_condition() {
+        let components = crate::components![TextInput::make("a").clear_when_hidden()];
+        FormConditions::new("t", &components, &kinds);
+    }
+}

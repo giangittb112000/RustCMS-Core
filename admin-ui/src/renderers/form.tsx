@@ -1,10 +1,19 @@
 // Renders a form schema: layouts and inputs from the vocabulary. Unknown types
 // fall back to a read-only rendering instead of breaking the page.
-import { Controller, type Control, type FieldErrors } from "react-hook-form";
+import { Controller, useWatch, type Control, type FieldErrors } from "react-hook-form";
 import { ChevronDown, Plus, X } from "lucide-react";
-import { useEffect, useId, useRef, useState } from "react";
+import { createContext, useContext, useEffect, useId, useMemo, useRef, useState } from "react";
 import type * as React from "react";
-import type { ComponentSchema, Data, InputSchema, LayoutSchema, SecretStatus, SelectOption } from "@/api/types";
+import type { ComponentSchema, Condition, Data, InputSchema, LayoutSchema, SecretStatus, SelectOption } from "@/api/types";
+import {
+  type FormConditions,
+  type WireValues,
+  conditionNames,
+  formConditions,
+  hasConditions,
+  hiddenFields,
+  holds,
+} from "@/schema/conditions";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Checkbox, Switch } from "@/components/ui/checkbox";
@@ -22,6 +31,7 @@ import {
   pairsOf,
   type FormValue,
   type FormValues,
+  wireValues,
 } from "@/schema/form";
 import { RelationSelect, RelationValue } from "./relation-select";
 import { LinksWidget } from "./links";
@@ -77,14 +87,61 @@ export const gridCols = (n: number) => COLS[Math.min(Math.max(n, 1), 4)] ?? COLS
 export const formWidthClass = (width?: string) => (width === "full" ? "max-w-none" : width === "wide" ? "max-w-6xl" : "max-w-4xl");
 const span = (n: number) => SPAN[Math.min(Math.max(n, 1), 4)] ?? SPAN[1];
 
+/**
+ * Whether a component's condition holds (ADR 0037), set by the outermost
+ * `Components` of a form for the nested ones.
+ */
+const ShownContext = createContext<((condition: Condition | undefined) => boolean) | null>(null);
+const always = () => true;
+
+/** A predicate on conditions for wire `values` (hidden fields read as null). */
+function shownWith(form: FormConditions, values: WireValues) {
+  const hidden = hiddenFields(form, values);
+  return (condition: Condition | undefined) => !condition || holds(form, condition, values, hidden);
+}
+
+/** A layout with only the children (tabs, panes) its conditions show. */
+const withShownChildren = (layout: LayoutSchema, shown: (c: Condition | undefined) => boolean): LayoutSchema =>
+  layout.components.every((c) => shown(c.shownWhen))
+    ? layout
+    : { ...layout, components: layout.components.filter((c) => shown(c.shownWhen)) };
+
+/** A form's components: its conditions are evaluated here, on every change. */
 export function Components({ components, ctx }: { components: ComponentSchema[]; ctx: FormContext }) {
+  return hasConditions(components) ? <LiveConditions components={components} ctx={ctx} /> : (
+    <ShownContext.Provider value={always}><ComponentList components={components} ctx={ctx} /></ShownContext.Provider>
+  );
+}
+
+/** Components inside a form (layouts' children), shown by the form's conditions. */
+function ComponentList({ components, ctx }: { components: ComponentSchema[]; ctx: FormContext }) {
+  const shown = useContext(ShownContext) ?? always;
   return (
     <>
       {components.map((c, i) =>
-        isInput(c) ? <Field key={c.name} input={c} ctx={ctx} /> : <Layout key={`layout-${i}`} layout={c} ctx={ctx} />,
+        // Hidden: not rendered, its draft kept in the form state (never sent).
+        !shown(c.shownWhen) ? null
+          : isInput(c) ? <Field key={c.name} input={c} ctx={ctx} /> : <Layout key={`layout-${i}`} layout={c} ctx={ctx} />,
       )}
     </>
   );
+}
+
+/**
+ * Re-evaluates the form's conditions as the user types, without a request.
+ * Only the inputs the conditions read are watched: typing elsewhere does not
+ * re-render the form.
+ */
+function LiveConditions({ components, ctx }: { components: ComponentSchema[]; ctx: FormContext }) {
+  const form = useMemo(() => formConditions(components), [components]);
+  const names = useMemo(() => conditionNames(components), [components]);
+  const read = useMemo(() => inputsOf(components).filter((i) => names.includes(i.name)), [components, names]);
+  const watched = useWatch({ control: ctx.control, name: names }) as FormValue[];
+  const shown = useMemo(() => {
+    const values: FormValues = Object.fromEntries(names.map((n, i) => [n, watched[i]!]).filter(([, v]) => v !== undefined));
+    return shownWith(form, wireValues(read, values));
+  }, [form, names, read, watched]);
+  return <ShownContext.Provider value={shown}><ComponentList components={components} ctx={ctx} /></ShownContext.Provider>;
 }
 
 function SchemaLayout({ layout, errors, attempt, children }: {
@@ -164,15 +221,17 @@ function SplitLayout({ layout, render }: { layout: LayoutSchema; render: (pane: 
 }
 
 function Layout({ layout, ctx }: { layout: LayoutSchema; ctx: FormContext }) {
+  const shown = useContext(ShownContext) ?? always;
+  // Tabs and panes are children of their layout: hidden ones are left out.
   if (layout.type === "tabs") {
-    return <TabsLayout layout={layout} errors={ctx.errors} attempt={ctx.submitCount} render={(tab) => <Components components={tab.components} ctx={ctx} />} />;
+    return <TabsLayout layout={withShownChildren(layout, shown)} errors={ctx.errors} attempt={ctx.submitCount} render={(tab) => <ComponentList components={tab.components} ctx={ctx} />} />;
   }
   if (layout.type === "split") {
-    return <SplitLayout layout={layout} render={(pane) => <Components components={pane.components} ctx={ctx} />} />;
+    return <SplitLayout layout={withShownChildren(layout, shown)} render={(pane) => <ComponentList components={pane.components} ctx={ctx} />} />;
   }
   return (
     <SchemaLayout layout={layout} errors={ctx.errors} attempt={ctx.submitCount}>
-      <Components components={layout.components} ctx={ctx} />
+      <ComponentList components={layout.components} ctx={ctx} />
     </SchemaLayout>
   );
 }
@@ -269,19 +328,32 @@ export function ReadOnlyComponents({ components, data, slug, record }: {
   slug: string;
   record: string;
 }) {
+  // Conditions on the stored values (ADR 0037).
+  const shown = useMemo(() => (hasConditions(components) ? shownWith(formConditions(components), data) : always), [components, data]);
+  return <ReadOnlyBody components={components} data={data} slug={slug} record={record} shown={shown} />;
+}
+
+function ReadOnlyBody({ components, data, slug, record, shown }: {
+  components: ComponentSchema[];
+  data: Data;
+  slug: string;
+  record: string;
+  shown: (condition: Condition | undefined) => boolean;
+}) {
   const t = useT();
   return <>{components.map((component, index) => {
+    if (!shown(component.shownWhen)) return null;
     if (!isInput(component) && component.type === "tabs") {
-      return <TabsLayout key={`layout-${index}`} layout={component} render={(tab) =>
-        <ReadOnlyComponents components={tab.components} data={data} slug={slug} record={record} />} />;
+      return <TabsLayout key={`layout-${index}`} layout={withShownChildren(component, shown)} render={(tab) =>
+        <ReadOnlyBody components={tab.components} data={data} slug={slug} record={record} shown={shown} />} />;
     }
     if (!isInput(component) && component.type === "split") {
-      return <SplitLayout key={`layout-${index}`} layout={component} render={(pane) =>
-        <ReadOnlyComponents components={pane.components} data={data} slug={slug} record={record} />} />;
+      return <SplitLayout key={`layout-${index}`} layout={withShownChildren(component, shown)} render={(pane) =>
+        <ReadOnlyBody components={pane.components} data={data} slug={slug} record={record} shown={shown} />} />;
     }
     if (!isInput(component)) {
       return <SchemaLayout key={`layout-${index}`} layout={component}>
-        <ReadOnlyComponents components={component.components} data={data} slug={slug} record={record} />
+        <ReadOnlyBody components={component.components} data={data} slug={slug} record={record} shown={shown} />
       </SchemaLayout>;
     }
     // Links are shown by the relation manager on the record's page.
