@@ -1,5 +1,6 @@
 //! `min`, `max` and `step` of number inputs: shown in the schema, `min` and
-//! `max` bound client writes to a resource (hooks may write any value);
+//! `max` bound client writes to a resource, CSV imports included (hooks may
+//! write any value);
 //! declarations that cannot hold refuse to boot. SQLite, PostgreSQL, MySQL.
 
 use axum::http::StatusCode;
@@ -49,7 +50,7 @@ impl Resource for GaugeResource {
     const SLUG: &'static str = "gauges";
 
     fn meta() -> ResourceMeta {
-        ResourceMeta::new("Gauge").title("name")
+        ResourceMeta::new("Gauge").title("name").importable()
     }
 
     fn fields() -> Vec<Field> {
@@ -75,7 +76,11 @@ impl Resource for GaugeResource {
 }
 
 fn build(config: Config) -> AppBuilder {
+    // Imports keep their file on a disk: each app its own temporary directory.
+    let root = std::env::temp_dir().join(format!("rustcms-bounds-{}", uuid::Uuid::now_v7()));
+    let config = config.with("storage.root", root.to_string_lossy()).expect("storage config");
     let mut app = AppBuilder::new(config);
+    app.provider(rustcms_core::storage::StorageProvider);
     app.provider(AuthProvider::new());
     app.provider(AdminProvider::new().resource::<GaugeResource>());
     app
@@ -145,6 +150,45 @@ db_test!(client_writes_stay_within_the_bounds, |db: TestDb| async move {
     create(&client, &app, json!({"name": "hooked", "level": 3})).await.assert_status(StatusCode::CREATED);
     let hooked = gauge::Entity::find().all(app.state().db()).await.unwrap().into_iter().find(|g| g.name == "hooked");
     assert_eq!(hooked.map(|g| g.level), Some(9));
+});
+
+db_test!(imported_rows_stay_within_the_bounds, |db: TestDb| async move {
+    let (app, admin) = setup(db).await;
+    let client = app.acting_as(&admin).await;
+    let request = axum::http::Request::builder()
+        .method(axum::http::Method::POST)
+        .uri(app.admin_api("resources/gauges/imports"))
+        .header(axum::http::header::CONTENT_TYPE, "text/csv")
+        .body(axum::body::Body::from("name,level,price\r\nok,3,1.00\r\nlow,0,1.00\r\ncheap,2,0.10\r\n"))
+        .unwrap();
+    let uploaded = client.request(request).await;
+    uploaded.assert_status(StatusCode::CREATED);
+    let id = uploaded.json()["id"].as_str().unwrap().to_owned();
+    let mapping = json!({"mapping": {"name": "name", "level": "level", "price": "price"}});
+
+    // The preview checks each row as a client write.
+    let preview = client.post_json(&app.admin_api(&format!("imports/{id}/preview")), &mapping).await;
+    preview.assert_status(StatusCode::OK);
+    let preview = preview.json();
+    assert_eq!((preview["rows"].clone(), preview["valid"].clone()), (json!(3), json!(1)), "{preview}");
+    let codes: Vec<(Value, Value, Value)> = preview["report"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|r| (r["row"].clone(), r["field"].clone(), r["code"].clone()))
+        .collect();
+    assert_eq!(
+        codes,
+        [(json!(3), json!("level"), json!("min_value")), (json!(4), json!("price"), json!("min_value"))],
+        "{preview}"
+    );
+
+    // The run writes the row within the bounds only.
+    client.post_json(&app.admin_api(&format!("imports/{id}/run")), &mapping).await.assert_status(StatusCode::OK);
+    rustcms_core::queue::run_until_idle(app.state(), None, 10).await.unwrap();
+    let names: Vec<String> =
+        gauge::Entity::find().all(app.state().db()).await.unwrap().into_iter().map(|g| g.name).collect();
+    assert_eq!(names, ["ok"]);
 });
 
 db_test!(the_schema_shows_the_bounds, |db: TestDb| async move {

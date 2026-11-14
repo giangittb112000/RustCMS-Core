@@ -240,7 +240,9 @@ impl Compiled {
 /// Placeholders whose values are numbers (`-2`, `10`, `0.5`).
 const NUMERIC: &[&str] = &["min", "max", "bytes"];
 
-fn is_number(text: &str) -> bool {
+/// Whether `text` is a plain decimal number (`-2`, `10`, `0.5`): no exponent,
+/// sign other than a leading `-`, or other characters.
+pub fn is_number(text: &str) -> bool {
     let digits = text.strip_prefix('-').unwrap_or(text);
     let (whole, fraction) = digits.split_once('.').unwrap_or((digits, "0"));
     [whole, fraction].iter().all(|part| !part.is_empty() && part.bytes().all(|b| b.is_ascii_digit()))

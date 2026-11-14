@@ -176,7 +176,8 @@ start without one.
 4. **Outcome** (`GET {admin}/api/imports/{id}`): created, updated, failed, and
    the problems of the rows that failed: row, field, an English message with
    its code and parameters, which the panel translates. Only known messages
-   whose parameters are numbers are kept; any other (your own text, a value
+   whose parameters are numbers (limits such as `200`, `-2` or `0.5`) are
+   kept; any other (your own text, a value
    of the file quoted back) becomes "is invalid", so values of the file never
    appear. The report keeps at most 1,000 problems; the counts
    are always complete. Imports are deleted after 24 hours.
