@@ -12,7 +12,10 @@ mod catalog;
 mod issues;
 
 pub use catalog::{Tr, Translator};
-pub use issues::{CUSTOM, Issue, TEMPLATES, is_number};
+/// Whether a text is a plain number (for the admin's import reports; not a stable API).
+#[doc(hidden)]
+pub use issues::is_number;
+pub use issues::{CUSTOM, Issue, TEMPLATES};
 
 /// The locale to use: `preferred` (a user's saved choice) when supported, else
 /// the best supported `Accept-Language` entry, else `default`.
