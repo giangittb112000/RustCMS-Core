@@ -82,8 +82,8 @@ export interface View {
   mount(element: HTMLElement, ctx: ViewContext): ViewInstance;
 }
 
-export type ViewKind = "page" | "slot" | "cell";
-const views: Record<ViewKind, Map<string, View>> = { page: new Map(), slot: new Map(), cell: new Map() };
+export type ViewKind = "page" | "slot" | "cell" | "entry";
+const views: Record<ViewKind, Map<string, View>> = { page: new Map(), slot: new Map(), cell: new Map(), entry: new Map() };
 const failedViews = new Set<string>();
 
 const NAME = /^[a-z0-9-]{1,32}\/[a-z0-9-]{1,32}$/;
@@ -123,6 +123,7 @@ const reactViews: Record<ViewKind, Map<string, React.ComponentType<never>>> = {
   page: new Map(),
   slot: new Map(),
   cell: new Map(),
+  entry: new Map(),
 };
 
 function checkRegistration(kind: ViewKind, name: string): void {
@@ -183,6 +184,8 @@ export const registerPage = (name: string, view: View) => registerView("page", n
 export const registerSlot = (name: string, view: View) => registerView("slot", name, view);
 /** Registers a table cell (`TableColumn::cell("vendor/name")`). */
 export const registerCell = (name: string, view: View) => registerView("cell", name, view);
+/** Registers an infolist entry (`CustomEntry::make(name, "vendor/name")`, ADR 0039). */
+export const registerEntry = (name: string, view: View) => registerView("entry", name, view);
 
 /** The view registered as `name`, unless it is missing or has failed. */
 export function view(kind: ViewKind, name: string | undefined): View | undefined {
@@ -260,6 +263,7 @@ export async function loadExtensions(basePath: string, extensions: ExtensionsCon
     registerPage: (name: string, component: React.ComponentType<never>, meta?: { ui?: unknown }) => registerReactView("page", name, component, meta),
     registerSlot: (name: string, component: React.ComponentType<never>, meta?: { ui?: unknown }) => registerReactView("slot", name, component, meta),
     registerCell: (name: string, component: React.ComponentType<never>, meta?: { ui?: unknown }) => registerReactView("cell", name, component, meta),
+    registerEntry: (name: string, component: React.ComponentType<never>, meta?: { ui?: unknown }) => registerReactView("entry", name, component, meta),
   });
   (window as unknown as { rustcms: unknown }).rustcms = {
     registerWidget,
@@ -267,6 +271,7 @@ export async function loadExtensions(basePath: string, extensions: ExtensionsCon
     registerPage,
     registerSlot,
     registerCell,
+    registerEntry,
     // v1 scripts check `apiVersion === 1`: it stays 1; v2 lives under `v2`.
     apiVersion: WIDGET_API_VERSION,
     v2,

@@ -41,13 +41,13 @@ impl FormConditions {
     /// `clear_when_hidden` on an input without a condition.
     pub(crate) fn new(context: &str, components: &[Component], kind_of: KindOf<'_>) -> Self {
         // Every input with its effective condition (its layouts' and its own).
-        let mut inputs: Vec<(String, InputType, Option<Condition>, bool)> = Vec::new();
+        let mut inputs: Vec<(String, bool, Option<Condition>, bool)> = Vec::new();
         walk(components, None, &mut inputs);
         let names: BTreeSet<&str> = inputs.iter().map(|(name, ..)| name.as_str()).collect();
 
         let mut kinds = HashMap::new();
         let mut by_field: BTreeMap<String, (Vec<Condition>, bool, bool)> = BTreeMap::new();
-        for (name, kind, condition, clear) in &inputs {
+        for (name, links, condition, clear) in &inputs {
             assert!(
                 !(*clear && condition.is_none()),
                 "{context}: input `{name}` has `clear_when_hidden` but no condition (`shown_when`)"
@@ -59,10 +59,7 @@ impl FormConditions {
                 entry.1 = true;
                 continue;
             };
-            assert!(
-                *kind != InputType::BelongsToMany,
-                "{context}: input `{name}`: conditions on belongs-to-many inputs are not supported"
-            );
+            assert!(!*links, "{context}: input `{name}`: conditions on belongs-to-many inputs are not supported");
             entry.0.push(check(context, name, condition, &names, kind_of, &mut kinds));
         }
         let mut fields: Vec<ConditionalField> = by_field
@@ -195,7 +192,7 @@ fn canonical_condition(condition: &Condition, kind_of: KindOf<'_>) -> Condition 
 fn walk(
     components: &[Component],
     inherited: Option<&Condition>,
-    out: &mut Vec<(String, InputType, Option<Condition>, bool)>,
+    out: &mut Vec<(String, bool, Option<Condition>, bool)>,
 ) {
     let combine = |own: Option<&Condition>| match (inherited, own) {
         (Some(a), Some(b)) => Some(a.clone().and(b.clone())),
@@ -206,10 +203,14 @@ fn walk(
             Component::Input(input) => {
                 out.push((
                     input.name.clone(),
-                    input.kind,
+                    input.kind == InputType::BelongsToMany,
                     combine(input.shown_when.as_deref()),
                     input.clear_when_hidden,
                 ));
+            }
+            // An infolist's entries (checked as a form's inputs, ADR 0039).
+            Component::Entry(entry) => {
+                out.push((entry.name.clone(), false, combine(entry.shown_when.as_deref()), false))
             }
             Component::Layout(layout) => walk(&layout.children, combine(layout.shown_when.as_deref()).as_ref(), out),
         }
@@ -229,7 +230,7 @@ fn check(
     let mut kind = |name: &str| -> (FieldKind, Option<u32>) {
         assert!(
             names.contains(name),
-            "{context}: the condition of `{input}` names `{name}`, which is not an input of the form"
+            "{context}: the condition of `{input}` names `{name}`, which is not an input (or entry) of the form"
         );
         let found = kind_of(name).unwrap_or_else(|| {
             panic!("{context}: the condition of `{input}` names `{name}`, whose value conditions cannot read")
@@ -480,7 +481,7 @@ mod tests {
     }
 
     #[test]
-    #[should_panic(expected = "names `nope`, which is not an input of the form")]
+    #[should_panic(expected = "names `nope`, which is not an input (or entry) of the form")]
     fn names_must_be_inputs() {
         let components = crate::components![TextInput::make("a").shown_when(when("nope").filled())];
         FormConditions::new("t", &components, &kinds);

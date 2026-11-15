@@ -139,12 +139,20 @@ export interface CellProps<V = unknown, R = unknown, P = unknown> extends Common
   props: Readonly<P>;
 }
 
+/** `ui` 3: an infolist entry (`CustomEntry`): its value, the record's readable fields, its props. */
+export interface EntryProps<V = unknown, R = unknown, P = unknown> extends Common {
+  value: Readonly<V>;
+  record: Readonly<R>;
+  props: Readonly<P>;
+}
+
 type WithApi = Pick<PageProps, "api" | "scope" | "locale">;
 type WithRealtime = Pick<PageProps, "realtime">;
 
 export declare function registerPage<D>(name: string, component: React.ComponentType<PageProps<D>>): void;
 export declare function registerSlot<D, R>(name: string, component: React.ComponentType<SlotProps<D, R>>): void;
 export declare function registerCell<V, R, P>(name: string, component: React.ComponentType<CellProps<V, R, P>>): void;
+export declare function registerEntry<V, R, P>(name: string, component: React.ComponentType<EntryProps<V, R, P>>): void;
 
 export declare function queryPairs(query?: Query): Array<[string, string]>;
 export declare function adminKey(props: WithApi, path: string, query?: Query): unknown[];
@@ -170,8 +178,8 @@ export declare function useSocket(
   options?: { reconnect?: boolean },
 ): { send(data: string | ArrayBuffer | ArrayBufferView): boolean };
 
-/** The panel level this SDK is built for: declare `Requires { ui: 2, … }`. */
-export declare const SDK_UI: 2;
+/** The panel level this SDK is built for: declare `Requires { ui: 3, … }`. */
+export declare const SDK_UI: 3;
 
 /** Field errors of a refused write (422): `{ field: [messages] }`, `{}` otherwise. */
 export declare function fieldErrors(error: unknown): Record<string, string[]>;

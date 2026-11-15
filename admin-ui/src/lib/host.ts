@@ -20,13 +20,14 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Page, PageHeader } from "@/components/layout";
 import { ErrorState, Loading } from "@/components/states";
 import { cn } from "@/lib/utils";
+import { Infolist } from "@/renderers/infolist";
 
 /**
  * The host's additive level (ADR 0032): the `ui` module's exports and the
  * props of v2 views. A bundle needs a level at most this one; removing
  * anything takes host API 3.
  */
-export const UI_VERSION = 2;
+export const UI_VERSION = 3;
 
 /** The panel's versions, for `requires`. */
 export const HOST_VERSIONS = Object.freeze({
@@ -112,6 +113,8 @@ export const MODULES = freeze({
     Skeleton,
     Separator,
     CodeBlock,
+    // ui 3
+    Infolist,
   }),
   host: freeze({ ApiError, versions: HOST_VERSIONS }),
 });

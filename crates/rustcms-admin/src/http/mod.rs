@@ -107,6 +107,7 @@ pub fn routes(admin_path: &str) -> Vec<(Method, String)> {
         (Method::GET, format!("{resource}/records")),
         (Method::POST, format!("{resource}/records")),
         (Method::GET, format!("{resource}/records/{{key}}")),
+        (Method::GET, format!("{resource}/records/{{key}}/computed")),
         (Method::PATCH, format!("{resource}/records/{{key}}")),
         (Method::DELETE, format!("{resource}/records/{{key}}")),
         (Method::POST, format!("{resource}/records/{{key}}/restore")),
@@ -145,6 +146,7 @@ pub(crate) fn router(router: Router<AppState>, admin_path: &str) -> Router<AppSt
         .route(&format!("{resource}/schema"), get(schema))
         .route(&format!("{resource}/records"), get(list).post(create))
         .route(&format!("{resource}/records/{{key}}"), get(find).patch(update).delete(destroy))
+        .route(&format!("{resource}/records/{{key}}/computed"), get(computed))
         .route(&format!("{resource}/records/{{key}}/restore"), post(restore))
         .route(&format!("{resource}/records/{{key}}/force"), delete(force_delete))
         .route(&format!("{resource}/records/{{key}}/relations/{{relation}}"), get(relation_list).post(relation_create))

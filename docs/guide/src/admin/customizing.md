@@ -266,6 +266,12 @@ progress as a bar:
 - No inline styles: use attributes (`meter`, `progress`) or classes from an
   extension stylesheet.
 
+A record's view page draws values with custom **entries** the same way
+(`CustomEntry::make(field, "vendor/name")`, registered with
+`registerEntry`): see [Infolists](infolists.md#custom-entries). A page whose
+data only needs labels and values can skip the script:
+`PageView::Infolist` draws it with entries ([panel pages](infolists.md#panel-pages)).
+
 ## Translations
 
 `rustcms lang:missing vi` lists page labels and groups, slot labels and every

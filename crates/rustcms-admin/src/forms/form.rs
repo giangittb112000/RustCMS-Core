@@ -1,6 +1,7 @@
 //! A form and its components.
 
 use super::{Input, Layout};
+use crate::infolists::Entry;
 
 /// An element of a form.
 #[derive(Debug, Clone)]
@@ -9,6 +10,14 @@ pub enum Component {
     Input(Input),
     /// Layout.
     Layout(Layout),
+    /// Infolist entry (view pages only, ADR 0039).
+    Entry(Entry),
+}
+
+impl From<Entry> for Component {
+    fn from(entry: Entry) -> Self {
+        Self::Entry(entry)
+    }
 }
 
 impl From<Input> for Component {
@@ -23,7 +32,7 @@ impl From<Layout> for Component {
     }
 }
 
-/// Builds a `Vec<Component>` from inputs and layouts.
+/// Builds a `Vec<Component>` from inputs, entries and layouts.
 #[macro_export]
 macro_rules! components {
     ($($component:expr),* $(,)?) => { vec![$($crate::ui::Component::from($component)),*] };
@@ -88,6 +97,7 @@ impl Form {
                 match component {
                     Component::Input(input) => out.push(input),
                     Component::Layout(layout) => walk(&layout.children, out),
+                    Component::Entry(_) => {}
                 }
             }
         }
@@ -103,6 +113,7 @@ impl Form {
                 match component {
                     Component::Input(input) => out.push(input),
                     Component::Layout(layout) => walk(&mut layout.children, out),
+                    Component::Entry(_) => {}
                 }
             }
         }

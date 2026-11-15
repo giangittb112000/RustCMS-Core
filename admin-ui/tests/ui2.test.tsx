@@ -234,11 +234,11 @@ describe("levels", () => {
     const host = globalThis as unknown as { rustcms?: unknown };
     const before = host.rustcms;
     const register = vi.fn();
-    host.rustcms = { v2: { versions: { ui: 1 }, registerPage: register } };
-    expect(() => sdkRegisterPage("test/x", Probe)).toThrow(/newer panel/);
     host.rustcms = { v2: { versions: { ui: 2 }, registerPage: register } };
+    expect(() => sdkRegisterPage("test/x", Probe)).toThrow(/newer panel/);
+    host.rustcms = { v2: { versions: { ui: 3 }, registerPage: register } };
     sdkRegisterPage("test/x", Probe);
-    expect(register).toHaveBeenCalledWith("test/x", Probe, { ui: 2 });
+    expect(register).toHaveBeenCalledWith("test/x", Probe, { ui: 3 });
     host.rustcms = before;
   });
 

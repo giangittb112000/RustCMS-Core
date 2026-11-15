@@ -187,7 +187,15 @@ impl<R: Resource> DynResource for ResourceAdapter<R> {
                 (Some(record), SchemaOperation::View) => self.relation_schemas(ctx, record).await,
                 _ => Vec::new(),
             },
+            infolist: match op {
+                SchemaOperation::View => self.infolist_schema(ctx).await,
+                _ => None,
+            },
         })
+    }
+
+    async fn computed(&self, ctx: &Ctx, key: &str) -> AppResult<crate::schema::ComputedValues> {
+        self.computed_values(ctx, key).await
     }
 
     async fn lookup(&self, ctx: &Ctx, search: Option<&str>, keys: &[String]) -> AppResult<Vec<(String, String)>> {

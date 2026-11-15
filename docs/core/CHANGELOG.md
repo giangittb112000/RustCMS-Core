@@ -20,6 +20,21 @@ All notable changes are documented here. The format follows
   only when shown. Schemas send condition values in canonical form. Boot
   checks names, kinds, values, cycles, and refuses a conditional input whose
   column is not nullable and has no default.
+- Infolists for record view pages (vocabulary 14, ADR 0039; contributed by @giangittb112000):
+  `Resource::infolist()` replaces the read-only form on the view page with
+  entries in the form's layouts: `TextEntry` (`badge`/`color`, `copyable`,
+  `limit`, `url`, `number`, `list`, `multiline`, `password`,
+  `prefix`/`suffix`, `options`), `RelationEntry` (linked when the related
+  resource may be listed), `BooleanEntry`, `KeyValueEntry`, `MediaEntry`,
+  `RichTextEntry`, `ComputedEntry` and `CustomEntry` (`registerEntry`), with
+  `shown_when` on the stored values. `Resource::computed()` declares values
+  computed when the view page opens (route `records/{key}/computed`, only for
+  users who may view the record; `.readable`, `.timeout`, 5 s by default and
+  30 s at most); one that fails, times out or exceeds 64 KiB shows "not
+  available" alone. `PageView::Infolist` draws a panel page's data with
+  entries. Extension host `ui` 3: `registerEntry` and the SDK's `Infolist`
+  (`rustcms make:sdk` points at registrations to move to `ui: 3`). Without
+  `infolist()` nothing changes. Demo: a category's view page.
 - Record titles from several fields (ADR 0038; contributed by @giangittb112000):
   `ResourceMeta::title_template("{name} (grade {grade})")` for headings,
   breadcrumbs, row menus, relationship selects (searched over every field of

@@ -205,6 +205,8 @@ fn components(ctx: &Ctx, page: &dyn DynSettings, items: &[Component], disabled: 
                 .iter()
                 .find(|f| f.name == input.name)
                 .map(|field| ComponentSchema::Input(input_schema(ctx, field, input, disabled))),
+            // Refused at boot (`check_form_layout`).
+            Component::Entry(_) => None,
             Component::Layout(layout) => {
                 // Layouts with nothing in them are left out (a split's empty pane), as on resources.
                 let children = components(ctx, page, &layout.children, disabled);

@@ -88,8 +88,9 @@ describe("compatibility", () => {
   it("needs the same API, a ui level the panel has, the same majors and no newer minors", () => {
     expect(incompatibility(ok)).toBeNull();
     expect(incompatibility({ ...ok, ui: 2 })).toBeNull();
+    expect(incompatibility({ ...ok, ui: 3 })).toBeNull();
     expect(incompatibility({ ...ok, api: 3 })).toMatch(/host API/);
-    expect(incompatibility({ ...ok, ui: 3 })).toMatch(/ui/);
+    expect(incompatibility({ ...ok, ui: 4 })).toMatch(/ui/);
     expect(incompatibility({ ...ok, ui: 0 })).toMatch(/ui/);
     expect(incompatibility({ ...ok, react: "18.3" })).toMatch(/React/);
     expect(incompatibility({ ...ok, reactQuery: "5.999" })).toMatch(/React Query/);

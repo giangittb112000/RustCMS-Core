@@ -16,6 +16,7 @@
 //! ```
 
 pub use crate::forms::*;
+pub use crate::infolists::*;
 pub use crate::tables::*;
 
 /// `category_id` → `Category`, `published_at` → `Published at`.

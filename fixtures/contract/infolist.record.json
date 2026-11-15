@@ -1,0 +1,25 @@
+{
+  "data": {
+    "abilities": {
+      "delete": true,
+      "update": true,
+      "view": true
+    },
+    "data": {
+      "code": "ALG-1",
+      "fee": 50,
+      "meta": {
+        "room": "B2"
+      },
+      "published": true,
+      "status": "open",
+      "teacher_id": 1,
+      "title": "Algebra"
+    },
+    "key": "1",
+    "labels": {
+      "teacher_id": "Ada"
+    },
+    "title": "Algebra"
+  }
+}

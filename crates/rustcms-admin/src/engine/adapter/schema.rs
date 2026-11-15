@@ -59,7 +59,7 @@ impl<R: Resource> ResourceAdapter<R> {
                 .into_iter()
                 .filter_map(|c| match c {
                     ComponentSchema::Input(input) => Some(input),
-                    ComponentSchema::Layout(_) => None,
+                    ComponentSchema::Layout(_) | ComponentSchema::Entry(_) => None,
                 })
                 .collect();
             out.push(RelationSchema {
@@ -95,6 +95,14 @@ impl<R: Resource> ResourceAdapter<R> {
                         out.extend(layout.label.clone());
                         walk(&layout.children, out, field_label);
                     }
+                    Component::Entry(entry) => {
+                        // A computed value's label defaults to its name, humanized.
+                        super::infolist::entry_strings(
+                            entry,
+                            || field_label(&entry.name).unwrap_or_else(|| humanize(&entry.name)),
+                            out,
+                        );
+                    }
                 }
             }
         }
@@ -110,6 +118,9 @@ impl<R: Resource> ResourceAdapter<R> {
             })
         };
         walk(&self.form.components, &mut out, &field_label);
+        if let Some(infolist) = &self.infolist {
+            walk(&infolist.components, &mut out, &field_label);
+        }
         for column in &self.table_ui.columns {
             out.extend(column.label.clone().or_else(|| field_label(&column.name)));
         }
@@ -336,21 +347,12 @@ impl<R: Resource> ResourceAdapter<R> {
                     .and_then(|l| self.links_input_schema(ctx, input, *l))
                     .map(ComponentSchema::Input),
                 Component::Input(input) => self.input_schema(ctx, input, op).map(ComponentSchema::Input),
+                // Forms hold no entries (refused at boot).
+                Component::Entry(_) => None,
                 Component::Layout(layout) => {
                     let children = self.components(ctx, &layout.children, op, links);
-                    (!children.is_empty()).then(|| {
-                        ComponentSchema::Layout(LayoutSchema {
-                            kind: layout.kind,
-                            id: layout.id.clone(),
-                            label: layout.label.as_deref().map(|l| ctx.t_in(R::SLUG, l)),
-                            columns: layout.columns,
-                            components: children,
-                            collapsed: layout.collapsed,
-                            compact: layout.compact,
-                            aside_first: layout.aside_first,
-                            shown_when: layout.shown_when.as_deref().cloned(),
-                        })
-                    })
+                    (!children.is_empty())
+                        .then(|| ComponentSchema::Layout(layout_schema(layout, children, |l| ctx.t_in(R::SLUG, l))))
                 }
             })
             .collect()
@@ -429,6 +431,25 @@ impl<R: Resource> ResourceAdapter<R> {
             actions,
             soft_deletes: self.soft.is_some(),
         }
+    }
+}
+
+/// The schema of `layout` holding `children`, its label translated by `t`.
+pub(super) fn layout_schema(
+    layout: &Layout,
+    children: Vec<ComponentSchema>,
+    t: impl Fn(&str) -> String,
+) -> LayoutSchema {
+    LayoutSchema {
+        kind: layout.kind,
+        id: layout.id.clone(),
+        label: layout.label.as_deref().map(t),
+        columns: layout.columns,
+        components: children,
+        collapsed: layout.collapsed,
+        compact: layout.compact,
+        aside_first: layout.aside_first,
+        shown_when: layout.shown_when.as_deref().cloned(),
     }
 }
 

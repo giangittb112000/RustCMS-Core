@@ -53,6 +53,39 @@ impl Resource for CategoryResource {
     }
     // #endregion form
 
+    // #region infolist
+    /// The view page: the slug with its prefix, the number of posts (computed),
+    /// and the color drawn by the demo's `demo/swatch` entry.
+    fn infolist() -> Infolist {
+        Infolist::new().width(FormWidth::Full).schema(components![
+            Split::make()
+                .main(components![
+                    TextEntry::make("name").copyable(),
+                    TextEntry::make("slug").prefix("/categories/"),
+                    ComputedEntry::make("posts_count").label("Posts").number(0),
+                ])
+                .aside(components![
+                    Section::make("Display").compact().schema(components![CustomEntry::make("color", "demo/swatch"),])
+                ])
+        ])
+    }
+
+    /// Counted through the posts resource: its scope and policy apply, so a
+    /// user only counts the posts they may list (a failure shows "not available").
+    fn computed() -> Vec<Computed<category::Entity>> {
+        vec![Computed::make("posts_count", |ctx, category: &category::Model| {
+            Box::pin(async move {
+                let query = ListQuery {
+                    parent: Some(("category_id".to_owned(), category.id.to_string())),
+                    per_page: Some(1),
+                    ..Default::default()
+                };
+                Ok(json!(ctx.records("posts", &query).await?.meta.total))
+            })
+        })]
+    }
+    // #endregion infolist
+
     // #region relations
     /// The category's posts, listed (and created) on its page.
     fn relations() -> Vec<Relation> {

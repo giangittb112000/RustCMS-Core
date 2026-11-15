@@ -6,6 +6,7 @@ pub(crate) mod aggregate;
 mod audit;
 mod export;
 mod import;
+pub(crate) mod infolist;
 mod input;
 mod many;
 mod operations;
@@ -99,6 +100,10 @@ pub(crate) struct ResourceAdapter<R: Resource> {
     conditions: crate::engine::conditions::FormConditions,
     /// The record title (ADR 0038).
     title: Option<crate::engine::title::TitleTemplate>,
+    /// The view page's entries, when declared (ADR 0039).
+    infolist: Option<crate::ui::Infolist>,
+    /// Values computed for the view page (ADR 0039).
+    computed: Vec<crate::ui::Computed<Entity<R>>>,
     table_ui: Table,
     limits: Limits,
     _resource: PhantomData<fn() -> R>,
@@ -405,7 +410,13 @@ impl<R: Resource> ResourceAdapter<R> {
             action_form::canonicalize_conditions(&mut action.form);
         }
 
+        let infolist = R::infolist();
+        let computed = R::computed();
+        infolist::check_infolist(slug, &infolist, &computed, &fields, &columns);
+
         Self {
+            infolist: (!infolist.is_empty()).then_some(infolist),
+            computed,
             table: Entity::<R>::default().table_name().to_owned(),
             soft,
             meta,
@@ -566,6 +577,7 @@ fn normalize_default(kind: FieldKind, value: serde_json::Value) -> Option<serde_
 /// on text inputs only. `owner` names the form in messages (`resource `posts``).
 pub(crate) fn check_form_layout(owner: &str, form: &Form) {
     check_layouts(owner, &form.components, None);
+    assert!(!holds_entries(&form.components), "{owner}: a form holds inputs, not entries (entries go in `infolist()`)");
     for input in form.inputs().into_iter().filter(|i| i.prefix.is_some() || i.suffix.is_some()) {
         assert!(
             input.kind == InputType::TextInput,
@@ -573,6 +585,24 @@ pub(crate) fn check_form_layout(owner: &str, form: &Form) {
             input.name
         );
     }
+}
+
+/// Whether `components` hold an entry, at any depth.
+fn holds_entries(components: &[Component]) -> bool {
+    components.iter().any(|c| match c {
+        Component::Entry(_) => true,
+        Component::Layout(layout) => holds_entries(&layout.children),
+        Component::Input(_) => false,
+    })
+}
+
+/// Whether `components` hold an input, at any depth.
+pub(crate) fn holds_inputs(components: &[Component]) -> bool {
+    components.iter().any(|c| match c {
+        Component::Input(_) => true,
+        Component::Layout(layout) => holds_inputs(&layout.children),
+        Component::Entry(_) => false,
+    })
 }
 
 /// Tabs hold only tabs, tabs sit only in tabs, and tab ids are unique per tabs;

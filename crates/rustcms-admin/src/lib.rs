@@ -10,6 +10,7 @@ pub mod engine;
 pub mod features;
 pub mod forms;
 pub mod http;
+pub mod infolists;
 pub mod panel;
 pub mod resources;
 pub mod tables;
@@ -45,10 +46,11 @@ pub use resource::{
 };
 pub use schema::{ResourceInfo, ResourceSchema, SchemaOperation};
 pub use ui::{
-    BadgeColumn, BelongsToManySelect, BooleanColumn, Breakpoint, Checkbox, CheckboxList, Condition, CustomInput,
-    DateColumn, DatePicker, DateRangeFilter, DateTimePicker, FileUpload, Form, FormWidth, Grid, Hidden, KeyValue,
-    NumberInput, RichEditor, SecretInput, SecretMapInput, Section, SelectFilter, SelectInput, Split, Tab, Table, Tabs,
-    TernaryFilter, TextColumn, TextInput, Textarea, Toggle, When, when,
+    BadgeColumn, BelongsToManySelect, BooleanColumn, BooleanEntry, Breakpoint, Checkbox, CheckboxList, Computed,
+    ComputedEntry, Condition, CustomEntry, CustomInput, DateColumn, DatePicker, DateRangeFilter, DateTimePicker,
+    FileUpload, Form, FormWidth, Grid, Hidden, Infolist, KeyValue, KeyValueEntry, MediaEntry, NumberInput,
+    RelationEntry, RichEditor, RichTextEntry, SecretInput, SecretMapInput, Section, SelectFilter, SelectInput, Split,
+    Tab, Table, Tabs, TernaryFilter, TextColumn, TextEntry, TextInput, Textarea, Toggle, When, when,
 };
 
 /// A JSON object in wire format (input, hook data, trusted records).

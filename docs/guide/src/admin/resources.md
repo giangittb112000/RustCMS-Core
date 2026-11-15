@@ -233,7 +233,10 @@ boot with a message naming the resource:
 
 `/admin/r/<slug>/records/<key>` shows one record, laid out like its form
 (sections, tabs, the editor split) with values read-only: option labels,
-related records by title, dates in the user's language. Under it come:
+related records by title, dates in the user's language. An
+[infolist](infolists.md) (`fn infolist()`) replaces that body with entries
+of your choice: badges, copy buttons, values computed on the server, your
+own components. Under it come:
 
 - the [slots](customizing.md#slots-beside-records) registered for the resource;
 - one section per [relation](relationships.md) the user may list;

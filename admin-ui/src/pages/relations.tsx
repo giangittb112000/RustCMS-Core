@@ -19,7 +19,7 @@ import { Cell, columnClass } from "@/renderers/table";
 import { ActionNoticeView, RecordActions, useActionRunner } from "@/components/actions";
 import { useUncertain } from "@/api/context";
 import { cn } from "@/lib/utils";
-import { isInput } from "@/schema/form";
+import { isInput, isLayout } from "@/schema/form";
 import type { JsonValue } from "@/api/types";
 import { useT } from "@/i18n";
 
@@ -34,7 +34,9 @@ export function boundInput(components: ComponentSchema[], name: string, value: J
       ? c.name === name
         ? { ...c, type: "hidden" as const, disabled: true, default: value }
         : c
-      : { ...c, components: boundInput(c.components, name, value) },
+      : isLayout(c)
+        ? { ...c, components: boundInput(c.components, name, value) }
+        : c,
   );
 }
 

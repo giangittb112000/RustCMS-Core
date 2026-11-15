@@ -30,6 +30,7 @@ in runtime mode the page is rendered per request (static mode renders it once); 
 | GET | `/resources/{slug}/records?…` | `{data: [Envelope], meta}` |
 | POST | `/resources/{slug}/records` | 201 `{data: Envelope}` |
 | GET / PATCH / DELETE | `/resources/{slug}/records/{key}` | `{data: Envelope}` / `{data: Envelope}` / 204 |
+| GET | `/resources/{slug}/records/{key}/computed` | `ComputedValues` `{data: {name: value}, failed: [name]}`: the computed values the view page's infolist shows, for a user who may view the record (ADR 0039); 60 requests per user per minute and 8 pages computing at once (429 beyond) |
 | POST | `/resources/{slug}/records/{key}/restore` | `{data: Envelope}` (soft deletes; trashed records only) |
 | DELETE | `/resources/{slug}/records/{key}/force` | 204 (soft deletes; trashed records only) |
 | GET | `/resources/{slug}/records/{key}/relations/{relation}?…` | `LinkPage` `{data: [Envelope], meta, pivot?}` of the target (list query string; `pivot`: readable pivot columns by target key, belongs-to-many) |
@@ -145,6 +146,28 @@ client rules; view pages evaluate them on the record's values. The server
 evaluates them again on every write, on the resulting values, drops values
 sent for hidden inputs and requires required fields only when shown. Older
 clients show every input; the server ignores what they send for hidden ones.
+
+Vocabulary 14 adds infolists (ADR 0039): a view schema (`operation=view`)
+of a resource that declares one carries `infolist` (`InfolistSchema`:
+`columns`, `components`, `width`), whose components are layouts and
+entries: `{type: "text_entry" | "relation_entry" | "boolean_entry" |
+"key_value_entry" | "media_entry" | "rich_text_entry" | "computed_entry" |
+"custom_entry", name, label, valueType, columnSpan, help?, shownWhen?, …}`
+with the options absent when unset (`badge`, `colors`, `copyable`, `limit`,
+`url`, `decimals`, `list`, `multiline`, `password`, `prefix`, `suffix`,
+`options`, `labels`, `size`, `gallery`, `outline`, `relationship`, `link`,
+`computed`, `widget`, `props`; `computed: true`: the value comes from
+`records/{key}/computed`, not from the record's data). Entries of fields the user may not read are left out.
+Clients draw the infolist instead of the read-only form, evaluate its
+conditions on the record's values, read titles of related records from the
+envelope's `labels` (`link`: the user may list the related resource), and
+load computed values from `records/{key}/computed` (a name in `failed`, or
+an error, shows as not available). An entry type whose name ends in `_entry`
+but is unknown is drawn as text. Custom page content may be `{kind:
+"infolist", infolist, data}`: entries over `data` by name. Older clients
+ignore `infolist` and draw the form read-only. The extension host's `ui`
+level is 3: `registerEntry` (v1 `window.rustcms.registerEntry`, v2
+`v2.registerEntry`) and the UI kit's `Infolist`.
 
 Vocabulary 12 adds number bounds: `number_input` inputs may carry `number`,
 `{min?, max?, step?}` (JSON numbers). The server checks `min` and `max` on

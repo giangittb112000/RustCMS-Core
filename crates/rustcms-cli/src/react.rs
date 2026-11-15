@@ -12,7 +12,7 @@ pub static SDK: Dir<'_> = include_dir!("$CARGO_MANIFEST_DIR/templates/sdk");
 static SETUP: Dir<'_> = include_dir!("$CARGO_MANIFEST_DIR/templates/admin");
 
 /// What a page built with this SDK needs from the panel.
-pub const REQUIRES: &str = "rustcms::admin::Requires { react: \"19.3\", react_query: \"5.104\", ui: 2 }";
+pub const REQUIRES: &str = "rustcms::admin::Requires { react: \"19.3\", react_query: \"5.104\", ui: 3 }";
 
 fn digest(bytes: &[u8]) -> String {
     hex::encode(Sha256::digest(bytes))
@@ -83,12 +83,12 @@ pub fn ensure_setup(admin: &Path) -> anyhow::Result<bool> {
 }
 
 /// The level this command's SDK is built for (`SDK_UI` in `sdk/index.js`).
-pub const SDK_UI: u32 = 2;
+pub const SDK_UI: u32 = 3;
 
 /// Labels of the `extension_script_v2` registrations in `provider` (or of a
 /// shared `Requires` constant) that declare a `ui`
 /// below [`SDK_UI`]: after `make:sdk`, their next build would be refused at
-/// registration until the provider says `ui: 2`.
+/// registration until the provider says `ui: 3`.
 pub fn older_registrations(provider: &str) -> Vec<String> {
     let mut out = Vec::new();
     let mut rest = provider;
@@ -126,7 +126,7 @@ pub fn older_registrations(provider: &str) -> Vec<String> {
     out
 }
 
-/// Lines telling which registrations to move to `ui: 2`.
+/// Lines telling which registrations to move to [`SDK_UI`].
 pub fn older_registrations_hint(root: &Path) -> Vec<String> {
     let provider = std::fs::read_to_string(root.join("src/providers/admin_panel_provider.rs")).unwrap_or_default();
     older_registrations(&provider)
@@ -193,7 +193,7 @@ mod tests {
             .extension_script_v2(
                 "new",
                 include_str!("b.js"),
-                Requires { react: "19.3", react_query: "5.104", ui: 2 },
+                Requires { react: "19.3", react_query: "5.104", ui: 3 },
             )
         "#;
         assert_eq!(older_registrations(provider), ["`extension_script_v2(\"old\", …)`"]);

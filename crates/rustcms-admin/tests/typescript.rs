@@ -9,7 +9,8 @@ use rustcms_admin::system::{
     PermissionInfo, PermissionPresetInfo, RoleRef, SystemLinks, SystemRole, SystemUser, UserPage,
 };
 use rustcms_admin::ui::{
-    Breakpoint, ColumnType, Condition, FilterType, FormWidth, InputType, LayoutType, NumberBounds, SelectOption,
+    Breakpoint, ColumnType, Condition, EntryType, FilterType, FormWidth, InputType, LayoutType, NumberBounds,
+    SelectOption,
 };
 use rustcms_admin::{ActionOutcome, Envelope, Page, PageMeta};
 use ts_rs::{Config, TS};
@@ -21,6 +22,7 @@ fn bindings() -> String {
         serde_json::Value::decl(&cfg),
         InputType::decl(&cfg),
         LayoutType::decl(&cfg),
+        EntryType::decl(&cfg),
         ColumnType::decl(&cfg),
         Breakpoint::decl(&cfg),
         FormWidth::decl(&cfg),
@@ -39,6 +41,9 @@ fn bindings() -> String {
         rustcms_admin::media::MediaItem::decl(&cfg),
         InputSchema::decl(&cfg),
         LayoutSchema::decl(&cfg),
+        EntrySchema::decl(&cfg),
+        InfolistSchema::decl(&cfg),
+        ComputedValues::decl(&cfg),
         ComponentSchema::decl(&cfg),
         FormSchema::decl(&cfg),
         ColumnSchema::decl(&cfg),
