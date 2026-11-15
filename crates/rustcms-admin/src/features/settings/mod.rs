@@ -52,6 +52,9 @@ pub enum SettingKind {
     Media,
     /// Files of the media library, in order (`Vec<uuid::Uuid>`; their ids).
     MediaList,
+    /// Rows of inputs (`Vec<T>` of a `Serialize + Deserialize` struct), a JSON
+    /// repeater (ADR 0040).
+    Repeater,
 }
 
 impl SettingKind {
@@ -60,7 +63,7 @@ impl SettingKind {
             Self::Text | Self::Textarea | Self::Select | Self::Secret => FieldKind::String,
             Self::Integer => FieldKind::I32,
             Self::Boolean => FieldKind::Bool,
-            Self::KeyValue | Self::MediaList => FieldKind::Json,
+            Self::KeyValue | Self::MediaList | Self::Repeater => FieldKind::Json,
             Self::Date => FieldKind::Date,
             Self::Media => FieldKind::Uuid,
         }
@@ -77,6 +80,7 @@ impl SettingKind {
             Self::Date => InputType::DatePicker,
             Self::Secret => InputType::Secret,
             Self::Media | Self::MediaList => InputType::FileUpload,
+            Self::Repeater => InputType::Repeater,
         }
     }
 }
@@ -94,6 +98,8 @@ pub struct SettingField {
     pub(crate) audit_redact: bool,
     pub(crate) kept_while: Vec<String>,
     pub(crate) media: Option<crate::field::MediaRule>,
+    /// Repeaters: their rows, checked when declared.
+    pub(crate) rows: Option<Box<crate::engine::repeater::Rows>>,
 }
 
 macro_rules! kinds {
@@ -119,6 +125,27 @@ impl SettingField {
             audit_redact: false,
             kept_while: Vec::new(),
             media: None,
+            rows: None,
+        }
+    }
+
+    /// Rows of inputs, declared by a [`Repeater`](crate::ui::Repeater) (its
+    /// name is the setting's): `SettingField::repeater(Repeater::make("links").schema(…))`.
+    /// The setting holds a `Vec<T>` of a struct with the rows' inputs.
+    pub fn repeater(repeater: Input) -> Self {
+        let spec = repeater.repeater.as_deref().expect("SettingField::repeater takes a `Repeater::make(…)`");
+        assert!(!spec.relationship, "settings field `{}`: settings have no relationships", repeater.name);
+        assert!(
+            !repeater.required && repeater.max_length.is_none() && !repeater.integer,
+            "settings field `{}`: `required`, `max_length` and `integer` are for inputs of JSON repeater rows \
+             (declare them on the SettingField)",
+            repeater.name
+        );
+        let rows = crate::engine::repeater::Rows::compile("settings", &repeater.name, spec, 1);
+        Self {
+            rows: Some(Box::new(rows)),
+            input: repeater.clone(),
+            ..Self::new(repeater.name.clone(), SettingKind::Repeater)
         }
     }
 
@@ -468,6 +495,7 @@ impl<T: SettingsPage> SettingsAdapter<T> {
                 SettingKind::Date => Value::String("2001-02-03".into()),
                 SettingKind::Media => Value::String(MEDIA_PROBE.into()),
                 SettingKind::MediaList => serde_json::json!([MEDIA_PROBE]),
+                SettingKind::Repeater => serde_json::json!([]),
                 SettingKind::Secret => unreachable!(),
             };
             assert!(
@@ -475,6 +503,14 @@ impl<T: SettingsPage> SettingsAdapter<T> {
                 "settings `{group}`: `{name}` does not hold a value of kind {:?} (a `Secret` is declared with `SettingField::secret`)",
                 field.kind
             );
+            if let Some(rows) = field.rows.as_deref() {
+                assert!(
+                    round_trip(name, Value::Array(vec![rows.probe()])).is_some(),
+                    "settings `{group}`: the rows of `{name}` must read rows without their optional inputs (inputs \
+                     that are not required, or that a condition hides, are left out): make those fields `Option` or \
+                     `#[serde(default)]`"
+                );
+            }
             if field.kind == SettingKind::Integer {
                 assert!(
                     round_trip(name, Value::from(i64::from(i32::MAX) + 1)).is_none(),
@@ -531,6 +567,12 @@ impl<T: SettingsPage> SettingsAdapter<T> {
             let compatible = input.kind == field.kind.input_type()
                 || (field.kind == SettingKind::Text && input.kind == InputType::Textarea);
             assert!(compatible, "settings `{group}`: input `{}` does not match its field's kind", input.name);
+            assert!(
+                !input.required && input.max_length.is_none() && !input.integer,
+                "settings `{group}`: input `{}`: `required`, `max_length` and `integer` are for inputs of JSON \
+                 repeater rows (declare them on the SettingField)",
+                input.name
+            );
             // One range: the field's bounds are the ones shown and checked.
             if let Some(range) = input.number.as_deref() {
                 assert!(
@@ -716,6 +758,9 @@ impl SettingsRegistry {
                 out.extend(field.input.help.clone());
                 out.extend(field.input.placeholder.clone());
                 out.extend(field.input.options.iter().map(|o| o.label.clone()));
+                if let Some(spec) = field.input.repeater.as_deref() {
+                    crate::engine::repeater::display_strings(spec, &mut out);
+                }
             }
             for component in page.form().components.iter() {
                 walk_labels(component, &mut out);

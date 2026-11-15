@@ -20,6 +20,15 @@ All notable changes are documented here. The format follows
   only when shown. Schemas send condition values in canonical form. Boot
   checks names, kinds, values, cycles, and refuses a conditional input whose
   column is not nullable and has no default.
+- JSON repeaters (vocabulary 15, ADR 0040; contributed by @giangittb112000): `Repeater::make("faq").schema(…)`
+  edits rows of inputs stored as a JSON array, with Filament's options
+  (`min_items`, `max_items`, `reorderable`, `collapsible`, `collapsed`,
+  `item_label`, `add_action_label`, `addable`, `deletable`, `default_items`,
+  `cloneable`); row inputs declare `required`, `max_length`, `integer`. The
+  server checks every row (errors at `faq.2.question`), removes inputs hidden
+  by the row's conditions, and refuses media, rich text and secrets in rows.
+  `SettingField::repeater` for settings pages; `RepeatableEntry` on view
+  pages; issue code `min_items`. Demo: footer links on the site settings.
 - Infolists for record view pages (vocabulary 14, ADR 0039; contributed by @giangittb112000):
   `Resource::infolist()` replaces the read-only form on the view page with
   entries in the form's layouts: `TextEntry` (`badge`/`color`, `copyable`,

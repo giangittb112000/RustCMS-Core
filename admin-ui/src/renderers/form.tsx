@@ -36,6 +36,7 @@ import {
 } from "@/schema/form";
 import { RelationSelect, RelationValue } from "./relation-select";
 import { LinksWidget } from "./links";
+import { RepeaterWidget } from "./repeater";
 import { FileUploadWidget, MediaThumb } from "./media";
 import { RichEditorWidget, RichTextView } from "./rich-text";
 import { CustomField } from "./custom";
@@ -385,6 +386,20 @@ function ReadOnlyBody({ components, data, slug, record, shown }: {
       // Option labels first: a select may offer booleans with their own labels.
       const option = component.options?.find((option) => JSON.stringify(option.value) === JSON.stringify(value));
       content = option?.label ?? (typeof value === "boolean" ? (value ? t("value.yes") : t("value.no")) : readOnlyText(value));
+    } else if (component.type === "repeater" && component.repeater && Array.isArray(value)) {
+      // Each row drawn read-only with the row's inputs (its own conditions).
+      const repeater = component.repeater;
+      content = value.length === 0 ? <span className="text-muted-foreground">{t("repeater.empty")}</span> : (
+        <ol className="flex flex-col gap-3">
+          {value.map((row, i) => (
+            <li key={i} className="rounded-lg border border-border p-3">
+              <div className="grid grid-cols-1 gap-x-6 gap-y-4 md:grid-cols-2">
+                <ReadOnlyComponents components={repeater.components} data={(row ?? {}) as Data} slug={slug} record={record} />
+              </div>
+            </li>
+          ))}
+        </ol>
+      );
     } else if (component.type === "file_upload" && (typeof value === "string" || Array.isArray(value))) {
       const ids = (Array.isArray(value) ? value : [value]).filter((v): v is string => typeof v === "string");
       content = <div className="flex flex-wrap gap-3">{ids.map((id) => <MediaThumb key={id} id={id} />)}</div>;
@@ -471,7 +486,7 @@ function Field({ input, ctx }: { input: InputSchema; ctx: FormContext }) {
   );
 }
 
-interface WidgetProps {
+export interface WidgetProps {
   id: string;
   input: InputSchema;
   ctx: FormContext;
@@ -485,7 +500,7 @@ interface WidgetProps {
 
 const encodeOption = (o: SelectOption) => JSON.stringify(o.value);
 
-function Widget({ id, input, ctx, value, onChange, onBlur, disabled, invalid, describedBy }: WidgetProps) {
+export function Widget({ id, input, ctx, value, onChange, onBlur, disabled, invalid, describedBy }: WidgetProps) {
   const t = useT();
   if (isTriState(input)) {
     // Nullable boolean: "not set" is a value of its own, and can be restored.
@@ -641,6 +656,8 @@ function Widget({ id, input, ctx, value, onChange, onBlur, disabled, invalid, de
           ))}
         </NativeSelect>
       );
+    case "repeater":
+      return <RepeaterWidget id={id} input={input} ctx={ctx} value={value} onChange={onChange} onBlur={onBlur} disabled={disabled} invalid={invalid} describedBy={describedBy} />;
     case "belongs_to_many":
       return <LinksWidget id={id} input={input} slug={ctx.slug} record={ctx.record} value={text} onChange={onChange} disabled={disabled} invalid={invalid} describedBy={describedBy} onBlur={onBlur} />;
     case "file_upload":

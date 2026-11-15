@@ -296,6 +296,61 @@ Field::column(post::Column::Attributes).key_value().max_items(20).max_length(200
 KeyValue::make("attributes").help("Extra details shown with the post, e.g. reading_time = 5 min"),
 ```
 
+## Repeaters
+
+A `Repeater` edits a list of rows, each row several inputs, as Filament's
+does. Its value is a JSON array of objects in the column of its name
+(`[{"question": "…", "answer": "…"}]`); the column must be JSON.
+
+```rust
+Repeater::make("faq")
+    .schema(components![
+        TextInput::make("question").required().max_length(200),
+        Textarea::make("answer").required(),
+        SelectInput::make("kind").options([("text", "Text"), ("link", "Link")]),
+        TextInput::make("url").shown_when(when("kind").eq("link")),
+    ])
+    .min_items(1)
+    .max_items(20)
+    .reorderable()
+    .collapsible()
+    .item_label("{question}")
+    .add_action_label("Add a question")
+    .cloneable()
+```
+
+- **A row's rules are on its inputs.** A row is part of one column, with no
+  field of its own, so its inputs say what they need: `.required()`,
+  `.max_length(n)` on text, `.integer()`, `.min(n)`, `.max(n)` on numbers,
+  `options` on selects (rows have no relationships). Elsewhere these rules
+  come from the field, and the boot refuses them on inputs.
+- **Values in a row:** text for `TextInput` and `Textarea`, a JSON number for
+  `NumberInput`, `true`/`false` for `Toggle` and `Checkbox`, the option's value
+  for `SelectInput`, a list for `CheckboxList`, `YYYY-MM-DD` for `DatePicker`,
+  an RFC 3339 instant for `DateTimePicker`, an object of text for `KeyValue`,
+  any JSON for `CustomInput`, and a list for a nested `Repeater` (three deep at
+  most). Empty inputs are left out of the row.
+- **Each row is checked on the server**, like a form: a key the row does not
+  declare is refused, then each input's rules, then `min_items` and
+  `max_items`. Errors name the row and the input: `faq.2.question`
+  (`faq.2.links.0.url` nested, `faq` for the list); the panel shows them in
+  their row.
+- **Conditions** (`shown_when`) in a row name inputs of the same row. An
+  input hidden by its condition is removed from the stored row, and
+  `required` means "required when shown".
+- **Options:** `min_items`, `max_items`, `reorderable` (buttons, or drag the
+  handle), `collapsible` / `collapsed`, `item_label("{input}")` (each row's
+  heading, a template as [record titles](resources.md#titles-from-several-fields)),
+  `add_action_label`, `addable(false)`, `deletable(false)`,
+  `default_items(n)` (rows a create form starts with), `cloneable`.
+- **Not in rows (yet):** `FileUpload` and `RichEditor` (their media escape the
+  [reference checks](media.md)), secrets, belongs-to-many inputs, tabs and
+  splits.
+
+On view pages the rows are shown read-only; an [infolist](infolists.md)
+shows them with a `RepeatableEntry`. [Settings pages](settings.md#kinds) take
+repeaters too.
+
 ## Encrypted fields
 
 The demo's integrations keep an API token and environment variables
@@ -360,6 +415,12 @@ Besides the layout and encrypted-field rules above, the boot stops when:
 - `min`, `max` or `step` is on an input that is not a `NumberInput`, or on a
   column that does not hold numbers; `min` is above `max`; the step is not
   positive; or two inputs of one field have different bounds;
+- a repeater's row is empty, holds tabs, splits, media, rich text, secrets or
+  belongs-to-many inputs, or a select without options; a row input repeats a
+  name; repeaters nest deeper than three; `item_label` names no input of the
+  row; `min_items` or `default_items` is above `max_items`; the column is not
+  JSON; `required`, `max_length` or `integer` is on an input outside a JSON
+  row; repeater options are on an input that is not a repeater;
 - a condition names something that is not an input of the form, or an
   encrypted field; `is_true` is on a field that is not a boolean; `eq`, `ne`
   or `is_in` is on a JSON, rich text, media, date-time or key/value field, or

@@ -46,6 +46,9 @@ pub enum InputType {
     /// form; the value is a change, `{attach?: [keys], detach?: [keys]}`
     /// (vocabulary 9, ADR 0035).
     BelongsToMany,
+    /// Rows of inputs, in a JSON column or as child records (vocabulary 15,
+    /// ADR 0040).
+    Repeater,
 }
 
 /// An option of a select, checkbox list or select filter.
@@ -97,6 +100,12 @@ pub struct Input {
     pub(crate) shown_when: Option<Box<super::Condition>>,
     /// Hidden after a write: the field takes its cleared value.
     pub(crate) clear_when_hidden: bool,
+    /// Repeaters: their rows (boxed: most inputs are not repeaters).
+    pub(crate) repeater: Option<Box<super::repeater::RepeaterSpec>>,
+    /// JSON repeater rows: rules a field gives elsewhere.
+    pub(crate) required: bool,
+    pub(crate) max_length: Option<usize>,
+    pub(crate) integer: bool,
 }
 
 impl Input {
@@ -121,6 +130,10 @@ impl Input {
             number: None,
             shown_when: None,
             clear_when_hidden: false,
+            repeater: None,
+            required: false,
+            max_length: None,
+            integer: false,
         }
     }
 

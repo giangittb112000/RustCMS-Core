@@ -147,6 +147,20 @@ evaluates them again on every write, on the resulting values, drops values
 sent for hidden inputs and requires required fields only when shown. Older
 clients show every input; the server ignores what they send for hidden ones.
 
+Vocabulary 15 adds repeaters (ADR 0040): inputs of type `repeater` carry
+`repeater` (`components`: the row's inputs and layouts, each an
+`InputSchema`; `minItems`, `maxItems`, `reorderable`, `collapsible`,
+`collapsed`, `itemLabel` (`{input}` placeholders), `addActionLabel`,
+`addable`, `deletable`, `defaultItems`, `cloneable`). A JSON repeater's value
+is an array of objects keyed by the row's inputs; row inputs may carry
+`integer: true`. Clients send rows without empty inputs, evaluate a row's
+conditions on that row, and show problems in their row. Error paths below a
+repeater: `name.index.input` (`faq.2.question`, nested `faq.2.links.0.url`),
+`name.index` for a row, `name` for the list. Entries of type
+`repeatable_entry` carry `components`: the entries of each row (kind
+`json`). New issue code `min_items`. Older clients show repeaters read-only
+and never send them.
+
 Vocabulary 14 adds infolists (ADR 0039): a view schema (`operation=view`)
 of a resource that declares one carries `infolist` (`InfolistSchema`:
 `columns`, `components`, `width`), whose components are layouts and

@@ -26,6 +26,8 @@ pub enum EntryType {
     ComputedEntry,
     /// Drawn by an extension script (`registerEntry`).
     CustomEntry,
+    /// The rows of a JSON repeater, each shown by entries (vocabulary 15).
+    RepeatableEntry,
 }
 
 /// How an entry shows its value. Options that do not fit the entry or its
@@ -40,6 +42,8 @@ pub struct Entry {
     /// When the entry is shown, on the stored values (ADR 0037).
     pub(crate) shown_when: Option<Box<crate::ui::Condition>>,
     pub(crate) display: Box<Display>,
+    /// Repeatable entries: the entries of each row (keys of the row).
+    pub(crate) components: Vec<crate::ui::Component>,
 }
 
 /// Display options (boxed: most entries have few).
@@ -75,6 +79,7 @@ impl Entry {
             column_span: 1,
             shown_when: None,
             display: Box::default(),
+            components: Vec::new(),
         }
     }
 
@@ -205,6 +210,13 @@ impl Entry {
         self
     }
 
+    /// Repeatable entries: how each row shows (`TextEntry`, `BooleanEntry`,
+    /// `KeyValueEntry`, `CustomEntry`, `RepeatableEntry`, naming keys of the row).
+    pub fn schema(mut self, components: Vec<crate::ui::Component>) -> Self {
+        self.components = components;
+        self
+    }
+
     /// Settings passed to a custom entry (JSON, at most 4 KiB).
     pub fn props(mut self, props: Json) -> Self {
         self.display.props = Some(props);
@@ -258,4 +270,7 @@ entry_types! {
     RichTextEntry => RichTextEntry,
     /// A value of `Resource::computed`, computed when the view page opens.
     ComputedEntry => ComputedEntry,
+    /// The rows of a JSON repeater field, each shown by the entries of its
+    /// `schema` (ADR 0040).
+    RepeatableEntry => RepeatableEntry,
 }

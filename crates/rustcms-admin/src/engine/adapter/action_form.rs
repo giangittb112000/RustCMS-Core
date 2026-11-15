@@ -152,6 +152,8 @@ impl<R: Resource> ResourceAdapter<R> {
                     number: None,
                     shown_when: field.input.shown_when.as_deref().cloned(),
                     clear_when_hidden: false,
+                    integer: false,
+                    repeater: None,
                 })
             })
             .collect();

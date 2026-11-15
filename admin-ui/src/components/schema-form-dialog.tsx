@@ -10,7 +10,7 @@ import { Button } from "@/components/ui/button";
 import { Dialog } from "@/components/ui/dialog";
 import { useT } from "@/i18n";
 import { Components } from "@/renderers/form";
-import { type FormValues, defaultValues, hiddenNames, inputsOf, payloadOf } from "@/schema/form";
+import { type FormValues, defaultValues, hiddenNames, inputsOf, payloadOf, serverErrors } from "@/schema/form";
 import { editResolver } from "@/schema/resolver";
 
 export function SchemaFormDialog(props: {
@@ -73,10 +73,9 @@ function Body({ onClose, form, slug, optionsPath, data, submitLabel, onSubmit, c
     } catch (e) {
       if (e instanceof ApiError && e.status === 422) {
         const known = new Set(inputs.map((i) => i.name));
-        for (const [field, messages] of Object.entries(e.fieldErrors)) {
-          if (known.has(field)) values.setError(field, { type: "server", message: messages.join(" ") });
-        }
-        const other = [...e.formErrors, ...Object.entries(e.fieldErrors).filter(([f]) => !known.has(f)).map(([f, m]) => `${f}: ${m.join(" ")}`)];
+        const routed = serverErrors(e.fieldErrors, known);
+        for (const [field, error] of Object.entries(routed.byInput)) values.setError(field, { type: "server", ...error });
+        const other = [...e.formErrors, ...routed.other.map(([f, m]) => `${f}: ${m.join(" ")}`)];
         if (other.length) setNotice(other.join(" "));
       } else {
         setNotice(e instanceof Error ? e.message : t("action.failed"));
