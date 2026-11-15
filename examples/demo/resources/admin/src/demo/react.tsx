@@ -1,9 +1,12 @@
 // The React demo page (`ReactPage`, `/admin/p/react-demo`): host API v2, on
-// the panel's React, React Query and UI kit (level 2). Built by `npm run build`.
+// the panel's React, React Query and UI kit (level 3), and the swatch entry
+// of a category's view page. Built by `npm run build`.
 import { useEffect, useState } from "react";
 import {
+  type EntryProps,
   type PageProps,
   fieldErrors,
+  registerEntry,
   registerPage,
   useAdminMutation,
   useColorScheme,
@@ -158,3 +161,18 @@ function Overview(props: PageProps<Data>) {
 }
 
 registerPage("demo/react", ReactDemo);
+
+// #region swatch-entry
+/** A category's color on its view page (`CustomEntry::make("color", "demo/swatch")`). */
+function Swatch(props: EntryProps<string | null>) {
+  if (!props.value) return <span className="demo-swatch-none">{props.t("No color")}</span>;
+  return (
+    <span className="demo-swatch">
+      <span className="demo-swatch-chip" style={{ backgroundColor: props.value }} aria-hidden="true" />
+      <code>{props.value}</code>
+    </span>
+  );
+}
+
+registerEntry("demo/swatch", Swatch);
+// #endregion swatch-entry

@@ -739,6 +739,8 @@ fn walk_labels(component: &Component, out: &mut Vec<String>) {
             out.extend(input.placeholder.clone());
             out.extend(input.options.iter().map(|o| o.label.clone()));
         }
+        // Refused at boot (`check_form_layout`).
+        Component::Entry(_) => {}
     }
 }
 

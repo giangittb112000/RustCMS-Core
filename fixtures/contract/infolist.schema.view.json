@@ -1,0 +1,302 @@
+{
+  "abilities": {
+    "create": true,
+    "delete": true,
+    "history": true,
+    "update": true,
+    "view": true,
+    "viewAny": true
+  },
+  "form": {
+    "columns": 1,
+    "components": [
+      {
+        "columnSpan": 1,
+        "disabled": true,
+        "label": "Title",
+        "name": "title",
+        "nullable": false,
+        "rules": [],
+        "type": "text_input",
+        "valueType": "string"
+      },
+      {
+        "columnSpan": 1,
+        "disabled": true,
+        "label": "Code",
+        "name": "code",
+        "nullable": false,
+        "rules": [],
+        "type": "text_input",
+        "valueType": "string"
+      },
+      {
+        "columnSpan": 1,
+        "disabled": true,
+        "label": "Status",
+        "name": "status",
+        "nullable": false,
+        "rules": [],
+        "type": "text_input",
+        "valueType": "string"
+      },
+      {
+        "columnSpan": 1,
+        "disabled": true,
+        "label": "Published",
+        "name": "published",
+        "nullable": false,
+        "rules": [],
+        "type": "toggle",
+        "valueType": "bool"
+      },
+      {
+        "columnSpan": 1,
+        "disabled": true,
+        "label": "Meta",
+        "name": "meta",
+        "nullable": true,
+        "rules": [],
+        "type": "textarea",
+        "valueType": "json"
+      },
+      {
+        "columnSpan": 1,
+        "disabled": true,
+        "label": "Teacher",
+        "name": "teacher_id",
+        "nullable": false,
+        "relationship": {
+          "resource": "teachers"
+        },
+        "rules": [],
+        "type": "select",
+        "valueType": "i32"
+      },
+      {
+        "columnSpan": 1,
+        "disabled": true,
+        "label": "Fee",
+        "name": "fee",
+        "nullable": true,
+        "rules": [],
+        "type": "number_input",
+        "valueType": "i32"
+      }
+    ]
+  },
+  "infolist": {
+    "columns": 2,
+    "components": [
+      {
+        "columns": 1,
+        "components": [
+          {
+            "columnSpan": 1,
+            "copyable": true,
+            "label": "Title",
+            "name": "title",
+            "type": "text_entry",
+            "valueType": "string"
+          },
+          {
+            "badge": true,
+            "colors": [
+              {
+                "color": "success",
+                "value": "open"
+              }
+            ],
+            "columnSpan": 1,
+            "label": "Status",
+            "name": "status",
+            "options": [
+              {
+                "label": "Open",
+                "value": "open"
+              }
+            ],
+            "type": "text_entry",
+            "valueType": "string"
+          },
+          {
+            "columnSpan": 1,
+            "label": "Published",
+            "labels": [
+              "Live",
+              "Hidden"
+            ],
+            "name": "published",
+            "type": "boolean_entry",
+            "valueType": "bool"
+          },
+          {
+            "columnSpan": 1,
+            "label": "Teacher",
+            "link": true,
+            "name": "teacher_id",
+            "relationship": {
+              "resource": "teachers"
+            },
+            "type": "relation_entry",
+            "valueType": "i32"
+          }
+        ],
+        "label": "Course",
+        "type": "section"
+      },
+      {
+        "columns": 1,
+        "components": [
+          {
+            "columnSpan": 1,
+            "decimals": 0,
+            "label": "Fee",
+            "name": "fee",
+            "suffix": " VND",
+            "type": "text_entry",
+            "valueType": "i32"
+          }
+        ],
+        "label": "Money",
+        "type": "section"
+      },
+      {
+        "columnSpan": 1,
+        "label": "Meta",
+        "name": "meta",
+        "shownWhen": {
+          "name": "published",
+          "op": "is_true"
+        },
+        "type": "key_value_entry",
+        "valueType": "json"
+      },
+      {
+        "columnSpan": 1,
+        "label": "Code",
+        "name": "code",
+        "props": {
+          "size": "large"
+        },
+        "type": "custom_entry",
+        "valueType": "string",
+        "widget": "acme/code"
+      },
+      {
+        "columnSpan": 1,
+        "computed": true,
+        "label": "Learners",
+        "name": "learners",
+        "type": "computed_entry",
+        "valueType": "json"
+      },
+      {
+        "columnSpan": 1,
+        "computed": true,
+        "decimals": 2,
+        "label": "Revenue",
+        "name": "revenue",
+        "type": "computed_entry",
+        "valueType": "json"
+      },
+      {
+        "columnSpan": 1,
+        "computed": true,
+        "label": "Broken",
+        "name": "broken",
+        "type": "computed_entry",
+        "valueType": "json"
+      },
+      {
+        "columnSpan": 1,
+        "computed": true,
+        "label": "Slow",
+        "name": "slow",
+        "type": "computed_entry",
+        "valueType": "json"
+      },
+      {
+        "columnSpan": 1,
+        "computed": true,
+        "label": "Huge",
+        "name": "huge",
+        "type": "computed_entry",
+        "valueType": "json"
+      }
+    ]
+  },
+  "operation": "view",
+  "resource": {
+    "label": "Course",
+    "pluralLabel": "Courses",
+    "slug": "courses",
+    "titleField": "title"
+  },
+  "schemaVersion": 2,
+  "table": {
+    "actions": [],
+    "columns": [
+      {
+        "label": "Title",
+        "name": "title",
+        "searchable": false,
+        "sortable": false,
+        "type": "text",
+        "valueType": "string"
+      },
+      {
+        "label": "Code",
+        "name": "code",
+        "searchable": false,
+        "sortable": false,
+        "type": "text",
+        "valueType": "string"
+      },
+      {
+        "label": "Status",
+        "name": "status",
+        "searchable": false,
+        "sortable": false,
+        "type": "text",
+        "valueType": "string"
+      },
+      {
+        "label": "Published",
+        "name": "published",
+        "searchable": false,
+        "sortable": false,
+        "type": "boolean",
+        "valueType": "bool"
+      },
+      {
+        "label": "Teacher",
+        "name": "teacher_id",
+        "relationship": {
+          "resource": "teachers"
+        },
+        "searchable": false,
+        "sortable": false,
+        "type": "text",
+        "valueType": "i32"
+      },
+      {
+        "label": "Fee",
+        "name": "fee",
+        "searchable": false,
+        "sortable": false,
+        "type": "text",
+        "valueType": "i32"
+      }
+    ],
+    "filters": [],
+    "perPageOptions": [
+      10,
+      25,
+      50,
+      100
+    ],
+    "searchable": false
+  },
+  "vocabularyVersion": 14
+}

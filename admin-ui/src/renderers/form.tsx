@@ -26,6 +26,7 @@ import {
   hasUnsafeInteger,
   inputsOf,
   isInput,
+  isLayout,
   isTextObject,
   isTriState,
   pairsOf,
@@ -85,23 +86,23 @@ export const gridCols = (n: number) => COLS[Math.min(Math.max(n, 1), 4)] ?? COLS
 
 /** The page width of a record's form (`Form::width`): unknown (newer) widths are the default. */
 export const formWidthClass = (width?: string) => (width === "full" ? "max-w-none" : width === "wide" ? "max-w-6xl" : "max-w-4xl");
-const span = (n: number) => SPAN[Math.min(Math.max(n, 1), 4)] ?? SPAN[1];
+export const span = (n: number) => SPAN[Math.min(Math.max(n, 1), 4)] ?? SPAN[1];
 
 /**
  * Whether a component's condition holds (ADR 0037), set by the outermost
  * `Components` of a form for the nested ones.
  */
 const ShownContext = createContext<((condition: Condition | undefined) => boolean) | null>(null);
-const always = () => true;
+export const always = () => true;
 
 /** A predicate on conditions for wire `values` (hidden fields read as null). */
-function shownWith(form: FormConditions, values: WireValues) {
+export function shownWith(form: FormConditions, values: WireValues) {
   const hidden = hiddenFields(form, values);
   return (condition: Condition | undefined) => !condition || holds(form, condition, values, hidden);
 }
 
 /** A layout with only the children (tabs, panes) its conditions show. */
-const withShownChildren = (layout: LayoutSchema, shown: (c: Condition | undefined) => boolean): LayoutSchema =>
+export const withShownChildren = (layout: LayoutSchema, shown: (c: Condition | undefined) => boolean): LayoutSchema =>
   layout.components.every((c) => shown(c.shownWhen))
     ? layout
     : { ...layout, components: layout.components.filter((c) => shown(c.shownWhen)) };
@@ -121,7 +122,9 @@ function ComponentList({ components, ctx }: { components: ComponentSchema[]; ctx
       {components.map((c, i) =>
         // Hidden: not rendered, its draft kept in the form state (never sent).
         !shown(c.shownWhen) ? null
-          : isInput(c) ? <Field key={c.name} input={c} ctx={ctx} /> : <Layout key={`layout-${i}`} layout={c} ctx={ctx} />,
+          : isInput(c) ? <Field key={c.name} input={c} ctx={ctx} />
+          // Forms hold no entries (refused by the server).
+          : isLayout(c) ? <Layout key={`layout-${i}`} layout={c} ctx={ctx} /> : null,
       )}
     </>
   );
@@ -144,7 +147,7 @@ function LiveConditions({ components, ctx }: { components: ComponentSchema[]; ct
   return <ShownContext.Provider value={shown}><ComponentList components={components} ctx={ctx} /></ShownContext.Provider>;
 }
 
-function SchemaLayout({ layout, errors, attempt, children }: {
+export function SchemaLayout({ layout, errors, attempt, children }: {
   layout: LayoutSchema;
   errors?: FieldErrors<FormValues>;
   attempt?: number;
@@ -202,8 +205,8 @@ function CollapsibleSection({ layout, errors, attempt, children }: {
  * before it with `asideFirst`). Either pane may be missing (nothing in it the
  * user may see).
  */
-function SplitLayout({ layout, render }: { layout: LayoutSchema; render: (pane: LayoutSchema) => React.ReactNode }) {
-  const pane = (id: string) => layout.components.find((c): c is LayoutSchema => !isInput(c) && c.type === "pane" && c.id === id);
+export function SplitLayout({ layout, render }: { layout: LayoutSchema; render: (pane: LayoutSchema) => React.ReactNode }) {
+  const pane = (id: string) => layout.components.find((c): c is LayoutSchema => isLayout(c) && c.type === "pane" && c.id === id);
   const main = pane("main");
   const aside = pane("aside");
   const column = (p: LayoutSchema) => <div className={cn("grid min-w-0 grid-cols-1 content-start gap-x-6 gap-y-6", gridCols(p.columns))}>{render(p)}</div>;
@@ -242,7 +245,7 @@ function Layout({ layout, ctx }: { layout: LayoutSchema; ctx: FormContext }) {
  * error is shown; nested tabs do the same, so every enclosing tab opens. The
  * form then focuses that input.
  */
-function TabsLayout({ layout, errors, attempt, render }: {
+export function TabsLayout({ layout, errors, attempt, render }: {
   layout: LayoutSchema;
   errors?: FieldErrors<FormValues>;
   attempt?: number;
@@ -250,7 +253,7 @@ function TabsLayout({ layout, errors, attempt, render }: {
 }) {
   const t = useT();
   const base = useId();
-  const tabs = layout.components.filter((c): c is LayoutSchema => !isInput(c));
+  const tabs = layout.components.filter(isLayout);
   const [active, setActive] = useState(0);
   const refs = useRef<(HTMLButtonElement | null)[]>([]);
   const current = Math.min(active, Math.max(tabs.length - 1, 0));
@@ -343,19 +346,20 @@ function ReadOnlyBody({ components, data, slug, record, shown }: {
   const t = useT();
   return <>{components.map((component, index) => {
     if (!shown(component.shownWhen)) return null;
-    if (!isInput(component) && component.type === "tabs") {
+    if (isLayout(component) && component.type === "tabs") {
       return <TabsLayout key={`layout-${index}`} layout={withShownChildren(component, shown)} render={(tab) =>
         <ReadOnlyBody components={tab.components} data={data} slug={slug} record={record} shown={shown} />} />;
     }
-    if (!isInput(component) && component.type === "split") {
+    if (isLayout(component) && component.type === "split") {
       return <SplitLayout key={`layout-${index}`} layout={withShownChildren(component, shown)} render={(pane) =>
         <ReadOnlyBody components={pane.components} data={data} slug={slug} record={record} shown={shown} />} />;
     }
-    if (!isInput(component)) {
+    if (isLayout(component)) {
       return <SchemaLayout key={`layout-${index}`} layout={component}>
         <ReadOnlyBody components={component.components} data={data} slug={slug} record={record} shown={shown} />
       </SchemaLayout>;
     }
+    if (!isInput(component)) return null;
     // Links are shown by the relation manager on the record's page.
     if (component.type === "hidden" || component.type === "belongs_to_many" || component.writeOnly) return null;
     const supplied = Object.prototype.hasOwnProperty.call(data, component.name);
@@ -409,7 +413,7 @@ function ReadOnlyBody({ components, data, slug, record, shown }: {
   })}</>;
 }
 
-function readOnlyText(value: unknown): string {
+export function readOnlyText(value: unknown): string {
   return typeof value === "object" ? JSON.stringify(value, null, 2) : String(value);
 }
 

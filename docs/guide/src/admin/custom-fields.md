@@ -151,7 +151,8 @@ field's kind and rules, `scope()` and the policy, like any other input.
 ## Pages, slots and cells
 
 The same extension scripts may draw custom pages (`registerPage`), content
-beside records (`registerSlot`) and table cells (`registerCell`), with the
+beside records (`registerSlot`), table cells (`registerCell`) and the entries
+of a record's view page (`registerEntry`, see [Infolists](infolists.md#custom-entries)), with the
 same lifecycle (`mount`, `update`, `unmount`): see
 [Customizing the panel](customizing.md#script-pages) and
 [custom cells](customizing.md#custom-cells) (`TableColumn::cell("vendor/name")`

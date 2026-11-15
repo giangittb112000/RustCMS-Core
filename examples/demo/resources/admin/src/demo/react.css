@@ -8,3 +8,6 @@
 .demo-react-row { display: flex; align-items: center; gap: 0.5rem; }
 .demo-react-list { display: flex; flex-direction: column; gap: 0.25rem; list-style: none; padding: 0; }
 .demo-react-error { color: var(--destructive); font-size: 0.875rem; }
+.demo-swatch { display: inline-flex; align-items: center; gap: 0.5rem; }
+.demo-swatch-chip { display: inline-block; width: 1.25rem; height: 1.25rem; border-radius: 0.25rem; border: 1px solid var(--border); }
+.demo-swatch-none { color: var(--muted-foreground); }

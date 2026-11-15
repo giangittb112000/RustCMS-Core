@@ -81,7 +81,8 @@ pub struct Extension {
 /// before the script runs: `react` and `react_query` as `"major.minor"`
 /// (the panel must have the same major and at least that minor), `ui` the
 /// panel level it needs (the panel must have at least that one: 2 adds
-/// `props.resources`, `props.toast` and more UI components). The host API
+/// `props.resources`, `props.toast` and more UI components; 3 adds
+/// `registerEntry` and the `Infolist` component). The host API
 /// version is 2.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct Requires {
@@ -89,7 +90,7 @@ pub struct Requires {
     pub react: &'static str,
     /// React Query, `"5.104"`.
     pub react_query: &'static str,
-    /// The panel level, `1` or `2` (what `rustcms make:page --react` writes).
+    /// The panel level, `1` to `3` (`rustcms make:page --react` writes the latest).
     pub ui: u32,
 }
 

@@ -2,7 +2,7 @@
 // everything; these rules only give earlier feedback.
 import { z } from "zod";
 import { t } from "@/i18n";
-import type { ComponentSchema, InputSchema, JsonValue } from "@/api/types";
+import type { ComponentSchema, EntrySchema, InputSchema, JsonValue, LayoutSchema } from "@/api/types";
 import { asDocument } from "@/lib/rich-text";
 import { widget } from "@/lib/widgets";
 import { checkText, fromText, toText, type WireKind } from "@/lib/wire";
@@ -62,7 +62,7 @@ export function protectLossyJson(components: ComponentSchema[], data?: Record<st
         : foreignKeyValue(c, data[c.name])
           ? protect(c, "form.notTextPairs")
           : c
-      : { ...c, components: protectLossyJson(c.components, data) },
+      : isLayout(c) ? { ...c, components: protectLossyJson(c.components, data) } : c,
   );
 }
 
@@ -101,11 +101,14 @@ export const KNOWN_INPUT_TYPES = new Set<string>([
   "hidden",
 ]);
 
-export const isInput = (c: ComponentSchema): c is InputSchema => "name" in c;
+/** An infolist entry (vocabulary 14): its type ends in `_entry`, including newer ones. */
+export const isEntry = (c: ComponentSchema): c is EntrySchema => "name" in c && c.type.endsWith("_entry");
+export const isInput = (c: ComponentSchema): c is InputSchema => "name" in c && !c.type.endsWith("_entry");
+export const isLayout = (c: ComponentSchema): c is LayoutSchema => "components" in c;
 
 /** Every input of a form, depth-first. */
 export function inputsOf(components: ComponentSchema[]): InputSchema[] {
-  return components.flatMap((c) => (isInput(c) ? [c] : inputsOf(c.components)));
+  return components.flatMap((c) => (isInput(c) ? [c] : isLayout(c) ? inputsOf(c.components) : []));
 }
 
 const kindOf = (input: InputSchema) => input.valueType as WireKind;
@@ -404,7 +407,9 @@ export function relabel(shown: ComponentSchema[], latest: ComponentSchema[]): Co
   return shown.map((component, i) => {
     const fresh = isInput(component)
       ? findInput(latest, component.name)
-      : latest.find((c, j) => !isInput(c) && c.type === component.type && (c.id ? c.id === component.id : j === i));
+      : isLayout(component)
+        ? latest.find((c, j) => isLayout(c) && c.type === component.type && (c.id ? c.id === component.id : j === i))
+        : undefined;
     if (!fresh) return component;
     if (isInput(component) && isInput(fresh)) {
       const options = component.options?.map((o) => ({
@@ -415,7 +420,7 @@ export function relabel(shown: ComponentSchema[], latest: ComponentSchema[]): Co
       const why = (component as Protected).protection;
       return { ...component, label: fresh.label, help: why ? t(why) : fresh.help, placeholder: fresh.placeholder, options };
     }
-    if (!isInput(component) && !isInput(fresh)) {
+    if (isLayout(component) && isLayout(fresh)) {
       return { ...component, label: fresh.label, components: relabel(component.components, fresh.components) };
     }
     return component;
@@ -426,7 +431,7 @@ function findInput(components: ComponentSchema[], name: string): InputSchema | u
   for (const c of components) {
     if (isInput(c)) {
       if (c.name === name) return c;
-    } else {
+    } else if (isLayout(c)) {
       const found = findInput(c.components, name);
       if (found) return found;
     }

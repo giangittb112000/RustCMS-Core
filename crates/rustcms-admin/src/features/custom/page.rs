@@ -23,6 +23,10 @@ pub enum PageView {
     /// An extension script that registered `vendor/name` with
     /// `window.rustcms.registerPage` (or `registerSlot`).
     Script(&'static str),
+    /// Entries showing the page's data by key, drawn by the panel without a
+    /// script (ADR 0039): `PageView::Infolist(|| Infolist::new().schema(…))`.
+    /// Text, boolean, key/value and custom entries only.
+    Infolist(fn() -> crate::ui::Infolist),
 }
 
 /// A template file embedded by [`view!`](crate::view).

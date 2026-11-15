@@ -11,7 +11,7 @@ function host() {
 }
 
 /** The panel level this SDK is built for (`Requires.ui` must be at least this). */
-export const SDK_UI = 2;
+export const SDK_UI = 3;
 
 function registering(kind) {
   return (name, component) => {
@@ -31,6 +31,8 @@ export const registerPage = registering("page");
 export const registerSlot = registering("slot");
 /** Registers a table cell component (`TableColumn::cell(name)`). */
 export const registerCell = registering("cell");
+/** Registers an infolist entry component (`CustomEntry::make(field, name)`; `ui` 3). */
+export const registerEntry = registering("entry");
 
 /** `query` as sorted `[name, value]` pairs (duplicates kept): the key part and what is sent. */
 export function queryPairs(query) {

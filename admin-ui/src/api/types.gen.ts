@@ -6,6 +6,8 @@ export type InputType = "text_input" | "textarea" | "number_input" | "select" | 
 
 export type LayoutType = "section" | "grid" | "tabs" | "tab" | "split" | "pane";
 
+export type EntryType = "text_entry" | "relation_entry" | "boolean_entry" | "key_value_entry" | "media_entry" | "rich_text_entry" | "computed_entry" | "custom_entry";
+
 export type ColumnType = "text" | "badge" | "boolean" | "date";
 
 export type Breakpoint = "sm" | "md" | "lg";
@@ -390,7 +392,145 @@ asideFirst?: boolean,
  */
 shownWhen?: Condition, };
 
-export type ComponentSchema = InputSchema | LayoutSchema;
+export type EntrySchema = { 
+/**
+ * Entry type.
+ */
+type: EntryType, 
+/**
+ * Field (or computed value, or key of a panel page's data).
+ */
+name: string, 
+/**
+ * Label (translated).
+ */
+label: string, 
+/**
+ * Wire kind of the value (`json` for computed values and panel pages).
+ */
+valueType: string, 
+/**
+ * Columns spanned.
+ */
+columnSpan: number, 
+/**
+ * Help text (translated).
+ */
+help?: string, 
+/**
+ * Shown only when this holds for the stored values.
+ */
+shownWhen?: Condition, 
+/**
+ * Shown as a badge.
+ */
+badge?: boolean, 
+/**
+ * Colors by value (badges, booleans).
+ */
+colors?: Array<BadgeColor>, 
+/**
+ * A button copies the value.
+ */
+copyable?: boolean, 
+/**
+ * Most characters shown.
+ */
+limit?: number, 
+/**
+ * The value is a link (`http`, `https` only).
+ */
+url?: boolean, 
+/**
+ * A number with this many decimals.
+ */
+decimals?: number, 
+/**
+ * One item per line.
+ */
+list?: boolean, 
+/**
+ * Line breaks kept.
+ */
+multiline?: boolean, 
+/**
+ * Masked.
+ */
+password?: boolean, 
+/**
+ * Fixed text before the value.
+ */
+prefix?: string, 
+/**
+ * Fixed text after the value.
+ */
+suffix?: string, 
+/**
+ * Labels by value (translated).
+ */
+options?: Array<SelectOption>, 
+/**
+ * Labels of a boolean entry, `[yes, no]` (translated).
+ */
+labels?: [string, string], 
+/**
+ * Thumbnail size in pixels.
+ */
+size?: number, 
+/**
+ * Images open in a viewer.
+ */
+gallery?: boolean, 
+/**
+ * The document's headings as an outline.
+ */
+outline?: boolean, 
+/**
+ * Related resource (relation entries; the title is the record's `labels[name]`).
+ */
+relationship?: Relationship, 
+/**
+ * The value is computed on the server (`records/{key}/computed`), not in the record's data.
+ */
+computed?: boolean, 
+/**
+ * Relation entries: the title links to the related record (the user may list its resource).
+ */
+link?: boolean, 
+/**
+ * Custom entries: the script drawing the value (`vendor/name`).
+ */
+widget?: string, 
+/**
+ * Settings of the custom entry.
+ */
+props?: JsonValue, };
+
+export type InfolistSchema = { 
+/**
+ * Columns.
+ */
+columns: number, 
+/**
+ * Entries and layouts the user may see.
+ */
+components: Array<ComponentSchema>, 
+/**
+ * How wide the view page is (absent: the default).
+ */
+width?: FormWidth, };
+
+export type ComputedValues = { 
+/**
+ * Values by name.
+ */
+data: Record<string, JsonValue>, 
+/**
+ * Names that failed (error, timeout, too large): shown as not available.
+ */
+failed: Array<string>, };
+
+export type ComponentSchema = InputSchema | LayoutSchema | EntrySchema;
 
 export type FormSchema = { 
 /**
@@ -588,6 +728,11 @@ form: FormSchema,
  * Table.
  */
 table: TableSchema, 
+/**
+ * The view page's entries, for `operation=view` of a resource that
+ * declares them (vocabulary 14); absent: the form is shown read-only.
+ */
+infolist?: InfolistSchema, 
 /**
  * Has-many relations of the viewed record the user may list.
  */
@@ -1731,6 +1876,14 @@ html: string, } | { "kind": "script",
 script: string, 
 /**
  * What the script gets as `ctx.data`.
+ */
+data: JsonValue, } | { "kind": "infolist", 
+/**
+ * The entries.
+ */
+infolist: InfolistSchema, 
+/**
+ * The values, by entry name.
  */
 data: JsonValue, };
 

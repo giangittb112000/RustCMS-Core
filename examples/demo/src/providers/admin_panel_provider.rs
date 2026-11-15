@@ -60,11 +60,12 @@ pub fn provider() -> AdminProvider {
         // The live page (`LivePage`, server-sent events).
         .extension_script("demo-live", include_str!("../../resources/admin/js/demo/live.js"))
         // #region react-extension
-        // The React demo page (v2, built by `npm run build` in resources/admin).
+        // The React demo page and the categories' swatch entry (v2, built by
+        // `npm run build` in resources/admin).
         .extension_script_v2(
             "demo-react",
             include_str!("../../resources/admin/js/demo/react.js"),
-            Requires { react: "19.3", react_query: "5.104", ui: 2 },
+            Requires { react: "19.3", react_query: "5.104", ui: 3 },
         )
         .extension_style("demo-react", include_str!("../../resources/admin/css/demo/react.css"))
         // #endregion react-extension

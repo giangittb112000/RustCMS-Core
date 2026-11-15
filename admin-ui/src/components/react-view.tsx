@@ -21,7 +21,8 @@ import { type ViewKind, reactViewLevel, translateExtension } from "@/lib/widgets
 export type ViewPlace =
   | { kind: "page"; slug: string; path: string }
   | { kind: "slot"; slot: string; resource: string; recordKey: string }
-  | { kind: "cell"; resource: string; field: string };
+  | { kind: "cell"; resource: string; field: string }
+  | { kind: "entry"; resource: string; field: string };
 
 function deepFreeze<T>(value: T): T {
   if (value && typeof value === "object" && !Object.isFrozen(value)) {
@@ -41,6 +42,8 @@ function namespaceOf(place: ViewPlace): string {
       return `slot:${place.slot}:${place.resource}:${place.recordKey}`;
     case "cell":
       return `cell:${place.resource}:${place.field}`;
+    case "entry":
+      return `entry:${place.resource}:${place.field}`;
   }
 }
 
@@ -79,7 +82,7 @@ export function ReactView(props: ViewProps) {
     </ViewBoundary>
   );
   // Writes of the view whose outcome is unknown pause it, as built-in writes do.
-  if (props.place.kind === "cell") return view;
+  if (props.place.kind === "cell" || props.place.kind === "entry") return view;
   return (
     <>
       <PausedBanner scope={`x:${namespaceOf(props.place)}`} />
@@ -235,6 +238,7 @@ function Instance({ kind, name, component, place, data, record, props, reload, e
           ...level2,
         };
       case "cell":
+      case "entry":
         return { ...common, value: copy(data), record: copy(record), props: copy(props) };
     }
   }, [place, data, record, props, reload, locale, namespace, mount, permissions, searchStr, api, live, navigate, guard, realtime, level2, title]);

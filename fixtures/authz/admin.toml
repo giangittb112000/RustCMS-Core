@@ -174,6 +174,36 @@ actor = "admin"
 status = 200
 
 [[case]]
+route = "GET /admin/api/resources/{slug}/records/{key}/computed"
+path = "/admin/api/resources/posts/records/{own}/computed"
+actor = "guest"
+status = 401
+
+[[case]]
+route = "GET /admin/api/resources/{slug}/records/{key}/computed"
+path = "/admin/api/resources/posts/records/{own}/computed"
+actor = "member"
+status = 404
+
+[[case]]
+route = "GET /admin/api/resources/{slug}/records/{key}/computed"
+path = "/admin/api/resources/posts/records/{own}/computed"
+actor = "editor"
+status = 200
+
+[[case]]
+route = "GET /admin/api/resources/{slug}/records/{key}/computed"
+path = "/admin/api/resources/posts/records/{theirs}/computed"
+actor = "editor"
+status = 404
+
+[[case]]
+route = "GET /admin/api/resources/{slug}/records/{key}/computed"
+path = "/admin/api/resources/posts/records/{own}/computed"
+actor = "token"
+status = 401
+
+[[case]]
 route = "PATCH /admin/api/resources/{slug}/records/{key}"
 path = "/admin/api/resources/posts/records/{own}"
 actor = "editor"

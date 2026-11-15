@@ -71,6 +71,14 @@ pub enum CustomContent {
         #[cfg_attr(feature = "ts", ts(type = "JsonValue"))]
         data: Value,
     },
+    /// Entries showing `data` by key (vocabulary 14, ADR 0039).
+    Infolist {
+        /// The entries.
+        infolist: crate::schema::InfolistSchema,
+        /// The values, by entry name.
+        #[cfg_attr(feature = "ts", ts(type = "JsonValue"))]
+        data: Value,
+    },
 }
 
 /// `GET pages/{slug}`.
@@ -128,6 +136,9 @@ fn draw(custom: &CustomPanel, ctx: &Ctx, name: &str, view: PageView, data: Value
             CustomContent::Html { html: custom.sanitizer.clean(&html) }
         }
         PageView::Script(script) => CustomContent::Script { script: script.to_owned(), data },
+        PageView::Infolist(make) => {
+            CustomContent::Infolist { infolist: crate::adapter::infolist::page_infolist_schema(ctx, &make()), data }
+        }
     })
 }
 

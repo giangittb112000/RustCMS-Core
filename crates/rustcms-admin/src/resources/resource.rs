@@ -251,6 +251,18 @@ pub trait Resource: Send + Sync + 'static {
         Form::default()
     }
 
+    /// The view page's entries (ADR 0039). Empty (the default): the view page
+    /// shows the form read-only. Declared: it replaces the form there.
+    fn infolist() -> crate::ui::Infolist {
+        crate::ui::Infolist::default()
+    }
+
+    /// Values computed when a record's view page opens, shown by
+    /// `ComputedEntry`s of the same names (ADR 0039).
+    fn computed() -> Vec<crate::ui::Computed<Self::Entity>> {
+        Vec::new()
+    }
+
     /// Table layout. Empty (the default): the first readable fields.
     fn table() -> Table {
         Table::default()

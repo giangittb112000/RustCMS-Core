@@ -46,6 +46,7 @@ fn the_admin_route_list_is_unchanged() {
         "GET /admin/api/resources/{slug}/records",
         "POST /admin/api/resources/{slug}/records",
         "GET /admin/api/resources/{slug}/records/{key}",
+        "GET /admin/api/resources/{slug}/records/{key}/computed",
         "PATCH /admin/api/resources/{slug}/records/{key}",
         "DELETE /admin/api/resources/{slug}/records/{key}",
         "POST /admin/api/resources/{slug}/records/{key}/restore",

@@ -84,6 +84,9 @@ pub trait DynResource: Send + Sync {
     async fn list(&self, ctx: &Ctx, query: &ListQuery) -> AppResult<Page>;
     /// Reads one record.
     async fn find(&self, ctx: &Ctx, key: &str) -> AppResult<Envelope>;
+    /// The computed values record `key`'s view page shows (ADR 0039), for a
+    /// user who may view it.
+    async fn computed(&self, ctx: &Ctx, key: &str) -> AppResult<crate::schema::ComputedValues>;
     /// Creates a record from client input.
     async fn create(&self, ctx: &Ctx, input: Data) -> AppResult<Envelope>;
     /// Updates a record from client input (PATCH semantics).

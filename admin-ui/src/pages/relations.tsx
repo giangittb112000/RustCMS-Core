@@ -19,14 +19,14 @@ import { Cell, columnClass } from "@/renderers/table";
 import { ActionNoticeView, RecordActions, useActionRunner } from "@/components/actions";
 import { useUncertain } from "@/api/context";
 import { cn } from "@/lib/utils";
-import { isInput } from "@/schema/form";
+import { isInput, isLayout } from "@/schema/form";
 import { useT } from "@/i18n";
 
 /** The components without the input of `name` (set by the server through a relation). */
 export function withoutInput(components: ComponentSchema[], name: string): ComponentSchema[] {
   return components
     .filter((c) => !(isInput(c) && c.name === name))
-    .map((c) => (isInput(c) ? c : { ...c, components: withoutInput(c.components, name) }));
+    .map((c) => (isLayout(c) ? { ...c, components: withoutInput(c.components, name) } : c));
 }
 
 type SectionProps = { parent: string; record: string; relation: RelationSchema };

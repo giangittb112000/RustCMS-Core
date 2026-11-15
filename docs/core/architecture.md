@@ -33,7 +33,7 @@ on the admin engine, so it can change without touching them.
 | `Illuminate\Auth`, gates, policies | `rustcms-auth` |
 | Filament panel | `rustcms_admin::panel` (`AdminProvider`) |
 | Filament resources | `rustcms_admin::resources` |
-| `filament/forms`, `filament/tables` | `rustcms_admin::forms`, `rustcms_admin::tables` |
+| `filament/forms`, `filament/tables`, `filament/infolists` | `rustcms_admin::forms`, `rustcms_admin::tables`, `rustcms_admin::infolists` |
 | Livewire rendering | `rustcms_admin::contract` (JSON) + `admin-ui` |
 
 ## Modules by role
@@ -43,7 +43,7 @@ on the admin engine, so it can change without touching them.
 | Module | Role |
 |---|---|
 | `resources/` | what applications declare: `Resource`, `Field`, `Action`, `Policy`, list `query` types, `links` (belongs-to-many writes: `LinkOp`, `LinkRequest`, `LinkOutcome`, `RelationChange`) |
-| `forms/`, `tables/` | builders (`TextInput::make`, `Table::new`, …); `ui` re-exports both |
+| `forms/`, `tables/`, `infolists/` | builders (`TextInput::make`, `Table::new`, `TextEntry::make`, `Computed::make`, …); `ui` re-exports them |
 | `panel/` | `AdminProvider` and the SPA shell (assets, extensions) |
 | `engine/` | the generic engine: `Registry`/`DynResource`, `Ctx`, wire format, idempotency, `validate` (value checks shared by resources and settings) |
 | `engine/adapter/` | `ResourceAdapter<R>`: `input` (acceptance), `references` (checks after hooks), `read`, `write` (transactions, row and parent locks, ADR 0018), `schema`, `operations` (the `DynResource` impl), `audit` (snapshots, redaction, entries), `pivot` + `many` (belongs-to-many: `PivotAdapter`, lists through the pivot, attach/detach/update, ADR 0020; links of `BelongsToManySelect` inputs written with the record, ADR 0035), `action_form` (action forms: admission, canonical data, references), `export` (keys in list order, rows of readable fields, canonical queries), `import` (import fields and key, cell values, static row checks, key matches), `secrets` (encrypted field operations and stale-map checks, ADR 0030) |

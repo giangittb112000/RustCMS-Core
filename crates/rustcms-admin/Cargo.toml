@@ -43,6 +43,8 @@ chrono.workspace = true
 rust_decimal.workspace = true
 tracing.workspace = true
 tokio.workspace = true
+# Computed values of a view page run concurrently (ADR 0039).
+futures-util.workspace = true
 rust-embed.workspace = true
 ammonia.workspace = true
 csv.workspace = true
@@ -64,7 +66,6 @@ insta.workspace = true
 proptest.workspace = true
 http-body = "1"
 tempfile.workspace = true
-futures-util.workspace = true
 http-body-util.workspace = true
 tower.workspace = true
 

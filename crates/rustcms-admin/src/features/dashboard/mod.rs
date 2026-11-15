@@ -538,7 +538,7 @@ fn recent_column(
     ) -> Option<&'a crate::schema::InputSchema> {
         components.iter().find_map(|c| match c {
             crate::schema::ComponentSchema::Input(i) if i.name == name => Some(i),
-            crate::schema::ComponentSchema::Input(_) => None,
+            crate::schema::ComponentSchema::Input(_) | crate::schema::ComponentSchema::Entry(_) => None,
             crate::schema::ComponentSchema::Layout(l) => input(&l.components, name),
         })
     }

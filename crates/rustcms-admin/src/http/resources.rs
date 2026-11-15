@@ -126,6 +126,21 @@ pub(super) async fn find(
     Ok(Json(DataResponse { data: record }))
 }
 
+/// Computed-value requests per user per minute (each runs application code).
+const COMPUTED_PER_MINUTE: u32 = 60;
+
+/// The computed values of a record's view page (ADR 0039), limited per user.
+pub(super) async fn computed(
+    State(app): State<AppState>,
+    AdminCtx(ctx): AdminCtx,
+    Path((slug, key)): Path<(String, String)>,
+) -> AppResult<Json<crate::schema::ComputedValues>> {
+    let auth =
+        app.service::<rustcms_auth::AuthState>().ok_or_else(|| AppError::internal("AuthProvider not registered"))?;
+    auth.limiter.reserve(&[(&format!("computed:{}", ctx.principal.id), COMPUTED_PER_MINUTE)]).await?;
+    Ok(Json(resource(&ctx, &slug)?.computed(&ctx, &key).await?))
+}
+
 /// The request's `Idempotency-Key`, validated.
 pub(crate) fn idempotency_key(headers: &axum::http::HeaderMap) -> AppResult<Option<String>> {
     match headers.get(crate::idempotency::HEADER) {

@@ -8,6 +8,9 @@ import { Alert } from "@/components/ui/alert";
 import { useLocale, useT } from "@/i18n";
 import { panelPath } from "@/lib/config";
 import { type EventsHandle, openEvents, openSocket } from "@/lib/realtime";
+import { cn } from "@/lib/utils";
+import { gridCols } from "@/renderers/form";
+import { InfolistRenderer } from "@/renderers/infolist";
 import { ReactView, type ViewPlace } from "./react-view";
 import {
   type View,
@@ -204,5 +207,14 @@ export function CustomContentView({ kind, content, record, reload, place }: {
   place?: ViewPlace;
 }) {
   if (content.kind === "html") return <SafeHtml html={content.html} />;
+  if (content.kind === "infolist") {
+    // Entries showing the page's data by key (ADR 0039).
+    const data = content.data && typeof content.data === "object" && !Array.isArray(content.data) ? content.data : {};
+    return (
+      <div className={cn("grid grid-cols-1 gap-x-6 gap-y-6", gridCols(content.infolist.columns))}>
+        <InfolistRenderer infolist={content.infolist} data={data} />
+      </div>
+    );
+  }
   return <ScriptView kind={kind} name={content.script} data={content.data} record={record} reload={reload} place={place} />;
 }

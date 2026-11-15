@@ -264,7 +264,7 @@ db_test!(kitchen_sink_contract, |db: TestDb| async move {
     ) -> Option<rustcms_admin::schema::InputSchema> {
         components.iter().find_map(|c| match c {
             rustcms_admin::schema::ComponentSchema::Input(i) if i.name == name => Some(i.clone()),
-            rustcms_admin::schema::ComponentSchema::Input(_) => None,
+            rustcms_admin::schema::ComponentSchema::Input(_) | rustcms_admin::schema::ComponentSchema::Entry(_) => None,
             rustcms_admin::schema::ComponentSchema::Layout(l) => find(&l.components, name),
         })
     }

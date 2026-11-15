@@ -2,6 +2,7 @@ import { type QueryClient, keepPreviousData, queryOptions, useMutation, useQuery
 import { t, useLocale } from "@/i18n";
 import type { ApiClient } from "./client";
 import type {
+  ComputedValues,
   LinkOption,
   LinkOutcome,
   LinkPage,
@@ -259,6 +260,18 @@ export function useRecord(slug: string, key: string, opts: { enabled?: boolean }
     enabled: opts.enabled ?? true,
     queryKey: keys.record(slug, key),
     queryFn: () => api.get<DataResponse<Envelope>>(`/resources/${enc(slug)}/records/${enc(key)}`).then((r) => r.data),
+  });
+}
+
+/** The computed values of a record's view page (ADR 0039), refreshed with the record. */
+export function useComputed(slug: string, key: string, opts: { enabled?: boolean } = {}) {
+  const api = useApi();
+  return useQuery({
+    enabled: opts.enabled ?? true,
+    queryKey: [...keys.record(slug, key), "computed"],
+    queryFn: () => api.get<ComputedValues>(`/resources/${enc(slug)}/records/${enc(key)}/computed`),
+    // A failure shows "not available" in the entries; the page stays.
+    retry: false,
   });
 }
 

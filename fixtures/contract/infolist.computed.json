@@ -1,0 +1,11 @@
+{
+  "data": {
+    "learners": 42,
+    "revenue": "500.00"
+  },
+  "failed": [
+    "broken",
+    "slow",
+    "huge"
+  ]
+}

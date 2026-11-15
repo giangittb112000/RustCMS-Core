@@ -4,7 +4,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useForm } from "react-hook-form";
 import { ApiError } from "@/api/client";
 import { useUncertain } from "@/api/context";
-import { type Via, useDeleteRecord, useRecord, useSaveRecord, useSchema } from "@/api/queries";
+import { type Via, useComputed, useDeleteRecord, useRecord, useSaveRecord, useSchema } from "@/api/queries";
 import { RelationSection, withoutInput } from "./relations";
 import { RecordHistory } from "./audit";
 import { RecordSlots } from "@/components/slots";
@@ -18,6 +18,7 @@ import { Dialog } from "@/components/ui/dialog";
 import { cn } from "@/lib/utils";
 import { Components, ReadOnlyComponents, formWidthClass, gridCols } from "@/renderers/form";
 import { MEDIA_SLUG, MediaPreview } from "@/renderers/media-library";
+import { InfolistRenderer, hasComputed } from "@/renderers/infolist";
 import { ActionNoticeView, RecordActions, useActionRunner } from "@/components/actions";
 import { type FormValues, defaultValues, hiddenNames, inputsOf, payloadOf, protectLossyJson, relabel } from "@/schema/form";
 import { errorText, show, type Text, useLocale, useT } from "@/i18n";
@@ -345,6 +346,9 @@ export function ViewPage({ slug, recordKey }: { slug: string; recordKey: string 
   const mounted = useMounted();
   const schema = useSchema(slug, "view", recordKey);
   const record = useRecord(slug, recordKey);
+  // Computed values only when the view page shows some (ADR 0039).
+  const computedEntries = !!schema.data?.infolist && hasComputed(schema.data.infolist.components);
+  const computed = useComputed(slug, recordKey, { enabled: computedEntries });
   const del = useDeleteRecord(slug);
   const [confirming, setConfirming] = useState(false);
   const [error, setError] = useState<Text | null>(null);
@@ -369,7 +373,7 @@ export function ViewPage({ slug, recordKey }: { slug: string; recordKey: string 
   const canEdit = record.data.abilities.update && !readOnly;
   const canDelete = record.data.abilities.delete && !readOnly;
   return (
-    <Page className={formWidthClass(s.form.width)}>
+    <Page className={formWidthClass(s.infolist ? s.infolist.width : s.form.width)}>
       <PageHeader
         title={record.data.title ?? `${s.resource.label} ${recordKey}`}
         eyebrow={s.resource.pluralLabel}
@@ -409,8 +413,15 @@ export function ViewPage({ slug, recordKey }: { slug: string; recordKey: string 
       {actions.dialogs}
       {slug === MEDIA_SLUG && <MediaPreview record={record.data} />}
       <Card>
-        <CardContent className={cn("grid grid-cols-1 gap-x-6 gap-y-6 p-5 sm:p-6", gridCols(s.form.columns))}>
-          <ReadOnlyComponents components={s.form.components} data={record.data.data} slug={slug} record={recordKey} />
+        <CardContent className={cn("grid grid-cols-1 gap-x-6 gap-y-6 p-5 sm:p-6", gridCols(s.infolist ? s.infolist.columns : s.form.columns))}>
+          {s.infolist ? (
+            <InfolistRenderer infolist={s.infolist} data={record.data.data} labels={record.data.labels} slug={slug} recordKey={recordKey}
+              computed={!computedEntries ? undefined
+                : computed.data ? { status: "ready", data: computed.data.data, failed: computed.data.failed }
+                : computed.isError ? { status: "error" } : { status: "loading" }} />
+          ) : (
+            <ReadOnlyComponents components={s.form.components} data={record.data.data} slug={slug} record={recordKey} />
+          )}
         </CardContent>
       </Card>
       <RecordSlots resource={slug} recordKey={recordKey} record={record.data.data} />

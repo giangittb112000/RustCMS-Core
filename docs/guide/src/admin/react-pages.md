@@ -29,7 +29,7 @@ writes, for an application whose package is `blog`:
 - in the admin provider:
 
   ```rust
-  .extension_script_v2("stats", include_str!(concat!(env!("CARGO_MANIFEST_DIR"), "/resources/admin/js/blog/stats.js")), rustcms::admin::Requires { react: "19.3", react_query: "5.104", ui: 2 })
+  .extension_script_v2("stats", include_str!(concat!(env!("CARGO_MANIFEST_DIR"), "/resources/admin/js/blog/stats.js")), rustcms::admin::Requires { react: "19.3", react_query: "5.104", ui: 3 })
   .extension_style("stats", include_str!(concat!(env!("CARGO_MANIFEST_DIR"), "/resources/admin/css/blog/stats.css")))
   ```
 
@@ -106,10 +106,11 @@ A live counter from an [event stream](realtime.md):
 
 ## The component
 
-Register with `registerPage`, `registerSlot` or `registerCell` and the name of
-the Rust side (`PageView::Script("…")` of a page or slot, `.cell("…")` of a
-column). Within each kind (page, slot or cell) a name is taken once, by v1
-or v2.
+Register with `registerPage`, `registerSlot`, `registerCell` or (from `ui` 3)
+`registerEntry` and the name of the Rust side (`PageView::Script("…")` of a
+page or slot, `.cell("…")` of a column, `CustomEntry::make(field, "…")` of an
+[infolist](infolists.md#custom-entries)). Within each kind (page, slot, cell
+or entry) a name is taken once, by v1 or v2.
 
 **Never call `createRoot`**: the panel renders your component.
 
@@ -124,8 +125,8 @@ modules. Other React, React DOM and React Query subpaths (`react-dom/client`,
 | `react`, `react/jsx-runtime` | the panel's React |
 | `react-dom` | `createPortal` |
 | `@tanstack/react-query` | `useQuery`, `useMutation`, `useQueryClient`, `useInfiniteQuery` |
-| `@rustcms/admin-sdk` | `registerPage/Slot/Cell`, the hooks below, the prop types |
-| `@rustcms/admin-sdk/ui` | `Alert`, `Badge`, `Button`, `buttonVariants`, `Card`, `CardContent`, `CardHeader`, `CardTitle`, `Checkbox`, `Switch`, `Dialog`, `Input`, `Label`, `NativeSelect`, `Textarea`, `Page`, `PageHeader`, `Loading`, `ErrorState`, `cn`; and from `ui` 2: `Tabs*`, `DropdownMenu*`, `Tooltip`, `Table*`, `Skeleton`, `Separator`, `CodeBlock` ([below](#components)) |
+| `@rustcms/admin-sdk` | `registerPage/Slot/Cell/Entry`, the hooks below, the prop types |
+| `@rustcms/admin-sdk/ui` | `Alert`, `Badge`, `Button`, `buttonVariants`, `Card`, `CardContent`, `CardHeader`, `CardTitle`, `Checkbox`, `Switch`, `Dialog`, `Input`, `Label`, `NativeSelect`, `Textarea`, `Page`, `PageHeader`, `Loading`, `ErrorState`, `cn`; and from `ui` 2: `Tabs*`, `DropdownMenu*`, `Tooltip`, `Table*`, `Skeleton`, `Separator`, `CodeBlock`; and from `ui` 3: `Infolist` ([below](#components)) |
 | `@rustcms/admin-sdk/host` | `ApiError` (`status`, `code`, `fieldErrors`, `formErrors`, `maybeApplied`), `versions` (`{api, react, reactQuery, ui}`) |
 
 ## Props
@@ -261,6 +262,10 @@ the session.
   `TableCell`, styled like the panel's lists.
 - `Skeleton`, `Separator`, and `CodeBlock code="…"` (with a copy button).
 
+`ui` 3 adds `Infolist schema={…} data={…}`: entries drawn as a record's
+view page draws them ([Infolists](infolists.md)), for example from a panel
+page's `PageView::Infolist` schema.
+
 Menus and tooltips work inside a `Dialog`. Every `Dialog` has a close button
 (×, "Close") in its top right corner, after your content, so opening still
 focuses your first field; `closeButton={false}` leaves it out, and
@@ -302,9 +307,9 @@ time, so the panel's Content Security Policy stays strict.
   does not load the script at all, and the console says why: rebuild with the
   SDK of that RustCMS version. A `ui: 1` bundle keeps working on newer
   panels.
-- A bundle built with the `ui` 2 SDK refuses to register on a panel below
-  `ui` 2, and a bundle whose `Requires` still says `ui: 1` is refused at
-  registration, with a message: update the provider.
+- A bundle built with the `ui` 3 SDK refuses to register on a panel below
+  `ui` 3, and a bundle whose `Requires` still says an older `ui` is refused
+  at registration, with a message: update the provider.
 - `AdminProvider::extension_timeout(Duration)` (1–60 s, default 10) bounds how
   long the panel waits for scripts to register.
 
@@ -320,7 +325,7 @@ end-to-end tests drive the built page in a browser.
 the one the command carries (older or newer). Run `rustcms make:sdk`: it
 replaces the files you did not edit and lists the ones it kept, and the
 `extension_script_v2` registrations whose `Requires` declare an older `ui`:
-set `ui: 2` there. Then update `package.json` to the versions in `Requires`,
+set `ui: 3` there. Then update `package.json` to the versions in `Requires`,
 run `npm install && npm run build`, and commit.
 
 ## Security notes

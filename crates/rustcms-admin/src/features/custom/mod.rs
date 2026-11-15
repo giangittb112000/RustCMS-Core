@@ -126,9 +126,11 @@ impl CustomPanel {
         for page in &self.pages {
             out.push(page.meta().label.clone());
             out.extend(page.meta().group.clone());
+            out.extend(infolist_strings(page.view()));
         }
         for slot in &self.slots {
             out.extend(slot.meta().label.clone());
+            out.extend(infolist_strings(slot.view()));
         }
         out.extend(template::Templates::literals(&self.sources));
         out
@@ -138,6 +140,26 @@ impl CustomPanel {
     pub(crate) fn declared_permissions(&self) -> Vec<String> {
         self.pages.iter().flat_map(|p| p.meta().declared.clone()).collect()
     }
+}
+
+/// The labels, help texts and option labels of an infolist view (translated globally).
+fn infolist_strings(view: PageView) -> Vec<String> {
+    let PageView::Infolist(make) = view else { return Vec::new() };
+    let infolist = make();
+    let mut out = Vec::new();
+    fn layouts(components: &[crate::ui::Component], out: &mut Vec<String>) {
+        for component in components {
+            if let crate::ui::Component::Layout(layout) = component {
+                out.extend(layout.label.clone());
+                layouts(&layout.children, out);
+            }
+        }
+    }
+    layouts(&infolist.components, &mut out);
+    for entry in infolist.entries() {
+        crate::adapter::infolist::entry_strings(entry, || crate::ui::humanize(&entry.name), &mut out);
+    }
+    out
 }
 
 fn compile(templates: &mut template::Templates, sources: &mut Vec<&'static str>, name: &str, view: PageView) {
@@ -156,5 +178,6 @@ fn compile(templates: &mut template::Templates, sources: &mut Vec<&'static str>,
         PageView::Script(script) => {
             assert!(valid_script(script), "{name}: scripts are named `vendor/name` (a-z, 0-9, -), not `{script}`")
         }
+        PageView::Infolist(make) => crate::adapter::infolist::check_page_infolist(name, &make()),
     }
 }

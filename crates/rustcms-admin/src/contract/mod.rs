@@ -6,12 +6,14 @@ use std::collections::BTreeMap;
 
 use serde::Serialize;
 
-use crate::ui::{ColumnType, Condition, FilterType, FormWidth, InputType, LayoutType, NumberBounds, SelectOption};
+use crate::ui::{
+    ColumnType, Condition, EntryType, FilterType, FormWidth, InputType, LayoutType, NumberBounds, SelectOption,
+};
 
 /// Version of the schema structure.
 pub const SCHEMA_VERSION: u32 = 2;
 /// Version of the component, column and filter vocabulary.
-pub const VOCABULARY_VERSION: u32 = 13;
+pub const VOCABULARY_VERSION: u32 = 14;
 
 /// Navigation entry and identity of a resource.
 #[derive(Debug, Clone, PartialEq, Serialize)]
@@ -263,7 +265,7 @@ pub struct LayoutSchema {
     pub shown_when: Option<Condition>,
 }
 
-/// An element of a form: input or layout, told apart by `type`.
+/// An element of a form or infolist: input, layout or entry, told apart by `type`.
 #[derive(Debug, Clone, PartialEq, Serialize)]
 #[cfg_attr(feature = "ts", derive(ts_rs::TS))]
 #[serde(untagged)]
@@ -274,6 +276,144 @@ pub enum ComponentSchema {
     Input(InputSchema),
     /// Layout.
     Layout(LayoutSchema),
+    /// Infolist entry (vocabulary 14).
+    Entry(EntrySchema),
+}
+
+/// An entry of an infolist (vocabulary 14, ADR 0039): how a value is shown
+/// on a view page. Options absent when unset.
+#[derive(Debug, Clone, PartialEq, Serialize)]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
+#[serde(rename_all = "camelCase")]
+pub struct EntrySchema {
+    /// Entry type.
+    #[serde(rename = "type")]
+    pub kind: EntryType,
+    /// Field (or computed value, or key of a panel page's data).
+    pub name: String,
+    /// Label (translated).
+    pub label: String,
+    /// Wire kind of the value (`json` for computed values and panel pages).
+    pub value_type: &'static str,
+    /// Columns spanned.
+    pub column_span: u8,
+    /// Help text (translated).
+    #[cfg_attr(feature = "ts", ts(optional))]
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub help: Option<String>,
+    /// Shown only when this holds for the stored values.
+    #[cfg_attr(feature = "ts", ts(optional))]
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub shown_when: Option<Condition>,
+    /// Shown as a badge.
+    #[cfg_attr(feature = "ts", ts(as = "Option<bool>", optional))]
+    #[serde(skip_serializing_if = "std::ops::Not::not")]
+    pub badge: bool,
+    /// Colors by value (badges, booleans).
+    #[cfg_attr(feature = "ts", ts(as = "Option<Vec<BadgeColor>>", optional))]
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub colors: Vec<BadgeColor>,
+    /// A button copies the value.
+    #[cfg_attr(feature = "ts", ts(as = "Option<bool>", optional))]
+    #[serde(skip_serializing_if = "std::ops::Not::not")]
+    pub copyable: bool,
+    /// Most characters shown.
+    #[cfg_attr(feature = "ts", ts(optional))]
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub limit: Option<u32>,
+    /// The value is a link (`http`, `https` only).
+    #[cfg_attr(feature = "ts", ts(as = "Option<bool>", optional))]
+    #[serde(skip_serializing_if = "std::ops::Not::not")]
+    pub url: bool,
+    /// A number with this many decimals.
+    #[cfg_attr(feature = "ts", ts(optional))]
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub decimals: Option<u8>,
+    /// One item per line.
+    #[cfg_attr(feature = "ts", ts(as = "Option<bool>", optional))]
+    #[serde(skip_serializing_if = "std::ops::Not::not")]
+    pub list: bool,
+    /// Line breaks kept.
+    #[cfg_attr(feature = "ts", ts(as = "Option<bool>", optional))]
+    #[serde(skip_serializing_if = "std::ops::Not::not")]
+    pub multiline: bool,
+    /// Masked.
+    #[cfg_attr(feature = "ts", ts(as = "Option<bool>", optional))]
+    #[serde(skip_serializing_if = "std::ops::Not::not")]
+    pub password: bool,
+    /// Fixed text before the value.
+    #[cfg_attr(feature = "ts", ts(optional))]
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub prefix: Option<String>,
+    /// Fixed text after the value.
+    #[cfg_attr(feature = "ts", ts(optional))]
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub suffix: Option<String>,
+    /// Labels by value (translated).
+    #[cfg_attr(feature = "ts", ts(as = "Option<Vec<SelectOption>>", optional))]
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub options: Vec<SelectOption>,
+    /// Labels of a boolean entry, `[yes, no]` (translated).
+    #[cfg_attr(feature = "ts", ts(optional))]
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub labels: Option<[String; 2]>,
+    /// Thumbnail size in pixels.
+    #[cfg_attr(feature = "ts", ts(optional))]
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub size: Option<u16>,
+    /// Images open in a viewer.
+    #[cfg_attr(feature = "ts", ts(as = "Option<bool>", optional))]
+    #[serde(skip_serializing_if = "std::ops::Not::not")]
+    pub gallery: bool,
+    /// The document's headings as an outline.
+    #[cfg_attr(feature = "ts", ts(as = "Option<bool>", optional))]
+    #[serde(skip_serializing_if = "std::ops::Not::not")]
+    pub outline: bool,
+    /// Related resource (relation entries; the title is the record's `labels[name]`).
+    #[cfg_attr(feature = "ts", ts(optional))]
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub relationship: Option<Relationship>,
+    /// The value is computed on the server (`records/{key}/computed`), not in the record's data.
+    #[cfg_attr(feature = "ts", ts(as = "Option<bool>", optional))]
+    #[serde(skip_serializing_if = "std::ops::Not::not")]
+    pub computed: bool,
+    /// Relation entries: the title links to the related record (the user may list its resource).
+    #[cfg_attr(feature = "ts", ts(as = "Option<bool>", optional))]
+    #[serde(skip_serializing_if = "std::ops::Not::not")]
+    pub link: bool,
+    /// Custom entries: the script drawing the value (`vendor/name`).
+    #[cfg_attr(feature = "ts", ts(optional))]
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub widget: Option<String>,
+    /// Settings of the custom entry.
+    #[cfg_attr(feature = "ts", ts(optional, type = "JsonValue"))]
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub props: Option<serde_json::Value>,
+}
+
+/// A record's view page (vocabulary 14, ADR 0039).
+#[derive(Debug, Clone, PartialEq, Serialize)]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
+pub struct InfolistSchema {
+    /// Columns.
+    pub columns: u8,
+    /// Entries and layouts the user may see.
+    pub components: Vec<ComponentSchema>,
+    /// How wide the view page is (absent: the default).
+    #[cfg_attr(feature = "ts", ts(as = "Option<FormWidth>", optional))]
+    #[serde(skip_serializing_if = "FormWidth::is_default")]
+    pub width: FormWidth,
+}
+
+/// `GET records/{key}/computed`: the computed values of a view page.
+#[derive(Debug, Clone, PartialEq, Serialize)]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
+pub struct ComputedValues {
+    /// Values by name.
+    #[cfg_attr(feature = "ts", ts(type = "Record<string, JsonValue>"))]
+    pub data: crate::Data,
+    /// Names that failed (error, timeout, too large): shown as not available.
+    pub failed: Vec<String>,
 }
 
 /// A form.
@@ -448,6 +588,11 @@ pub struct ResourceSchema {
     pub form: FormSchema,
     /// Table.
     pub table: TableSchema,
+    /// The view page's entries, for `operation=view` of a resource that
+    /// declares them (vocabulary 14); absent: the form is shown read-only.
+    #[cfg_attr(feature = "ts", ts(optional))]
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub infolist: Option<InfolistSchema>,
     /// Has-many relations of the viewed record the user may list.
     #[cfg_attr(feature = "ts", ts(as = "Option<Vec<RelationSchema>>", optional))]
     #[serde(skip_serializing_if = "Vec::is_empty")]

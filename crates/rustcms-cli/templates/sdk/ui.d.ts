@@ -1,4 +1,4 @@
-// The panel's UI kit (`ui` level 2; level 1 had everything up to `cn`). Props follow the panel's own
+// The panel's UI kit (`ui` level 3; level 1 had everything up to `cn`, level 2 up to `CodeBlock`). Props follow the panel's own
 // components; they accept the usual HTML attributes of their element.
 import type * as React from "react";
 
@@ -64,3 +64,13 @@ export declare const Separator: React.FC<{ orientation?: "horizontal" | "vertica
 /** Preformatted text with a copy button. */
 export declare const CodeBlock: React.FC<{ code: string; label?: string; className?: string }>;
 
+
+// ui 3
+
+/**
+ * Entries drawn as a record's view page draws them (ADR 0039): `schema` is an
+ * infolist schema (a panel page's `PageView::Infolist`, or one the page
+ * builds), `data` the values by entry name. Relation and computed entries
+ * need a record page: here they show their raw value.
+ */
+export declare const Infolist: React.FC<{ schema: unknown; data: Record<string, unknown>; className?: string }>;

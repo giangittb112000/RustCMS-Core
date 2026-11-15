@@ -53,6 +53,7 @@ export const sidebar: DefaultTheme.SidebarItem[] = [
       { text: "Dashboard", link: '/admin/dashboard' },
       { text: "Resources", link: '/admin/resources' },
       { text: "Forms", link: '/admin/forms' },
+      { text: "Infolists", link: '/admin/infolists' },
       { text: "Tables", link: '/admin/tables' },
       { text: "Actions", link: '/admin/actions' },
       { text: "Authorization", link: '/admin/authorization' },

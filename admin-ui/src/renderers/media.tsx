@@ -33,7 +33,8 @@ export function MediaImage({ src, alt, className }: { src: string; alt: string; 
 }
 
 /** A stored media item: an image preview, or a file link ("unavailable" when it cannot be fetched). */
-export function MediaThumb({ id, item }: { id: string; item?: MediaItem }) {
+/** A media file's thumbnail; `size` in pixels (default 80), `link`: opens the file in a new tab. */
+export function MediaThumb({ id, item, size, link }: { id: string; item?: MediaItem; size?: number; link?: boolean }) {
   const t = useT();
   const { apiPath } = usePanelConfig();
   const url = mediaUrl(apiPath, id);
@@ -54,7 +55,11 @@ export function MediaThumb({ id, item }: { id: string; item?: MediaItem }) {
       </a>
     );
   }
-  return <img src={url} alt={item?.name ?? ""} className="size-20 rounded-md border border-border object-cover" onError={probe} />;
+  const image = (
+    <img src={url} alt={item?.name ?? ""} className="size-20 rounded-md border border-border object-cover" onError={probe}
+      style={size ? { width: size, height: size } : undefined} />
+  );
+  return link ? <a href={url} target="_blank" rel="noopener noreferrer" className="inline-block rounded-md focus-visible:outline-2 focus-visible:outline-ring">{image}</a> : image;
 }
 
 export function FileUploadWidget({ id, input, value, onChange, disabled, invalid, describedBy, onBusy }: {
