@@ -60,6 +60,7 @@ a [computed value](#computed-values). Every entry takes `label`, `help`,
 | `RichTextEntry` | rich text fields | `outline()` |
 | `ComputedEntry` | a computed value | the display options of `TextEntry` |
 | `CustomEntry` | any field or computed value | `props(json)` |
+| `RepeatableEntry` | a JSON field holding rows ([repeaters](forms.md#repeaters)) | `schema(components![…])`: the entries of each row |
 
 - **Dates and times** follow the field's kind: dates in the user's language,
   instants in their time zone.
@@ -71,6 +72,19 @@ a [computed value](#computed-values). Every entry takes `label`, `help`,
 - **`RelationEntry`** shows the related record's [title](resources.md#titles-from-several-fields),
   linked to its page when the user may list that resource. A related record
   the user may not view shows as `#key`, without a link.
+
+### Rows
+
+`RepeatableEntry` shows each row of a JSON list with its own entries, which
+name keys of the row: `TextEntry`, `BooleanEntry`, `KeyValueEntry`,
+`CustomEntry`, and a nested `RepeatableEntry` (three deep at most).
+
+```rust
+RepeatableEntry::make("faq").schema(components![
+    TextEntry::make("question"),
+    BooleanEntry::make("pinned").labels("Pinned", "Not pinned"),
+])
+```
 
 ### Conditions
 

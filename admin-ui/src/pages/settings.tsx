@@ -13,7 +13,7 @@ import { Card, CardContent } from "@/components/ui/card";
 import { cn } from "@/lib/utils";
 import { Components, formWidthClass, gridCols } from "@/renderers/form";
 import { type SecretIntent, secretPayload } from "@/renderers/secret";
-import { type FormValues, defaultValues, hiddenNames, inputsOf, payloadOf, relabel } from "@/schema/form";
+import { type FormValues, defaultValues, hiddenNames, inputsOf, payloadOf, relabel, serverErrors } from "@/schema/form";
 import { editResolver } from "@/schema/resolver";
 import { useLocale, useT } from "@/i18n";
 
@@ -76,8 +76,9 @@ function SettingsForm({ group, latest, refreshError, refetch }: {
   const refused = useRef<ApiError | null>(null);
   const locale = useLocale();
   useEffect(() => {
-    for (const [field, messages] of Object.entries(refused.current?.fieldErrors ?? {})) {
-      if (form.getFieldState(field).error?.type === "server") form.setError(field, { type: "server", message: messages.join(" ") });
+    const known = new Set(Object.keys(form.getValues()));
+    for (const [field, error] of Object.entries(serverErrors(refused.current?.fieldErrors ?? {}, known).byInput)) {
+      if (form.getFieldState(field).error?.type === "server") form.setError(field, { type: "server", ...error });
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [locale]);
@@ -128,10 +129,9 @@ function SettingsForm({ group, latest, refreshError, refetch }: {
         }
         refused.current = e;
         const known = new Set(inputs.map((i) => i.name));
-        for (const [field, messages] of Object.entries(e.fieldErrors)) {
-          if (known.has(field)) form.setError(field, { type: "server", message: messages.join(" ") });
-        }
-        const other = () => [...e.formErrors, ...Object.entries(e.fieldErrors).filter(([f]) => !known.has(f)).map(([f, m]) => `${f}: ${m.join(" ")}`)];
+        const routed = serverErrors(e.fieldErrors, known);
+        for (const [field, error] of Object.entries(routed.byInput)) form.setError(field, { type: "server", ...error });
+        const other = () => [...e.formErrors, ...routed.other.map(([f, m]) => `${f}: ${m.join(" ")}`)];
         if (other().length) setNotice({ variant: "destructive", text: () => other().join(" ") });
       } else {
         setNotice({ variant: "destructive", text: () => (e instanceof Error ? e.message : t("record.saveFailed")) });

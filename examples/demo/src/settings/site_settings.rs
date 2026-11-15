@@ -17,6 +17,16 @@ pub struct SiteSettings {
     /// The site's logo, a file of the media library (`SettingField::media`).
     #[serde(default)]
     pub logo: Option<sea_orm::prelude::Uuid>,
+    /// Links shown in the site's footer (`SettingField::repeater`).
+    #[serde(default)]
+    pub social_links: Vec<SocialLink>,
+}
+
+/// One footer link: a row of the `social_links` repeater.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct SocialLink {
+    pub label: String,
+    pub url: String,
 }
 
 impl Default for SiteSettings {
@@ -28,6 +38,7 @@ impl Default for SiteSettings {
             posts_per_page: 10,
             mail_password: Secret::default(),
             logo: None,
+            social_links: Vec::new(),
         }
     }
 }

@@ -7,6 +7,7 @@ import { asDocument } from "@/lib/rich-text";
 import { widget } from "@/lib/widgets";
 import { checkText, fromText, toText, type WireKind } from "@/lib/wire";
 import { type WireValues, formConditions, hasConditions, hiddenFields } from "./conditions";
+import { parseRows, repeaterFormValue, rowProblems, wireRows } from "./repeater";
 import {
   isResourceSecret,
   parseSecret,
@@ -99,6 +100,7 @@ export const KNOWN_INPUT_TYPES = new Set<string>([
   "date_picker",
   "date_time_picker",
   "hidden",
+  "repeater",
 ]);
 
 /** An infolist entry (vocabulary 14): its type ends in `_entry`, including newer ones. */
@@ -126,6 +128,9 @@ export function toFormValue(input: InputSchema, value: unknown): FormValue {
     case "belongs_to_many":
       // A change of links ("" for none): records never carry the links themselves.
       return "";
+    case "repeater":
+      // Each row's form values as JSON text; a new record starts with its declared empty rows.
+      return repeaterFormValue(input, value);
     case "secret_map":
       return secretMapFormValue(value);
     case "toggle":
@@ -165,6 +170,8 @@ export function fromFormValue(input: InputSchema, value: FormValue): unknown {
   switch (input.type) {
     case "belongs_to_many":
       return value === "" ? undefined : (JSON.parse(value as string) as JsonValue);
+    case "repeater":
+      return value === "" ? null : wireRows(input, value);
     case "secret_map":
       return secretMapOperation(value);
     case "toggle":
@@ -330,6 +337,24 @@ export function zodSchema(inputs: InputSchema[]) {
       case "belongs_to_many":
         shape[input.name] = z.string();
         break;
+      case "repeater":
+        shape[input.name] = z.string().superRefine((value, ctx) => {
+          if (input.disabled || !input.repeater) return;
+          const rows = parseRows(value);
+          if (rows === null) {
+            ctx.addIssue({ code: "custom", message: t("issue.invalid") });
+            return;
+          }
+          if (required && rows.length === 0) {
+            ctx.addIssue({ code: "custom", message: t("issue.required") });
+            return;
+          }
+          // Each row's problems are shown in the row; the list says there are some.
+          const problems = rowProblems(input.repeater, rows);
+          const first = Object.entries(problems)[0];
+          if (first) ctx.addIssue({ code: "custom", message: first[0] === "" ? first[1] : t("repeater.rowErrors") });
+        });
+        break;
       case "rich_editor":
         shape[input.name] = z.string().superRefine((value, ctx) => {
           if (!input.disabled && required && value === "") ctx.addIssue({ code: "custom", message: t("issue.required") });
@@ -437,4 +462,31 @@ function findInput(components: ComponentSchema[], name: string): InputSchema | u
     }
   }
   return undefined;
+}
+
+/** A server error for one input: a repeater's row problems are `types` below it (`"0.question"`). */
+export interface InputError {
+  message: string;
+  types: Record<string, string>;
+}
+
+/**
+ * A refused write's field errors by input (`known`): a repeater's row paths
+ * (`faq.0.question`) go to the repeater; paths of no input are `other`.
+ */
+export function serverErrors(fieldErrors: Record<string, string[]>, known: Set<string>) {
+  const byInput: Record<string, InputError> = {};
+  const other: [string, string[]][] = [];
+  for (const [path, messages] of Object.entries(fieldErrors)) {
+    const owner = known.has(path) ? path : path.split(".")[0];
+    if (!owner || !known.has(owner)) {
+      other.push([path, messages]);
+      continue;
+    }
+    const entry = (byInput[owner] ??= { message: "", types: {} });
+    if (owner === path) entry.message = messages.join(" ");
+    else entry.types[path.slice(owner.length + 1)] = messages.join(" ");
+  }
+  for (const entry of Object.values(byInput)) if (!entry.message) entry.message = t("repeater.rowErrors");
+  return { byInput, other };
 }

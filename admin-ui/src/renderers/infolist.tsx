@@ -27,6 +27,7 @@ export const KNOWN_ENTRIES = new Set([
   "rich_text_entry",
   "computed_entry",
   "custom_entry",
+  "repeatable_entry",
 ]);
 
 /** The colors `Entry::color` documents; anything else (newer) is gray. */
@@ -142,6 +143,23 @@ function Shown({ entry, value, ctx }: { entry: EntrySchema; value: JsonValue; ct
     case "media_entry": {
       const ids = (Array.isArray(value) ? value : [value]).filter((v): v is string => typeof v === "string");
       return <div className="flex flex-wrap gap-3">{ids.map((id) => <MediaThumb key={id} id={id} size={entry.size} link={entry.gallery} />)}</div>;
+    }
+    case "repeatable_entry": {
+      // Each row shown by the entry's own entries, over the row's values.
+      if (!Array.isArray(value)) return <>{readOnlyText(value)}</>;
+      if (value.length === 0) return <Muted>{t("repeater.empty")}</Muted>;
+      const rows = { columns: 2, components: entry.components ?? [] };
+      return (
+        <ol className="flex flex-col gap-3">
+          {value.map((row, i) => (
+            <li key={i} className="rounded-lg border border-border p-3">
+              <div className="grid grid-cols-1 gap-x-6 gap-y-4 md:grid-cols-2">
+                <InfolistRenderer infolist={rows} data={(row && typeof row === "object" && !Array.isArray(row) ? row : {}) as Data} />
+              </div>
+            </li>
+          ))}
+        </ol>
+      );
     }
     case "rich_text_entry": {
       const doc = asDocument(value);

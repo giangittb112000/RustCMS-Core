@@ -1,7 +1,7 @@
 //! The admin page of [`SiteSettings`] (`/admin/settings/site`): which fields
 //! the form shows and how they are checked.
 
-use rustcms::admin::{SettingField, SettingsMeta, SettingsPage};
+use rustcms::admin::{Repeater, SettingField, SettingsMeta, SettingsPage, TextInput, components};
 use rustcms::async_trait;
 
 use crate::settings::site_settings::SiteSettings;
@@ -21,6 +21,21 @@ impl SettingsPage for SiteSettings {
             SettingField::integer("posts_per_page").help("Between 1 and 100"),
             SettingField::secret("mail_password").label("Mail password"),
             SettingField::media("logo").accept(&["image/*"]).help("An image of the media library"),
+            // #region repeater
+            // Rows of inputs in one value (ADR 0040): each row's rules are on its inputs.
+            SettingField::repeater(
+                Repeater::make("social_links")
+                    .label("Footer links")
+                    .schema(components![
+                        TextInput::make("label").required().max_length(40),
+                        TextInput::make("url").url().required().max_length(200),
+                    ])
+                    .max_items(5)
+                    .reorderable()
+                    .item_label("{label}")
+                    .add_action_label("Add a link"),
+            ),
+            // #endregion repeater
         ]
     }
 

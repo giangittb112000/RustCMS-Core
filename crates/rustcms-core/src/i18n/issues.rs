@@ -63,6 +63,7 @@ pub const TEMPLATES: &[(&str, &str)] = &[
     ("too_long", "is too long"),
     ("too_large", "is too large"),
     ("max_items", "may not have more than {max} items"),
+    ("min_items", "must have at least {min} items"),
     ("list_size", "must be a list of 1 to {max} items"),
     ("max_kib", "may not be larger than {max} KiB"),
     ("max_elements", "may not have more than {max} elements"),

@@ -90,6 +90,9 @@ impl<R: Resource> ResourceAdapter<R> {
                         out.extend(input.placeholder.clone());
                         out.extend(input.help.clone());
                         out.extend(input.options.iter().map(|o| o.label.clone()));
+                        if let Some(spec) = input.repeater.as_deref() {
+                            crate::engine::repeater::display_strings(spec, out);
+                        }
                     }
                     Component::Layout(layout) => {
                         out.extend(layout.label.clone());
@@ -259,7 +262,17 @@ impl<R: Resource> ResourceAdapter<R> {
             number: input.number.as_deref().copied(),
             shown_when: input.shown_when.as_deref().cloned(),
             clear_when_hidden: input.clear_when_hidden,
+            integer: false,
+            repeater: self.repeater_schema(ctx, input, disabled),
         })
+    }
+
+    /// The rows of a repeater input (JSON: as declared; relationship rows come
+    /// with ADR 0040's second part).
+    fn repeater_schema(&self, ctx: &Ctx, input: &Input, disabled: bool) -> Option<Box<crate::schema::RepeaterSchema>> {
+        let spec = input.repeater.as_deref()?;
+        let t = |text: &str| ctx.t_in(R::SLUG, text);
+        Some(Box::new(crate::engine::repeater::rows_schema(spec, &t, disabled)))
     }
 
     /// What the user may change with each `BelongsToManySelect` of the form
@@ -329,6 +342,8 @@ impl<R: Resource> ResourceAdapter<R> {
             number: None,
             shown_when: None,
             clear_when_hidden: false,
+            integer: false,
+            repeater: None,
         })
     }
 
@@ -514,5 +529,7 @@ fn pivot_input_schema(
         number: None,
         shown_when: None,
         clear_when_hidden: false,
+        integer: false,
+        repeater: None,
     }
 }

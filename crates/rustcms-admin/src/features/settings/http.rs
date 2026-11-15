@@ -271,6 +271,12 @@ fn input_schema(ctx: &Ctx, field: &SettingField, input: &crate::ui::Input, disab
         number: field.input.number.as_deref().copied(),
         shown_when: input.shown_when.as_deref().cloned(),
         clear_when_hidden: input.clear_when_hidden,
+        integer: false,
+        repeater: field
+            .input
+            .repeater
+            .as_deref()
+            .map(|spec| Box::new(crate::engine::repeater::rows_schema(spec, &|text| ctx.t(text), disabled))),
     }
 }
 
@@ -318,12 +324,14 @@ async fn update(
             AppError::BadRequest("the body could not be read".into())
         }
     })?;
-    let (expected, data) = parse_body(&body)?;
+    let (expected, mut data) = parse_body(&body)?;
     let key = state.keyring();
 
     // Values checked against their fields before any lock.
     let mut errors = ValidationErrors::new();
     let mut writes = BTreeMap::new();
+    // Repeaters as stored: their rows without the inputs hidden by conditions.
+    let mut rows = Vec::new();
     for (name, value) in &data {
         let Some(field) = page.fields().iter().find(|f| &f.name == name) else {
             errors.add(name.as_str(), "is not allowed");
@@ -350,13 +358,17 @@ async fn update(
         // Under a condition, `required` is checked once the shown fields are known.
         let required = field.required && !page.conditions().is_conditional(name);
         let rule = InputRule { options, required, ..field.rule() };
-        if check_input(name, &rule, value, &mut errors)
-            && let Some(media) = &field.media
-        {
+        let accepted = check_input(name, &rule, value, &mut errors);
+        if accepted && let Some(spec) = field.rows.as_deref() {
+            rows.extend(spec.check(name, value, &mut errors).map(|list| (name.clone(), list)));
+            continue;
+        }
+        if accepted && let Some(media) = &field.media {
             crate::media::reference_ids(name, media, value, &mut errors);
         }
     }
     errors.into_result()?;
+    data.extend(rows);
 
     // Under the RBAC lock, with the user's grants as they are now.
     let (txn, current) = rustcms_auth::rbac::begin_as(state.db(), &ctx.principal).await?;
@@ -388,7 +400,6 @@ async fn update(
         .filter(|(name, clear)| *clear && hidden.contains(*name))
         .map(|(n, _)| n)
         .collect();
-    let mut data = data;
     data.retain(|name, _| !hidden.contains(name));
     writes.retain(|name, _| !hidden.contains(name));
 

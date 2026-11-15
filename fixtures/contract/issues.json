@@ -202,6 +202,9 @@
   "max_value": [
     "may not be greater than {max}"
   ],
+  "min_items": [
+    "must have at least {min} items"
+  ],
   "min_length": [
     "must be at least {min} characters"
   ],
