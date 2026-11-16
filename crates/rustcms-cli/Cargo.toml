@@ -34,6 +34,11 @@ tempfile.workspace = true
 toml.workspace = true
 toml_edit.workspace = true
 semver.workspace = true
+tokio.workspace = true
+
+[target.'cfg(unix)'.dependencies]
+# Signals to the process groups of `serve --watch` (no `unsafe`); already in Cargo.lock.
+nix = { version = "=0.31.3", features = ["signal"] }
 
 [dev-dependencies]
 assert_cmd.workspace = true

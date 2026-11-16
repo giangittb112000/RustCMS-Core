@@ -7,6 +7,15 @@ All notable changes are documented here. The format follows
 ## [Unreleased]
 
 ### Added
+- `rustcms serve --watch` (macOS and Linux; first written by
+  @giangittb112000): builds and runs `serve` through `cargo run`, then
+  rebuilds on changes (sources, configuration, `.env`, `lang/`, built
+  extension scripts, the workspace's manifest and lockfile) and replaces the
+  server once the build succeeds; a failed build keeps the running server;
+  templates that reload themselves (`resources/views/`) are not watched;
+  changes during a build make another round; the build and the server run in
+  their own process groups, stopped together (SIGTERM, then SIGKILL after
+  6 s) on Ctrl-C. The binary is the package's only one or its `default-run`.
 - Inputs and layouts shown under conditions (vocabulary 13, ADR 0037; contributed by @giangittb112000):
   `.shown_when(when("x").eq(v))` (`ne`, `is_in`, `filled`, `is_true`,
   `Condition::all/any`) on inputs, layouts, settings forms and

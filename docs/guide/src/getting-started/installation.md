@@ -158,6 +158,41 @@ command's own names (`new`, `make:*`, `doctor`, `upgrade`, `self-update`,
 application. Once built, the binary takes the same commands: `./blog migrate`,
 `./blog serve`. Every command is listed in the [CLI reference](../reference/cli.md).
 
+### Rebuilding on changes
+
+```sh
+rustcms serve --watch
+```
+
+`rustcms serve --watch` (macOS and Linux) builds and starts the server, then
+rebuilds it when the application changes and replaces the running server
+once the build succeeds:
+
+| You change | What happens |
+|---|---|
+| `src/`, `Cargo.toml`, `Cargo.lock`, `build.rs`, `lang/`, `.cargo/`, built extension scripts in `resources/admin/` | build, then the server is replaced |
+| `config/*.toml`, `.env` | the same (the build is a quick check when no code changed): settings are read when the server starts |
+| a template registered with `view!` or `mail_template!` in `resources/views/` | nothing: debug builds with `APP_ENV=local` read it again on each render, reload the page |
+| a migration (`src/database/migrations/`) | build and replace; run `rustcms migrate` yourself (the command reminds you) |
+| an extension's sources (`resources/admin/src/`) | nothing until you run `npm run build` in `resources/admin` (the built files then trigger a build) |
+
+- A build that fails leaves the previous server running; the next change
+  tries again. Files changed during a build are never missed: the next round
+  takes them.
+- The server runs as `rustcms serve` runs it (`cargo run`), with the same
+  options (`rustcms serve --watch --api-only`; after `--`, arguments go to the
+  application as written). The old server stops as on a deploy (it finishes
+  its requests, at most 6 seconds; queue workers are cut short). Admin
+  sessions live in the database, so reloading the page keeps you signed in.
+- Ctrl-C stops the watcher, the server and a running build. Run it in the
+  foreground: a watcher killed with `kill -9` leaves its server running.
+- An application with several binaries needs `default-run` in its
+  `Cargo.toml`. Path dependencies outside the application are not watched,
+  nor are files named by `*_FILE` settings.
+- Each change costs a build: a Rust server cannot swap code while it runs.
+  `[profile.dev] debug = "line-tables-only"` in the application's
+  `Cargo.toml` makes builds faster.
+
 ## Your first resource
 
 ```sh
