@@ -37,19 +37,7 @@ impl Resource for CategoryResource {
         // An editor layout: the whole width, a main column and an aside.
         Form::new().width(FormWidth::Full).schema(components![
             Split::make()
-                .main(components![
-                    TextInput::make("name"),
-                    TextInput::make("slug").prefix("/categories/"),
-                    // #region posts-repeater
-                    // The category's posts, edited in its form: each row is a post
-                    // (the posts resource's rules, policy and hooks apply).
-                    Repeater::make("posts")
-                        .relationship()
-                        .schema(components![TextInput::make("title"), Toggle::make("published")])
-                        .item_label("{title}")
-                        .add_action_label("Add a post"),
-                    // #endregion posts-repeater
-                ])
+                .main(components![TextInput::make("name"), TextInput::make("slug").prefix("/categories/"),])
                 .aside(components![Section::make("Display").compact().collapsible(false).schema(components![
                     // #region color-input
                     // Edited by the demo's extension widget (resources/admin/js/demo/color.js).

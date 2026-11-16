@@ -29,16 +29,10 @@ All notable changes are documented here. The format follows
   by the row's conditions, and refuses media, rich text and secrets in rows.
   `SettingField::repeater` for settings pages; `RepeatableEntry` on view
   pages; issue code `min_items`. Demo: footer links on the site settings.
-- Relationship repeaters (ADR 0040, part 2; contributed by @giangittb112000): `Repeater::make("lines")
-  .relationship().order_column("position")` edits the children of a has-many
-  relation in the parent's form. A save sends a change (create, update,
-  delete, order), written in the parent's transaction after its row with the
-  child's checks (scope and view policy under the lock, field rules,
-  references, policy per row, hooks, history); rows not named are never
-  touched, hidden rows keep their positions (two passes for a unique
-  position), soft-deleted children go to the trash, any refusal rolls back
-  everything. Errors at `lines.8.quantity` / `lines.n1.quantity`; issue codes
-  `not_a_row`, `row_order`; the parent's history shows "Rows changed".
+- Relationship repeaters (`Repeater::make(…).relationship()`, ADR 0040 part 2;
+  contributed by @giangittb112000) are not available in this release: boot
+  refuses them until their writes hold one lock order with every other writer
+  (docs/core/plans/contrib-0.13-d2.md). Their code is kept, unused.
 - Count columns and row history (ADR 0040, part 3; contributed by @giangittb112000): `TextColumn::make("faq")
   .count()` shows how many items a JSON field holds;
   `TextColumn::make("posts_count").counts("posts")` how many records of a

@@ -353,71 +353,23 @@ repeaters too.
 
 ### Child records
 
-With `.relationship()`, the rows are the child records of the has-many
-[relation](relationships.md) named like the repeater, edited in the parent's
-form (the lines of an order, the answers of a question):
-
-```rust
-fn relations() -> Vec<Relation> {
-    vec![Relation::has_many("lines", "order_lines", "order_id")]
-}
-
-Repeater::make("lines")
-    .relationship()
-    .order_column("position")
-    .schema(components![SelectInput::make("product_id"), NumberInput::make("quantity")])
-```
-
-- **Row inputs are the child's fields**, with the child's rules: its field
-  rules, validation, references, `scope()`, policy and hooks apply to every
-  row, as when the row is written from the relation section. The child's key
-  to the parent and the order column are set by the server, never inputs.
-- **A save sends a change, not the list:** the rows added, the fields changed
-  in each row, the rows removed, and the order. Rows the user did not touch,
-  rows another user added meanwhile, and rows the user cannot see are never
-  written or removed.
-- **One write:** the parent row, then its rows (removed, changed, added,
-  reordered), then the parent's `after_save`, which sees every row. A refusal
-  anywhere (a row's validation, a child's policy or hook) rolls back the
-  parent and every row.
-- **Permissions:** adding rows needs `create` on the child, changing them
-  `update`, removing them `delete` (each row's policy decides too); the form
-  offers only what the user may do.
-- **Removing** a row of a child with soft deletes moves it to the trash.
-- **`order_column(field)`** (an integer field of the child) keeps the rows in
-  the user's order: they take the positions the visible rows held; rows the
-  user cannot see keep theirs. A unique `(parent, position)` is fine. Moving
-  a stored row needs `update` on it; without an order column the rows cannot
-  be reordered.
-- **`min_items` / `max_items`** are checked by the server on the parent's
-  rows when a save removes or adds rows, and `min_items` on the rows a new
-  parent creates (a create without the repeater has none).
-- **Rows edit their inputs only:** a value for another field of the child is
-  refused (`lines.8.status`: "is not allowed"), even one its own form writes.
-- **Errors** name the row by key or, for a new row, its reference:
-  `lines.8.quantity`, `lines.n1.quantity`.
-- **History:** the parent's history shows "Rows changed" (which rows were
-  added, changed, removed, reordered, by key); each row has its own entries.
-- The form edits up to `max_items` rows (at most 100); with more, the
-  repeater is read-only and the relation section edits them. View pages show
-  the rows in the relation section, not in the form.
-- **Not yet:** conditions in relationship rows, repeaters inside them, and
-  conditions on the repeater itself.
-
-The demo's categories edit their posts this way (each row is a post):
-
-<<< @/../../../examples/demo/src/admin/resources/category_resource.rs#posts-repeater [src/admin/resources/category_resource.rs]
+Editing the child records of a has-many relation inside the parent's form
+(`Repeater::make("lines").relationship()`) is not available in this
+release: the application refuses to boot with it. Edit them in the
+[relation section](relationships.md) of the parent's page, and show how many
+there are with a [count column](tables.md#counts).
 
 ### Repeaters in lists, history and CSV
 
 - A [count column](tables.md#counts) shows the number of rows:
-  `TextColumn::make("faq").count()` for a JSON repeater,
-  `TextColumn::make("lines_count").counts("lines")` for a relationship.
+  `TextColumn::make("faq").count()` for a JSON repeater (and
+  `TextColumn::make("lines_count").counts("lines")` counts a has-many
+  relation's records).
 - The history shows a JSON repeater's change by row and input
   (`faq › 2 › question`), rows matched by position.
 - [CSV exports](import-export.md) write a JSON repeater as its JSON text;
   imports read that text and check each row as a save does (errors at
-  `faq.0.question`). Relationship repeaters are not part of CSV files.
+  `faq.0.question`).
 
 ## Encrypted fields
 

@@ -3,6 +3,8 @@
 - Status: accepted (unreleased, vocabulary 15)
 - Date: 2026-11-15
 
+> **0.13 status:** relationship repeaters (part 2) are refused at boot in this release; see `docs/core/plans/contrib-0.13-d2.md` (their writes need a lock contract for the whole write path).
+
 ## Context
 
 Forms edit one value per input. Applications need lists of rows, each row

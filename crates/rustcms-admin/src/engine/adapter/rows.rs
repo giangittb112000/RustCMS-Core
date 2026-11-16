@@ -437,6 +437,15 @@ pub(crate) struct RowRepeater {
 /// The relationship repeaters of `form`; panics on what cannot hold here
 /// (the child's fields are checked by `Registry::finish`).
 pub(super) fn row_repeaters(slug: &str, form: &Form, relations: &[Relation]) -> Vec<RowRepeater> {
+    // Not in this release: their writes do not hold one lock order with every
+    // other writer yet (docs/core/plans/contrib-0.13-d2.md).
+    if let Some(input) = form.inputs().into_iter().find(|i| i.repeater.as_deref().is_some_and(|s| s.relationship)) {
+        panic!(
+            "resource `{slug}`: repeater `{}`: relationship repeaters are not available in this release; edit the \
+             records of a has-many relation through its relation section",
+            input.name
+        );
+    }
     let mut out = Vec::new();
     for input in form.inputs() {
         let Some(spec) = input.repeater.as_deref().filter(|s| s.relationship) else { continue };
