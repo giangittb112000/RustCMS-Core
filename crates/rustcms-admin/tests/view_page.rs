@@ -35,6 +35,7 @@ pub mod lesson {
         pub serial: i64,
         pub notes: Option<String>,
         pub cover: Option<String>,
+        pub photos: Option<Json>,
     }
 
     #[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]
@@ -68,6 +69,7 @@ impl Resource for LessonResource {
             Field::column(C::Serial),
             Field::column(C::Notes).readable(|_| false),
             Field::column(C::Cover),
+            Field::column(C::Photos).media_list(3),
         ]
     }
 
@@ -90,7 +92,11 @@ impl Resource for LessonResource {
                         TextInput::make("url").shown_when(when("kind").eq("link")),
                         DatePicker::make("asked_on"),
                         Toggle::make("pinned"),
-                        Repeater::make("links").schema(components![TextInput::make("href")]),
+                        // Three deep, as forms allow.
+                        Repeater::make("links").schema(components![
+                            TextInput::make("href"),
+                            Repeater::make("checks").schema(components![DateTimePicker::make("at")]),
+                        ]),
                     ]),
                 ]),
                 // Holds only inputs shown nowhere on the view page: left out.
@@ -101,6 +107,7 @@ impl Resource for LessonResource {
             // Shown under a condition naming a hidden input, of a big integer.
             TextInput::make("cover").shown_when(when("serial").eq("9007199254740993")),
             Textarea::make("notes"),
+            FileUpload::make("photos"),
             // The same field twice: both shown.
             TextInput::make("title").label("Title again"),
         ])
@@ -156,7 +163,7 @@ db_test!(the_default_view_page_shows_the_form_read_only, |db: TestDb| async move
         "body": {"type": "doc", "version": 1, "content": [{"type": "paragraph", "content": [{"type": "text", "text": "Hello"}]}]},
         "faq": [{
             "question": "Why?", "kind": "link", "ref": "r1", "url": "https://example.com", "asked_on": "2026-11-16", "pinned": true,
-            "links": [{"href": "/a"}],
+            "links": [{"href": "/a", "checks": [{"at": "2026-11-16T08:00:00Z"}]}],
         }],
         "serial": "9007199254740993",
         "notes": "private",
@@ -185,6 +192,8 @@ db_test!(the_default_view_page_shows_the_form_read_only, |db: TestDb| async move
             // A switch on a number column: shown as text, never a boot failure.
             ("stars", "text_entry"),
             ("cover", "text_entry"),
+            // A media list: thumbnails.
+            ("photos", "media_entry"),
             // `notes` may not be read; `serial` and the internal tab show nothing.
             ("title", "text_entry"),
         ]
@@ -224,6 +233,10 @@ db_test!(the_default_view_page_shows_the_form_read_only, |db: TestDb| async move
         ]
     );
     assert_eq!(rows[1]["options"][1], json!({"value": "link", "label": "Link"}));
+    // The third level: rows of rows of rows, with their values' kinds.
+    let checks = &rows[5]["components"][1];
+    assert_eq!((checks["name"].clone(), checks["type"].clone()), (json!("checks"), json!("repeatable_entry")));
+    assert_eq!(checks["components"][0]["valueType"], json!("instant"));
     assert_eq!(rows[2]["shownWhen"], json!({"op": "eq", "name": "kind", "value": "link"}));
 
     // The form is still sent; lists ask for `view` without a key and get no infolist.
@@ -238,4 +251,38 @@ db_test!(the_default_view_page_shows_the_form_read_only, |db: TestDb| async move
         support::contract("view-page.schema.view.json", &schema);
         support::contract("view-page.record.json", &serde_json::to_value(&record).unwrap());
     }
+});
+
+db_test!(links_and_media_lists_on_the_default_view_page, |db: TestDb| async move {
+    let fixture = support::Fixture::new(db).await;
+    let ctx = fixture.ctx(admin());
+    let entries_of = |schema: &ResourceSchema| {
+        let mut all = Vec::new();
+        entries(&serde_json::to_value(schema).unwrap()["infolist"]["components"], &mut all);
+        all.iter()
+            .map(|e| (e["name"].as_str().unwrap().to_owned(), e["type"].as_str().unwrap().to_owned()))
+            .collect::<Vec<_>>()
+    };
+    // A belongs-to-many select shows nothing: the links are in the relation section.
+    let posts = fixture.resource("posts");
+    let post = posts.create(&ctx, json!({"title": "Hello"}).as_object().unwrap().clone()).await.unwrap();
+    let view = posts.schema(&ctx, SchemaOperation::View, Some(&post.key)).await.unwrap();
+    assert!(!entries_of(&view).iter().any(|(name, _)| name == "tags"), "{:?}", entries_of(&view));
+    assert!(view.relations.iter().any(|r| r.name == "tags"));
+    // A resource without `form()`: its generated form has text inputs for media and rich
+    // text fields (`auto_form`), so its view page shows them as text, as the read-only form did.
+    let notes = fixture.resource("notes");
+    let note = notes.create(&ctx, json!({"title": "Note"}).as_object().unwrap().clone()).await.unwrap();
+    let view = notes.schema(&ctx, SchemaOperation::View, Some(&note.key)).await.unwrap();
+    let made = entries_of(&view);
+    assert_eq!(
+        made.iter().map(|(n, k)| (n.as_str(), k.as_str())).collect::<Vec<_>>(),
+        [
+            ("title", "text_entry"),
+            ("category_id", "relation_entry"),
+            ("cover", "text_entry"),
+            ("attachments", "text_entry"),
+            ("body", "text_entry"),
+        ]
+    );
 });

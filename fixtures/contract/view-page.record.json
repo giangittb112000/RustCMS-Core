@@ -29,6 +29,11 @@
         "kind": "link",
         "links": [
           {
+            "checks": [
+              {
+                "at": "2026-11-16T08:00:00Z"
+              }
+            ],
             "href": "/a"
           }
         ],
@@ -39,6 +44,7 @@
       }
     ],
     "level": "hard",
+    "photos": null,
     "pin": "1234",
     "serial": "9007199254740993",
     "stars": 4,
