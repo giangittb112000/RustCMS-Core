@@ -1,30 +1,25 @@
 // The default view page (plan branch 4): the infolist the server makes from a
-// form draws each value as the form's read-only view did. Both views drawn
-// from the same contract fixtures, compared value by value.
+// form draws each value as the form's read-only view did. The two were
+// compared value by value before the read-only view was removed; the
+// snapshots keep what it showed. Also checks tests/view.ts makes the
+// server's entries, for tests written against form schemas.
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { RouterProvider, createMemoryHistory, createRootRoute, createRouter } from "@tanstack/react-router";
-import { render, screen, waitFor } from "@testing-library/react";
+import { render, screen } from "@testing-library/react";
 import { http, HttpResponse } from "msw";
 import { setupServer } from "msw/node";
 import { SessionContext } from "@/api/context";
 import type { Data, Envelope, ResourceSchema } from "@/api/types";
 import { createSession } from "@/app/session";
-import { ReadOnlyComponents } from "@/renderers/form";
 import { InfolistRenderer } from "@/renderers/infolist";
 import gadgetSchema from "../../fixtures/contract/kitchen-sink.schema.view-record.json";
 import gadgets from "../../fixtures/contract/kitchen-sink.records.json";
 import lessonSchema from "../../fixtures/contract/view-page.schema.view.json";
 import lesson from "../../fixtures/contract/view-page.record.json";
+import { viewOf } from "./view";
 
-// The old view asks the options endpoint for a relation's title; the envelope carries the same title.
-let titles: Record<string, string> = {};
-const server = setupServer(
-  http.get("*/admin/api/resources/:slug/fields/:field/options", ({ request }) => {
-    const key = new URL(request.url).searchParams.get("selected") ?? "";
-    return HttpResponse.json({ data: Object.entries(titles).map(([value, label]) => ({ value: JSON.parse(value), label })).filter((o) => key === "" || JSON.stringify(o.value) === key || String(o.value) === key) });
-  }),
-  http.get("*", () => HttpResponse.json({}, { status: 404 })),
-);
+// Thumbnails ask for their media; none here.
+const server = setupServer(http.get("*", () => HttpResponse.json({}, { status: 404 })));
 beforeAll(() => server.listen({ onUnhandledRequest: "bypass" }));
 afterAll(() => server.close());
 afterEach(() => server.resetHandlers());
@@ -47,7 +42,12 @@ async function mount(node: React.ReactNode) {
 /** Each shown value: its label, text, width, and how it is marked up. */
 function shown(root: HTMLElement) {
   return [...root.querySelectorAll("dl")].filter((dl) => dl.querySelector(":scope > dt")).map((dl) => {
-    const dd = dl.querySelector(":scope > dd") as HTMLElement;
+    const dd = (dl.querySelector(":scope > dd") as HTMLElement).cloneNode(true) as HTMLElement;
+    // Instants read in the machine's time zone: kept as their wire value, so snapshots hold anywhere.
+    for (const time of dd.querySelectorAll("time")) {
+      const at = time.getAttribute("dateTime") ?? "";
+      if (/(Z|[+-]\d\d:\d\d)$/.test(at)) time.textContent = `[instant ${at}]`;
+    }
     return {
       label: dl.querySelector(":scope > dt")!.textContent,
       text: dd.textContent,
@@ -62,27 +62,24 @@ function shown(root: HTMLElement) {
   });
 }
 
-async function both(schema: ResourceSchema, record: Envelope, slug: string) {
-  titles = Object.fromEntries(Object.entries(record.labels ?? {}).map(([field, label]) => [JSON.stringify(record.data[field]), label]));
-  const data = record.data as Data;
-  const old = await mount(<ReadOnlyComponents components={schema.form.components} data={data} slug={slug} record={record.key} />);
-  // The old view's relation titles arrive after a request.
-  await waitFor(() => expect(old.container.textContent).not.toMatch(/Loading/));
-  const before = shown(old.container);
-  old.unmount();
-  const made = await mount(<InfolistRenderer infolist={schema.infolist!} data={data} labels={record.labels} slug={slug} recordKey={record.key} />);
-  const after = shown(made.container);
-  made.unmount();
-  return { before, after };
+async function draw(schema: ResourceSchema, record: Envelope, slug: string) {
+  const view = await mount(<InfolistRenderer infolist={schema.infolist!} data={record.data as Data} labels={record.labels} slug={slug} recordKey={record.key} />);
+  return shown(view.container);
 }
 
-it("draws a kitchen sink record as the form's read-only view did", async () => {
-  const record = (gadgets as unknown as { data: Envelope[] }).data.find((r) => r.data.name === "Widget")!;
-  const { before, after } = await both(gadgetSchema as unknown as ResourceSchema, record, "gadgets");
-  expect(after).toEqual(before);
+/** Without `link`: whether a relation links depends on the user, not on the form. */
+const unlinked = (components: unknown) => JSON.parse(JSON.stringify(components, (k, v) => (k === "link" ? undefined : v)));
+
+const gadget = (gadgets as unknown as { data: Envelope[] }).data.find((r) => r.data.name === "Widget")!;
+const cases: [string, ResourceSchema, Envelope, string][] = [
+  ["a kitchen sink record", gadgetSchema as unknown as ResourceSchema, gadget, "gadgets"],
+  ["repeaters, rich text, masks and conditions", lessonSchema as unknown as ResourceSchema, lesson as unknown as Envelope, "lessons"],
+];
+
+it.each(cases)("draws %s as the form's read-only view did", async (_, schema, record, slug) => {
+  expect(await draw(schema, record, slug)).toMatchSnapshot();
 });
 
-it("draws repeaters, rich text, masks and conditions as the form's read-only view did", async () => {
-  const { before, after } = await both(lessonSchema as unknown as ResourceSchema, lesson as unknown as Envelope, "lessons");
-  expect(after).toEqual(before);
+it.each(cases)("makes the server's entries from the form of %s (tests/view.ts)", (_, schema) => {
+  expect(unlinked(viewOf(schema.form.components))).toEqual(unlinked(schema.infolist!.components));
 });

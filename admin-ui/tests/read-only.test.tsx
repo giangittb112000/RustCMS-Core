@@ -1,11 +1,12 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { render, screen, waitFor } from "@testing-library/react";
+import { render, screen } from "@testing-library/react";
 import { http, HttpResponse } from "msw";
 import { setupServer } from "msw/node";
 import { SessionContext } from "@/api/context";
 import type { ComponentSchema, InputSchema } from "@/api/types";
 import { createSession } from "@/app/session";
-import { ReadOnlyComponents } from "@/renderers/form";
+import { InfolistRenderer } from "@/renderers/infolist";
+import { infolistOf } from "./view";
 
 const requests: URL[] = [];
 const server = setupServer(http.get("*/admin/api/resources/:slug/fields/:field/options", ({ request }) => {
@@ -22,11 +23,12 @@ const input = (name: string, overrides: Partial<InputSchema> = {}): InputSchema 
   disabled: false, rules: [], columnSpan: 1, ...overrides,
 });
 
-function mount(components: ComponentSchema[], data: Record<string, unknown>) {
+// A record's view page as the panel draws it: the entries the server makes from the form.
+function mount(components: ComponentSchema[], data: Record<string, unknown>, labels: Record<string, string> = {}) {
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   const session = createSession({ basePath: "/admin", apiPath: "http://localhost/admin/api" }, client, () => {});
   return render(<SessionContext.Provider value={session}><QueryClientProvider client={client}>
-    <ReadOnlyComponents components={components} data={data} slug="posts" record="record-7" />
+    <InfolistRenderer infolist={infolistOf(components)} data={data} labels={labels} slug="posts" recordKey="record-7" />
   </QueryClientProvider></SessionContext.Provider>);
 }
 
@@ -68,30 +70,27 @@ it("preserves exact wire strings, boolean meaning, static labels and unknown val
   }).format(new Date("2026-10-12T09:30:00.123456Z"));
   expect(shown?.textContent).toBe(expected);
   expect(shown?.textContent).toMatch(/^Oct 1[23], 2026, .*(GMT|UTC|[A-Z]{2,5})/);
-  expect(container.querySelector("[data-fallback]")?.textContent).toBe(JSON.stringify({ raw: "unknown" }, null, 2));
+  // An input the view has no entry for is shown as text (unknown entries: infolist.test.tsx): JSON indented.
+  expect(screen.getByText(/"raw": "unknown"/).textContent).toBe(JSON.stringify({ raw: "unknown" }, null, 2));
+  expect(screen.getByText(/"raw": "unknown"/).closest(".whitespace-pre-wrap")).not.toBeNull();
 });
 
-it("looks up only declared relationship keys with record scope and never searches", async () => {
+it("shows a relation's title from the record, without asking the server", () => {
   mount([
     input("category", { type: "select", relationship: { resource: "categories" } }),
-    input("missing", { type: "select", relationship: { resource: "categories" }, default: "2" }),
     input("private", { type: "select", relationship: { resource: "categories" }, writeOnly: true }),
     input("hidden", { type: "hidden", relationship: { resource: "categories" } }),
-  ], { category: "9007199254740993", private: "3", hidden: "4", undeclared: "5" });
-  expect(await screen.findByText("Authorized category")).toBeInTheDocument();
-  expect(requests).toHaveLength(1);
-  expect(requests[0]!.pathname).toBe("/admin/api/resources/posts/fields/category/options");
-  expect(requests[0]!.searchParams.get("keys")).toBe("9007199254740993");
-  expect(requests[0]!.searchParams.get("record")).toBe("record-7");
-  expect(requests[0]!.searchParams.has("search")).toBe(false);
+  ], { category: "9007199254740993", private: "3", hidden: "4" }, { category: "Authorized category" });
+  expect(screen.getByText("Authorized category")).toBeInTheDocument();
+  expect(requests).toHaveLength(0);
+  expect(screen.queryByText("#3")).toBeNull();
+  expect(screen.queryByText("#4")).toBeNull();
 });
 
-it("keeps the raw key selectable and makes a failed label lookup explicit", async () => {
-  server.use(http.get("*/admin/api/resources/:slug/fields/:field/options", () => HttpResponse.json({ message: "Forbidden", code: "forbidden" }, { status: 403 })));
+it("shows the raw key when the record has no title for it", () => {
+  // The server sends no title the user may not see, or when the related resource failed.
   mount([input("category", { type: "select", relationship: { resource: "categories" } })], { category: "7" });
   expect(screen.getByText("#7")).toBeInTheDocument();
-  expect(await screen.findByText("Label unavailable")).toBeInTheDocument();
-  await waitFor(() => expect(screen.queryByText("Loading label…")).toBeNull());
 });
 
 it("labels static boolean options and never shows password-mode values", () => {

@@ -1,7 +1,9 @@
 import { fireEvent, render, screen } from "@testing-library/react";
 import { useForm } from "react-hook-form";
 import type { ComponentSchema, InputSchema, LayoutSchema } from "@/api/types";
-import { Components, ReadOnlyComponents } from "@/renderers/form";
+import { Components } from "@/renderers/form";
+import { InfolistRenderer } from "@/renderers/infolist";
+import { infolistOf } from "./view";
 import { formConditions, hiddenFields } from "@/schema/conditions";
 import { type FormValues, defaultValues, hiddenNames, inputsOf, payloadOf } from "@/schema/form";
 import { editResolver } from "@/schema/resolver";
@@ -100,12 +102,12 @@ it("leaves out a tab whose condition fails, on forms and view pages", () => {
   expect([...hiddenNames(tabs, { on_sale: false, title: "", discount: "" })]).toEqual(["discount"]);
   unmount();
 
-  render(<ReadOnlyComponents components={tabs} data={{ on_sale: false, title: "T", discount: 5 }} slug="offers" record="1" />);
+  render(<InfolistRenderer infolist={infolistOf(tabs)} data={{ on_sale: false, title: "T", discount: 5 }} slug="offers" recordKey="1" />);
   expect(screen.queryByRole("tab", { name: "Sale" })).toBeNull();
 });
 
 it("shows the view page by the stored values", () => {
-  render(<ReadOnlyComponents components={components} data={{ link_type: "internal", url: "https://old", on_sale: true, discount: 3 }} slug="offers" record="1" />);
+  render(<InfolistRenderer infolist={infolistOf(components)} data={{ link_type: "internal", url: "https://old", on_sale: true, discount: 3 }} slug="offers" recordKey="1" />);
   expect(screen.queryByText("URL")).toBeNull();
   expect(screen.getByText("Discount")).toBeInTheDocument();
   expect(screen.getByText("3")).toBeInTheDocument();

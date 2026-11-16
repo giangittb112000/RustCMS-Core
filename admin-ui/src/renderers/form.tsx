@@ -4,7 +4,7 @@ import { Controller, useWatch, type Control, type FieldErrors } from "react-hook
 import { ChevronDown, Plus, X } from "lucide-react";
 import { createContext, useContext, useEffect, useId, useMemo, useRef, useState } from "react";
 import type * as React from "react";
-import type { ComponentSchema, Condition, Data, InputSchema, LayoutSchema, SecretStatus, SelectOption } from "@/api/types";
+import type { ComponentSchema, Condition, InputSchema, LayoutSchema, SecretStatus, SelectOption } from "@/api/types";
 import {
   type FormConditions,
   type WireValues,
@@ -27,24 +27,22 @@ import {
   inputsOf,
   isInput,
   isLayout,
-  isTextObject,
   isTriState,
   pairsOf,
   type FormValue,
   type FormValues,
   wireValues,
 } from "@/schema/form";
-import { RelationSelect, RelationValue } from "./relation-select";
+import { RelationSelect } from "./relation-select";
 import { LinksWidget } from "./links";
 import { RepeaterWidget } from "./repeater";
 import { RelationRepeaterWidget } from "./relation-repeater";
-import { FileUploadWidget, MediaThumb } from "./media";
-import { RichEditorWidget, RichTextView } from "./rich-text";
+import { FileUploadWidget } from "./media";
+import { RichEditorWidget } from "./rich-text";
 import { CustomField } from "./custom";
 import { type SecretControl, SecretWidget } from "./secret";
 import { isResourceSecret, parseSecret, parseSecretMap, type SecretRow } from "@/schema/secrets";
-import { asDocument } from "@/lib/rich-text";
-import { formatWireDate, useT } from "@/i18n";
+import { useT } from "@/i18n";
 
 export interface FormContext {
   slug: string;
@@ -326,109 +324,7 @@ export function TabsLayout({ layout, errors, attempt, render }: {
   );
 }
 
-/** Read only the supplied view schema and record. Defaults are never stored values. */
-export function ReadOnlyComponents({ components, data, slug, record }: {
-  components: ComponentSchema[];
-  data: Data;
-  slug: string;
-  record: string;
-}) {
-  // Conditions on the stored values (ADR 0037).
-  const shown = useMemo(() => (hasConditions(components) ? shownWith(formConditions(components), data) : always), [components, data]);
-  return <ReadOnlyBody components={components} data={data} slug={slug} record={record} shown={shown} />;
-}
-
-function ReadOnlyBody({ components, data, slug, record, shown }: {
-  components: ComponentSchema[];
-  data: Data;
-  slug: string;
-  record: string;
-  shown: (condition: Condition | undefined) => boolean;
-}) {
-  const t = useT();
-  return <>{components.map((component, index) => {
-    if (!shown(component.shownWhen)) return null;
-    if (isLayout(component) && component.type === "tabs") {
-      return <TabsLayout key={`layout-${index}`} layout={withShownChildren(component, shown)} render={(tab) =>
-        <ReadOnlyBody components={tab.components} data={data} slug={slug} record={record} shown={shown} />} />;
-    }
-    if (isLayout(component) && component.type === "split") {
-      return <SplitLayout key={`layout-${index}`} layout={withShownChildren(component, shown)} render={(pane) =>
-        <ReadOnlyBody components={pane.components} data={data} slug={slug} record={record} shown={shown} />} />;
-    }
-    if (isLayout(component)) {
-      return <SchemaLayout key={`layout-${index}`} layout={component}>
-        <ReadOnlyBody components={component.components} data={data} slug={slug} record={record} shown={shown} />
-      </SchemaLayout>;
-    }
-    if (!isInput(component)) return null;
-    // Links are shown by the relation manager on the record's page.
-    if (component.type === "hidden" || component.type === "belongs_to_many" || component.writeOnly) return null;
-    const supplied = Object.prototype.hasOwnProperty.call(data, component.name);
-    const value = supplied ? data[component.name] : undefined;
-    const unknown = !KNOWN_INPUTS.has(component.type);
-    let content: React.ReactNode;
-    if (!supplied || value === undefined) content = <span className="text-muted-foreground">{t("value.notProvided")}</span>;
-    else if (value === null) content = <span className="text-muted-foreground">{t("value.null")}</span>;
-    else if (value === "") content = <span className="text-muted-foreground">{t("value.emptyString")}</span>;
-    else if (component.type === "select" && component.relationship &&
-      (typeof value === "string" || (typeof value === "number" && Number.isSafeInteger(value)))) {
-      content = <RelationValue slug={slug} field={component.name} record={record} value={JSON.stringify(value)} />;
-    } else if (component.type === "select") {
-      // Option labels first: a select may offer booleans with their own labels.
-      const option = component.options?.find((option) => JSON.stringify(option.value) === JSON.stringify(value));
-      content = option?.label ?? (typeof value === "boolean" ? (value ? t("value.yes") : t("value.no")) : readOnlyText(value));
-    } else if (component.type === "repeater" && component.repeater && Array.isArray(value)) {
-      // Each row drawn read-only with the row's inputs (its own conditions).
-      const repeater = component.repeater;
-      content = value.length === 0 ? <span className="text-muted-foreground">{t("repeater.empty")}</span> : (
-        <ol className="flex flex-col gap-3">
-          {value.map((row, i) => (
-            <li key={i} className="rounded-lg border border-border p-3">
-              <div className="grid grid-cols-1 gap-x-6 gap-y-4 md:grid-cols-2">
-                <ReadOnlyComponents components={repeater.components} data={(row ?? {}) as Data} slug={slug} record={record} />
-              </div>
-            </li>
-          ))}
-        </ol>
-      );
-    } else if (component.type === "file_upload" && (typeof value === "string" || Array.isArray(value))) {
-      const ids = (Array.isArray(value) ? value : [value]).filter((v): v is string => typeof v === "string");
-      content = <div className="flex flex-wrap gap-3">{ids.map((id) => <MediaThumb key={id} id={id} />)}</div>;
-    } else if (component.type === "rich_editor" && asDocument(value)) {
-      content = <RichTextView doc={asDocument(value)!} />;
-    } else if (component.type === "key_value" && isTextObject(value)) {
-      const entries = Object.entries(value);
-      content = entries.length === 0 ? <span className="text-muted-foreground">{t("value.noEntries")}</span> : (
-        <dl className="grid grid-cols-[minmax(0,auto)_minmax(0,1fr)] gap-x-4 gap-y-1">
-          {entries.map(([k, v]) => [
-            <dt key={`k-${k}`} className="font-medium">{k}</dt>,
-            <dd key={`v-${k}`} className="break-words">{v}</dd>,
-          ])}
-        </dl>
-      );
-    } else if (typeof value === "boolean") content = value ? t("value.yes") : t("value.no");
-    else if (component.type === "text_input" && component.mode === "password") {
-      // A readable password-mode field is still not shown in clear.
-      content = <span aria-label={t("value.hidden")}>••••••••</span>;
-    } else if (component.type === "text_input" && typeof value === "string" && (component.prefix || component.suffix)) {
-      // The value with its fixed text, as the input shows it (`/posts/hello`).
-      content = <span className="break-words"><span className="text-muted-foreground">{component.prefix}</span>{value}<span className="text-muted-foreground">{component.suffix}</span></span>;
-    } else if (component.type === "checkbox_list" && Array.isArray(value)) {
-      content = value.length === 0 ? t("value.emptyList") : <ul className="space-y-1">{value.map((item, i) =>
-        <li key={i}>{component.options?.find((option) => JSON.stringify(option.value) === JSON.stringify(item))?.label ?? readOnlyText(item)}</li>,
-      )}</ul>;
-    } else if (typeof value === "string" && ["instant", "local_datetime", "date"].includes(component.valueType)) {
-      // Dates and times in the user's language (instants with their time zone); the wire text as a fallback.
-      content = <time dateTime={value}>{formatWireDate(component.valueType, value) ?? value}</time>;
-    } else content = readOnlyText(value);
-    return <dl key={component.name} className={cn("min-w-0 space-y-2", span(component.columnSpan))}>
-      <dt className="text-sm font-medium text-muted-foreground">{component.label}</dt>
-      <dd className="select-text whitespace-pre-wrap break-words text-sm leading-6" data-fallback={unknown || undefined}>{content}</dd>
-    </dl>;
-  })}</>;
-}
-
+/** A value as text: JSON indented, the rest as written. */
 export function readOnlyText(value: unknown): string {
   return typeof value === "object" ? JSON.stringify(value, null, 2) : String(value);
 }
