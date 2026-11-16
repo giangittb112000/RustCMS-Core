@@ -5,7 +5,9 @@
 import { act, fireEvent, render, screen, within } from "@testing-library/react";
 import { useForm } from "react-hook-form";
 import type { ComponentSchema, InputSchema } from "@/api/types";
-import { Components, ReadOnlyComponents } from "@/renderers/form";
+import { Components } from "@/renderers/form";
+import { InfolistRenderer } from "@/renderers/infolist";
+import { infolistOf } from "./view";
 import { type FormValues, defaultValues, inputsOf, payloadOf, serverErrors } from "@/schema/form";
 import schema from "../../fixtures/contract/repeater.schema.create.json";
 
@@ -83,7 +85,7 @@ it("routes the server's row problems to the repeater", () => {
 });
 
 it("draws rows read-only on view pages", () => {
-  render(<ReadOnlyComponents components={[faq]} data={{ faq: [{ question: "Size?", pinned: true, links: [{ href: "/a" }] }] }} slug="products" record="1" />);
+  render(<InfolistRenderer infolist={infolistOf([faq])} data={{ faq: [{ question: "Size?", pinned: true, links: [{ href: "/a" }] }] }} slug="products" recordKey="1" />);
   expect(screen.getByText("Size?")).toBeInTheDocument();
   expect(screen.getByText("/a")).toBeInTheDocument();
   expect(screen.getByText("Yes")).toBeInTheDocument();

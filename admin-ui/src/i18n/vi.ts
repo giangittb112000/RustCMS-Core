@@ -738,8 +738,6 @@ export const vi: Record<keyof typeof en, string> = {
   "rich.code": "Khối mã",
   "rich.link": "Liên kết",
   "rich.image": "Chèn ảnh",
-  "relation.loadingLabel": "Đang tải tên…",
-  "relation.labelUnavailable": "Không lấy được tên",
   "relation.select": "Chọn…",
   "relation.searchOptions": "Tìm lựa chọn",
   "relation.searchPlaceholder": "Tìm…",
