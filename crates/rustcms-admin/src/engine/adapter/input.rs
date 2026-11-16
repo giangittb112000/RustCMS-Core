@@ -179,7 +179,9 @@ impl<R: Resource> ResourceAdapter<R> {
         let mut out = Data::new();
         for input in self.form.inputs() {
             let name = &input.name;
-            let Some(field) = self.field(name).filter(|_| !out.contains_key(name)) else { continue };
+            // A field with several inputs holds what its last input holds (as
+            // the panel's form values do).
+            let Some(field) = self.field(name) else { continue };
             let is_key = *name == self.pk_name;
             let included = match op {
                 Operation::Create => {
@@ -198,7 +200,9 @@ impl<R: Resource> ResourceAdapter<R> {
                 _ => None,
             };
             let value = match value {
-                Some(value) if !value.is_null() => value,
+                Some(value) if !value.is_null() && !form_blank(input.kind, column.kind, column.nullable, &value) => {
+                    value
+                }
                 _ => form_empty(input.kind, column.kind, column.nullable),
             };
             out.insert(name.clone(), value);
@@ -490,6 +494,22 @@ pub(super) fn form_conditions<C: ColumnTrait>(
 
 /// What `clear_when_hidden` writes: the declared default, else `null`, else
 /// an empty text or list.
+/// Whether the panel's form reads `value` as no value: `""` in a text input
+/// whose column is nullable (or not text) is sent as `null`.
+pub(crate) fn form_blank(input: InputType, kind: FieldKind, nullable: bool, value: &serde_json::Value) -> bool {
+    value.as_str() == Some("")
+        && matches!(
+            input,
+            InputType::TextInput
+                | InputType::Textarea
+                | InputType::NumberInput
+                | InputType::DatePicker
+                | InputType::DateTimePicker
+                | InputType::Hidden
+        )
+        && (nullable || kind != FieldKind::String)
+}
+
 /// What the panel's form holds for an input without a value, on the wire
 /// (`admin-ui/src/schema/form.ts`, `toFormValue` then `fromFormValue`).
 pub(crate) fn form_empty(input: InputType, kind: FieldKind, nullable: bool) -> serde_json::Value {

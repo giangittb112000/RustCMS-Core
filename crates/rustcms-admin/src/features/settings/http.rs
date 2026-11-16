@@ -374,20 +374,28 @@ async fn update(
     // Conditions (ADR 0037) on the stored group merged with the request: a
     // hidden field keeps its stored value (its default with
     // `clear_when_hidden`) and is not required; a value sent for it is dropped.
-    let resulting: Map<String, Value> = page
+    // As the panel's form holds them: "" in a nullable text is no value.
+    let as_form = |field: &crate::features::settings::SettingField, value: &Value| -> Value {
+        if value.as_str() == Some("") && field.rule().nullable { Value::Null } else { value.clone() }
+    };
+    let before: Map<String, Value> = page
         .fields()
         .iter()
         .filter(|f| !f.is_secret())
         .map(|f| {
-            let value = data.get(&f.name).or_else(|| stored.values.get(&f.name)).unwrap_or(&page.defaults()[&f.name]);
-            (f.name.clone(), value.clone())
+            let value = stored.values.get(&f.name).unwrap_or(&page.defaults()[&f.name]);
+            (f.name.clone(), as_form(f, value))
         })
         .collect();
+    let mut resulting = before.clone();
+    resulting.extend(data.iter().filter(|(name, _)| before.contains_key(*name)).map(|(k, v)| (k.clone(), v.clone())));
+    let hidden_before = page.conditions().hidden(&before);
     let hidden = page.conditions().hidden(&resulting);
+    // Reset when this save hides the field (as resources clear when a write hides it).
     let cleared: BTreeSet<&str> = page
         .conditions()
         .conditional()
-        .filter(|(name, clear)| *clear && hidden.contains(*name))
+        .filter(|(name, clear)| *clear && hidden.contains(*name) && !hidden_before.contains(*name))
         .map(|(n, _)| n)
         .collect();
     let mut data = data;

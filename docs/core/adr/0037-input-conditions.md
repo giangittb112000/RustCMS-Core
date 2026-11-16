@@ -122,7 +122,10 @@ it). The panel keeps the bound input as a disabled hidden input holding the
 parent's key: never sent, but read by the conditions as the server reads it.
 
 Settings pages and action forms keep their own evaluation: their users read
-every value of the page (settings) or send every field (actions).
+every value of the page (settings) or send every field (actions). Settings
+also reset a `clear_when_hidden` field only when a save hides it. As in the
+panel, `""` in a nullable text input counts as no value, and a field with
+several inputs holds what its last input holds.
 
 Literals are sent in schemas as the server compares them (UUIDs hyphenated in
 lower case, decimals without trailing zeros), and the panel canonicalizes

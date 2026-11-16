@@ -461,3 +461,22 @@ db_test!(a_secret_bound_to_a_field_a_condition_resets_is_cleared, |db: TestDb| a
     saved.assert_status(StatusCode::OK);
     put(version(&saved), json!({"custom": true, "port": null})).await.assert_validation_error("port");
 });
+
+db_test!(a_setting_already_hidden_is_not_reset_again, |db: TestDb| async move {
+    use sea_orm::TransactionTrait;
+    let (app, admin) = setup(db).await;
+    // Stored while hidden (written by the application, not through the page).
+    let txn = app.state().db().begin().await.unwrap();
+    let values = json!({"custom": false, "host": "kept.example", "port": 25}).as_object().unwrap().clone();
+    settings::write(&txn, app.state().keyring(), "relay", 1, values, &Default::default(), None).await.unwrap();
+    txn.commit().await.unwrap();
+    let client = app.acting_as(&admin).await;
+    client.fetch_csrf().await;
+    let url = app.admin_api("settings/relay");
+    client
+        .send(Method::PUT, &url, Some(&json!({"version": "1", "data": {"custom": false}})))
+        .await
+        .assert_status(StatusCode::OK);
+    let stored: RelaySettings = settings::get(app.state()).await.unwrap();
+    assert_eq!(stored.host, "kept.example", "hidden before this save: not reset");
+});

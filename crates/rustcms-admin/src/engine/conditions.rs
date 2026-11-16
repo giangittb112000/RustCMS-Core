@@ -162,6 +162,11 @@ pub(crate) fn canonicalize(components: &mut [Component], kind_of: KindOf<'_>) {
                 }
                 canonicalize(&mut layout.children, kind_of);
             }
+            Component::Entry(entry) => {
+                if let Some(condition) = entry.shown_when.as_deref_mut() {
+                    *condition = canonical_condition(condition, kind_of);
+                }
+            }
         }
     }
 }

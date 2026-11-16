@@ -64,3 +64,10 @@ ADR 0038: search is per word, each word matched (OR) across the title fields, ev
 5. **Settings 2.7:** the settings write skips the null/required check for conditional fields before visibility, then checks shown ones. The values used to evaluate conditions (hidden dependency = null) stay separate from the final values of 2.2.
 6. **2.5 concretely:** at boot, the checked (canonical) condition is written back **into the stored form components** (resource forms, settings forms, action field inputs) by one in-place pass, so every schema emits canonical literals without path bookkeeping. SPA canonicalizes UUID draft values like the server (lower case, hyphenated from 32 hex digits). Tests: emitted-schema assertions (UUID literal canonical in the schema JSON), fixture cases with non-canonical draft values; the Rust fixture mapper gains UUID.
 7. **Parity tests** cover: create defaults/placeholders (non-nullable text and toggles), readable disabled key, blind and write-only edits, relation binding, CSV create rows and matched update rows, settings and action forms. Concurrent edits: the server decides on the locked row (documented in ADR 0037).
+
+## After Codex verify (d30f0e7)
+
+- `""` in a nullable text input (or a non-text kind) is no value in the projection, as the panel's round trip makes it; settings too.
+- A field with several inputs: the last input wins (as `defaultValues`/`wireValues`).
+- Settings reset a `clear_when_hidden` field only when the save hides it (same rule as resources).
+- Kept on purpose: the create and hidden→shown "required" checks stay on `required` fields only. Every conditional non-nullable column has a default (boot check), so an omitted value is stored as that default; requiring it would refuse writes the database accepts. A shown non-nullable field sent as `null` is still refused.
