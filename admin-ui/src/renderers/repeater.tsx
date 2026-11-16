@@ -151,7 +151,7 @@ export function RepeaterWidget({ id, input, ctx, value, onChange, onBlur, disabl
   );
 }
 
-function IconButton({ label, onClick, disabled, children }: { label: string; onClick: () => void; disabled?: boolean; children: React.ReactNode }) {
+export function IconButton({ label, onClick, disabled, children }: { label: string; onClick: () => void; disabled?: boolean; children: React.ReactNode }) {
   return (
     <Button type="button" variant="ghost" size="icon" className="size-7 [&_svg]:size-4" aria-label={label} title={label} onClick={onClick} disabled={disabled}>
       {children}
@@ -159,7 +159,7 @@ function IconButton({ label, onClick, disabled, children }: { label: string; onC
   );
 }
 
-function RowComponents({ components, repeater, row, hidden, path, problem, server, ctx, disabled, idPrefix, onChange }: {
+export function RowComponents({ components, repeater, row, hidden, path, problem, server, ctx, disabled, idPrefix, onChange }: {
   components: ComponentSchema[];
   repeater: RepeaterSchema;
   row: Row;

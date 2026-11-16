@@ -1,0 +1,80 @@
+// Relationship repeaters (ADR 0040), from the server's contract
+// (fixtures/contract/repeater-relation.*): the stored rows are read from the
+// relation's list, in the order column's order; a save sends only the change.
+import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+import { act, fireEvent, render, screen, within } from "@testing-library/react";
+import { http, HttpResponse } from "msw";
+import { setupServer } from "msw/node";
+import { useForm } from "react-hook-form";
+import { SessionContext } from "@/api/context";
+import type { ComponentSchema } from "@/api/types";
+import { createSession } from "@/app/session";
+import { Components } from "@/renderers/form";
+import { type FormValues, defaultValues, inputsOf, payloadOf } from "@/schema/form";
+import schema from "../../fixtures/contract/repeater-relation.schema.edit.json";
+import rows from "../../fixtures/contract/repeater-relation.rows.json";
+
+const server = setupServer(
+  http.get("*/admin/api/resources/orders/records/:key/relations/lines", () =>
+    // Shuffled: the widget orders the rows by their position.
+    HttpResponse.json({ ...rows, data: [...rows.data].reverse() })),
+);
+beforeAll(() => server.listen({ onUnhandledRequest: "error" }));
+afterAll(() => server.close());
+
+const components = schema.form.components as unknown as ComponentSchema[];
+const inputs = inputsOf(components);
+
+let form: ReturnType<typeof useForm<FormValues>> | undefined;
+function Harness() {
+  form = useForm<FormValues>({ defaultValues: defaultValues(inputs, { number: "A-1" }) });
+  return <Components components={components} ctx={{ slug: "orders", record: "1", control: form.control, errors: form.formState.errors }} />;
+}
+
+function mount() {
+  const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+  const session = createSession({ basePath: "", apiPath: "http://localhost/admin/api" }, client, () => {});
+  render(<SessionContext.Provider value={session}><QueryClientProvider client={client}><Harness /></QueryClientProvider></SessionContext.Provider>);
+}
+
+const rowsShown = () => screen.getAllByRole("listitem");
+const sent = () => payloadOf(inputs, form!.getValues()).lines;
+
+it("reads the stored rows in order and sends nothing until they change", async () => {
+  mount();
+  await screen.findByText("a");
+  expect(rowsShown().map((li) => within(li).getByLabelText(/^Product/).getAttribute("value"))).toEqual(["a", "b", "c"]);
+  expect(sent()).toBeUndefined();
+});
+
+it("sends the order only when the user moved rows", async () => {
+  mount();
+  await screen.findByText("a");
+  fireEvent.change(within(rowsShown()[0]!).getByLabelText(/^Quantity/), { target: { value: "5" } });
+  // A row another user added meanwhile cannot make this change incomplete.
+  expect(sent()).toEqual({ update: [{ key: "1", data: { quantity: 5 } }] });
+});
+
+it("sends only the change: updated fields, removed rows, new rows and the order", async () => {
+  mount();
+  await screen.findByText("a");
+  fireEvent.change(within(rowsShown()[1]!).getByLabelText(/^Quantity/), { target: { value: "20" } });
+  fireEvent.click(within(rowsShown()[0]!).getByRole("button", { name: "Remove" }));
+  fireEvent.click(screen.getByRole("button", { name: "Add" }));
+  fireEvent.change(within(rowsShown()[2]!).getByLabelText(/^Product/), { target: { value: "d" } });
+  fireEvent.change(within(rowsShown()[2]!).getByLabelText(/^Quantity/), { target: { value: "4" } });
+  fireEvent.click(within(rowsShown()[2]!).getByRole("button", { name: "Move up" }));
+  const change = sent() as { create: { ref: string; data: unknown }[]; update: unknown; delete: unknown; order: string[] };
+  expect(change.update).toEqual([{ key: "2", data: { quantity: 20 } }]);
+  expect(change.delete).toEqual(["1"]);
+  expect(change.create).toEqual([{ ref: change.create[0]!.ref, data: { product: "d", quantity: 4 } }]);
+  expect(change.order).toEqual(["2", change.create[0]!.ref, "3"]);
+});
+
+it("shows the server's problems in their row, by key", async () => {
+  mount();
+  await screen.findByText("b");
+  act(() => form!.setError("lines", { type: "server", message: "Some rows need attention.", types: { "2.quantity": "is required" } }));
+  expect(within(rowsShown()[1]!).getByRole("alert")).toHaveTextContent("is required");
+  expect(within(rowsShown()[0]!).queryByRole("alert")).toBeNull();
+});

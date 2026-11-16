@@ -13,6 +13,7 @@ mod operations;
 pub(crate) mod pivot;
 mod read;
 mod references;
+pub(crate) mod rows;
 mod schema;
 mod secrets;
 mod write;
@@ -100,6 +101,8 @@ pub(crate) struct ResourceAdapter<R: Resource> {
     conditions: crate::engine::conditions::FormConditions,
     /// JSON repeaters, by field (ADR 0040).
     repeaters: HashMap<String, crate::engine::repeater::Rows>,
+    /// Relationship repeaters (ADR 0040).
+    row_repeaters: Vec<rows::RowRepeater>,
     /// The record title (ADR 0038).
     title: Option<crate::engine::title::TitleTemplate>,
     /// The view page's entries, when declared (ADR 0039).
@@ -289,6 +292,10 @@ impl<R: Resource> ResourceAdapter<R> {
                 );
                 continue;
             }
+            // Relationship repeaters name a has-many relation (checked with the rows).
+            if input.repeater.as_deref().is_some_and(|s| s.relationship) {
+                continue;
+            }
             assert!(
                 seen.contains(input.name.as_str()),
                 "resource `{slug}`: form input `{}` is not a field",
@@ -300,6 +307,7 @@ impl<R: Resource> ResourceAdapter<R> {
         let number_bounds = input::number_bounds(slug, &form, &columns);
         let conditions = input::form_conditions(slug, &form, &columns, &secrets, &fields);
         let repeaters = input::json_repeaters(slug, &form, &columns);
+        let row_repeaters = rows::row_repeaters(slug, &form, &relations);
         for input in form.inputs().into_iter().filter(|i| i.kind == InputType::Custom) {
             let widget = input.widget.as_deref().unwrap_or_default();
             assert!(crate::ui::valid_widget(widget), "resource `{slug}`: invalid widget name `{widget}`");
@@ -429,6 +437,7 @@ impl<R: Resource> ResourceAdapter<R> {
             number_bounds,
             conditions,
             repeaters,
+            row_repeaters,
             action_conditions,
             title,
             table_ui,

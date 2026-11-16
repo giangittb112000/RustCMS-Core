@@ -592,7 +592,11 @@ update: boolean,
 /**
  * The user may remove rows (each row's envelope decides too).
  */
-delete: boolean, };
+delete: boolean, 
+/**
+ * The child field holding each row's position (rows are shown in its order).
+ */
+orderColumn?: string, };
 
 export type InfolistSchema = { 
 /**

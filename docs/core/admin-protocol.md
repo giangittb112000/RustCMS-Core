@@ -161,6 +161,19 @@ repeater: `name.index.input` (`faq.2.question`, nested `faq.2.links.0.url`),
 `json`). New issue code `min_items`. Older clients show repeaters read-only
 and never send them.
 
+Relationship repeaters have `valueType: "rows"` and `repeater.relationship`
+(`resource`, `relation`, `create`, `update`, `delete`, `orderColumn`); their
+row inputs are the child's. Clients read the rows from
+`records/{key}/relations/{relation}?per_page=…` (each row's `abilities` say
+whether it may be changed or removed) and send a change, never the list:
+`{create?: [{ref, data}], update?: [{key, data}], delete?: [keys], order?:
+[keys and refs]}` (`ref`: `[a-z0-9-]{1,16}`; at most 100 entries per part;
+`order` lists every row the user sees, once). Error paths: `name.key.input`
+and `name.ref.input`; `name.key` for a row; `name` for the change. Issue
+codes `not_a_row` (a key that is not a visible child of this record) and
+`row_order`. The parent's history has `rows_changed` entries whose `meta`
+lists `relation`, `created`, `updated`, `deleted`, `reordered`.
+
 Vocabulary 14 adds infolists (ADR 0039): a view schema (`operation=view`)
 of a resource that declares one carries `infolist` (`InfolistSchema`:
 `columns`, `components`, `width`), whose components are layouts and

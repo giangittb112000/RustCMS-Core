@@ -262,6 +262,7 @@ pub struct RepeaterSchema {
 /// A relationship repeater's child records (ADR 0040).
 #[derive(Debug, Clone, PartialEq, Serialize)]
 #[cfg_attr(feature = "ts", derive(ts_rs::TS))]
+#[serde(rename_all = "camelCase")]
 pub struct RepeaterRelationship {
     /// The child resource.
     pub resource: &'static str,
@@ -273,6 +274,10 @@ pub struct RepeaterRelationship {
     pub update: bool,
     /// The user may remove rows (each row's envelope decides too).
     pub delete: bool,
+    /// The child field holding each row's position (rows are shown in its order).
+    #[cfg_attr(feature = "ts", ts(optional))]
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub order_column: Option<String>,
 }
 
 /// The changes a `belongs_to_many` input may send (checked again by the

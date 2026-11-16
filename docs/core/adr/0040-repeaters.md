@@ -175,9 +175,14 @@ Repeater::make("lines")
 - **Errors are keyed by row**: `lines.8.quantity`, `lines.n1.quantity`.
 - A create's `Idempotency-Key` claim covers the rows (it hashes the whole
   input).
-- Conditions may hide a relationship repeater: its change is then ignored.
-  `clear_when_hidden` on one is refused at boot (deleting hidden rows is a
-  separate decision).
+- Conditions on a relationship repeater, conditions in its rows and JSON
+  repeaters in its rows are refused at boot for now (the row's kinds come
+  from the child, and a JSON repeater in a child row would need the child's
+  own declaration); they come later. New rows take positions after every row
+  of the parent (trashed ones included) before the order is applied.
+- The parent's history entry is `rows_changed`, its `meta` listing the
+  relation and the keys created, updated and deleted, and whether rows were
+  reordered (the history shows it; field changes stay on each child).
 
 ### Schema (vocabulary 15)
 

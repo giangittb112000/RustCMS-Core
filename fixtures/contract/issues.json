@@ -223,6 +223,9 @@
   "no_super_admin_role": [
     "no super_admin role for guard `{guard}`"
   ],
+  "not_a_row": [
+    "is not one of the rows"
+  ],
   "not_after_since": [
     "must be after since"
   ],
@@ -261,6 +264,9 @@
   ],
   "required": [
     "is required"
+  ],
+  "row_order": [
+    "must list every row once"
   ],
   "search_too_broad": [
     "matches too many records to check; refine the search"

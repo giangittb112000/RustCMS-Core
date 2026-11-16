@@ -30,8 +30,18 @@ pub const VIEW: &str = "audit.view";
 /// Event families about credentials (personal data: emails typed, addresses).
 const AUTH_FAMILIES: [&str; 3] = ["auth.%", "jwt.%", "token.%"];
 /// Events a record's history shows (what the engine records about records).
-const RECORD_EVENTS: [&str; 9] =
-    ["created", "updated", "trashed", "deleted", "restored", "force_deleted", "attached", "detached", "pivot_updated"];
+const RECORD_EVENTS: [&str; 10] = [
+    "created",
+    "updated",
+    "trashed",
+    "deleted",
+    "restored",
+    "force_deleted",
+    "attached",
+    "detached",
+    "pivot_updated",
+    "rows_changed",
+];
 /// Events about a record's belongs-to-many links (meta: relation, targets, pivot).
 const LINK_EVENTS: [&str; 3] = ["attached", "detached", "pivot_updated"];
 const MAX_PER_PAGE: u64 = 100;
@@ -383,9 +393,21 @@ async fn history(
             entry.meta = if LINK_EVENTS.contains(&entry.event.as_str()) {
                 entry.meta.and_then(|meta| link_meta(meta, &links))
             } else {
-                // Only an action's result: relation parents and anything else stay out.
+                // An action's result, or a relationship repeater's rows (ADR 0040): relation
+                // parents and anything else stay out.
+                let rows = entry.event == "rows_changed";
                 entry.meta.and_then(|meta| {
-                    let kept: Map<String, Value> = meta.into_iter().filter(|(k, _)| k == "result").collect();
+                    let kept: Map<String, Value> = meta
+                        .into_iter()
+                        .filter(|(k, _)| {
+                            k == "result"
+                                || rows
+                                    && matches!(
+                                        k.as_str(),
+                                        "relation" | "created" | "updated" | "deleted" | "reordered"
+                                    )
+                        })
+                        .collect();
                     (!kept.is_empty()).then_some(kept)
                 })
             };

@@ -1,0 +1,73 @@
+{
+  "data": [
+    {
+      "abilities": {
+        "delete": true,
+        "force_delete": false,
+        "restore": false,
+        "update": true,
+        "view": true
+      },
+      "data": {
+        "deleted_at": null,
+        "order_id": 1,
+        "position": 1,
+        "product": "a",
+        "quantity": 1
+      },
+      "key": "1",
+      "labels": {
+        "order_id": "A-1"
+      },
+      "title": "a"
+    },
+    {
+      "abilities": {
+        "delete": true,
+        "force_delete": false,
+        "restore": false,
+        "update": true,
+        "view": true
+      },
+      "data": {
+        "deleted_at": null,
+        "order_id": 1,
+        "position": 2,
+        "product": "b",
+        "quantity": 7
+      },
+      "key": "2",
+      "labels": {
+        "order_id": "A-1"
+      },
+      "title": "b"
+    },
+    {
+      "abilities": {
+        "delete": true,
+        "force_delete": false,
+        "restore": false,
+        "update": true,
+        "view": true
+      },
+      "data": {
+        "deleted_at": null,
+        "order_id": 1,
+        "position": 3,
+        "product": "c",
+        "quantity": 3
+      },
+      "key": "3",
+      "labels": {
+        "order_id": "A-1"
+      },
+      "title": "c"
+    }
+  ],
+  "meta": {
+    "lastPage": 1,
+    "page": 1,
+    "perPage": 100,
+    "total": 3
+  }
+}

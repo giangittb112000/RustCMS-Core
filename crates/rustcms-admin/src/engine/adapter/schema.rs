@@ -275,6 +275,99 @@ impl<R: Resource> ResourceAdapter<R> {
         Some(Box::new(crate::engine::repeater::rows_schema(spec, &t, disabled)))
     }
 
+    /// The input of a relationship repeater, before its rows are filled in.
+    fn row_repeater_input(&self, ctx: &Ctx, input: &Input) -> InputSchema {
+        let relation = self.relations.iter().find(|r| r.name == input.name);
+        let label = input
+            .label
+            .clone()
+            .or_else(|| relation.and_then(|r| r.label.clone()))
+            .unwrap_or_else(|| humanize(&input.name));
+        InputSchema {
+            kind: InputType::Repeater,
+            name: input.name.clone(),
+            label: ctx.t_in(R::SLUG, &label),
+            value_type: "rows",
+            nullable: false,
+            default: None,
+            disabled: false,
+            write_only: false,
+            rules: Vec::new(),
+            column_span: input.column_span,
+            placeholder: None,
+            help: input.help.as_deref().map(|h| ctx.t_in(R::SLUG, h)),
+            mode: None,
+            options: Vec::new(),
+            relationship: None,
+            widget: None,
+            props: None,
+            media: None,
+            links: None,
+            prefix: None,
+            suffix: None,
+            number: None,
+            shown_when: None,
+            clear_when_hidden: false,
+            integer: false,
+            repeater: None,
+        }
+    }
+
+    /// Fills in the rows of the relationship repeaters in `components`: the
+    /// child's inputs for the operation and what the user may do; a repeater
+    /// whose child the user may not list is left out.
+    pub(super) async fn fill_row_repeaters(
+        &self,
+        ctx: &Ctx,
+        components: Vec<ComponentSchema>,
+        op: SchemaOperation,
+    ) -> Vec<ComponentSchema> {
+        let mut out = Vec::with_capacity(components.len());
+        for component in components {
+            match component {
+                ComponentSchema::Input(mut input) if input.value_type == "rows" => {
+                    let Some(repeater) = self.row_repeaters.iter().find(|r| r.name == input.name) else { continue };
+                    let Some(child) = ctx.registry.get(repeater.target) else { continue };
+                    if !child.allows(ctx, ability::VIEW_ANY).await {
+                        continue;
+                    }
+                    let create = child.admits(ctx, ability::CREATE).await && child.allows(ctx, ability::CREATE).await;
+                    let update = op == SchemaOperation::Edit && child.admits(ctx, ability::UPDATE).await;
+                    let delete = op == SchemaOperation::Edit && child.admits(ctx, ability::DELETE).await;
+                    let rows = child.row_schema(ctx, &repeater.spec.components, op);
+                    let t = |text: &str| ctx.t_in(R::SLUG, text);
+                    let relationship = crate::schema::RepeaterRelationship {
+                        resource: repeater.target,
+                        relation: repeater.name,
+                        create,
+                        update,
+                        delete,
+                        order_column: repeater.order_column.clone(),
+                    };
+                    input.disabled = !(create || update || delete);
+                    let mut schema =
+                        crate::engine::repeater::options_schema(&repeater.spec, rows, &t, Some(relationship));
+                    // Empty rows to start with are for new records only.
+                    if op != SchemaOperation::Create {
+                        schema.default_items = None;
+                    }
+                    // Without an order column an order is never stored: no reordering offered.
+                    schema.reorderable = repeater.order_column.is_some();
+                    input.repeater = Some(Box::new(schema));
+                    out.push(ComponentSchema::Input(input));
+                }
+                ComponentSchema::Layout(mut layout) => {
+                    layout.components = Box::pin(self.fill_row_repeaters(ctx, layout.components, op)).await;
+                    if !layout.components.is_empty() {
+                        out.push(ComponentSchema::Layout(layout));
+                    }
+                }
+                other => out.push(other),
+            }
+        }
+        out
+    }
+
     /// What the user may change with each `BelongsToManySelect` of the form
     /// (ADR 0035): on create, attach (admitted and allowed without a record);
     /// on edit, attach or detach on `record`; never on view (the relation
@@ -361,6 +454,10 @@ impl<R: Resource> ResourceAdapter<R> {
                     .get(&input.name)
                     .and_then(|l| self.links_input_schema(ctx, input, *l))
                     .map(ComponentSchema::Input),
+                // Relationship repeaters: their rows come from the child (`fill_row_repeaters`); never on view pages.
+                Component::Input(input) if input.repeater.as_deref().is_some_and(|s| s.relationship) => {
+                    (op != SchemaOperation::View).then(|| ComponentSchema::Input(self.row_repeater_input(ctx, input)))
+                }
                 Component::Input(input) => self.input_schema(ctx, input, op).map(ComponentSchema::Input),
                 // Forms hold no entries (refused at boot).
                 Component::Entry(_) => None,
