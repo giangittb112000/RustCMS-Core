@@ -38,10 +38,11 @@ All notable changes are documented here. The format follows
   `TextColumn::make("posts_count").counts("posts")` how many records of a
   has-many relation each record has, among those the user may list (list
   envelopes carry `counts`; the column is left out for users who may not list
-  the relation). The history shows a repeater's change line by row and input
-  (`faq › 2 › question`) and a relationship repeater's rows by key. CSV
-  exports write rows as JSON text and imports check them as forms do. Demo:
-  categories edit their posts in the form and count them in the list.
+  the relation; one grouped query per page). The history shows a repeater's
+  change line by row and input (`faq › 2 › question`). CSV exports write rows
+  as JSON text and imports check them as forms do. Demo: categories count
+  their posts in the list (posts are edited in the category's relation
+  section).
 - Infolists for record view pages (vocabulary 14, ADR 0039; contributed by @giangittb112000):
   `Resource::infolist()` replaces the read-only form on the view page with
   entries in the form's layouts: `TextEntry` (`badge`/`color`, `copyable`,
