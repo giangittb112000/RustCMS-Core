@@ -69,6 +69,7 @@
           "deletable": true,
           "itemLabel": "{product}",
           "maxItems": 4,
+          "minItems": 1,
           "relationship": {
             "create": true,
             "delete": true,

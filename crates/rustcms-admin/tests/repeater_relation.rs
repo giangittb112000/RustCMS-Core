@@ -56,6 +56,7 @@ fn lines() -> rustcms_admin::ui::Input {
     Repeater::make("lines")
         .relationship()
         .order_column("position")
+        .min_items(1)
         .max_items(4)
         .schema(components![TextInput::make("product"), NumberInput::make("quantity")])
         .item_label("{product}")
@@ -355,7 +356,7 @@ db_test!(row_errors_are_keyed_by_row_and_roll_everything_back, |db: TestDb| asyn
     let keyed = issues(
         update_order(&admin, &app, &order, json!({"lines": {"update": [{"key": a, "data": {"position": 9}}]}})).await,
     );
-    assert!(keyed.get(format!("lines.{a}")).is_some());
+    assert!(keyed.get(format!("lines.{a}.position")).is_some());
     // At most four rows (the hidden one counts: it is a row of the order).
     let fifth = update_order(
         &admin,
@@ -428,6 +429,25 @@ db_test!(each_part_needs_its_ability_on_the_child, |db: TestDb| async move {
     assert!(view["form"]["components"].as_array().unwrap().iter().all(|c| c["name"] != "lines"));
 });
 
+db_test!(the_minimum_and_the_inputs_hold_on_every_save, |db: TestDb| async move {
+    let (app, users) = setup(db).await;
+    let admin = app.acting_as(&users.admin).await;
+    // A new order has only the rows it creates: none, sent or not, is under the minimum.
+    let none = create_order(&admin, &app, json!({"create": []})).await;
+    assert!(issues(none)["lines"].is_array());
+    let omitted = admin.post_json(&app.admin_api("resources/orders/records"), &json!({"number": "A-9"})).await;
+    assert!(issues(omitted)["lines"].is_array());
+    let order = order_with_lines(&app, &admin).await;
+    // Rows edit the repeater's inputs only: another field of the line is refused.
+    let a = line_key(&app, &order, "a").await;
+    let sent = json!({"lines": {"update": [{"key": a, "data": {"deleted_at": "2026-01-01T00:00:00Z"}}]}});
+    let refused = update_order(&admin, &app, &order, sent).await;
+    assert!(issues(refused)[format!("lines.{a}.deleted_at")].is_array());
+    let sent =
+        json!({"lines": {"create": [{"ref": "n9", "data": {"product": "x", "quantity": 1, "deleted_at": null}}]}});
+    assert!(issues(update_order(&admin, &app, &order, sent).await)["lines.n9.deleted_at"].is_array());
+});
+
 db_test!(a_count_column_counts_the_rows_the_user_may_list, |db: TestDb| async move {
     let (app, users) = setup(db).await;
     let admin = app.acting_as(&users.admin).await;
@@ -444,7 +464,14 @@ db_test!(a_count_column_counts_the_rows_the_user_may_list, |db: TestDb| async mo
     assert_eq!(list["data"][0]["counts"], json!({"lines": 2}));
     assert!(list["data"][0]["data"].get("lines_count").is_none());
     // A record without lines counts zero; a single read carries no counts.
-    let empty = create_order(&admin, &app, json!({"create": []})).await.json()["data"]["key"].clone();
+    app.state().db().execute_unprepared("INSERT INTO orders (number) VALUES ('A-0')").await.unwrap();
+    let empty = order::Entity::find()
+        .filter(sea_orm::ColumnTrait::eq(&order::Column::Number, "A-0"))
+        .one(app.state().db())
+        .await
+        .unwrap()
+        .unwrap();
+    let empty = json!(empty.id.to_string());
     let list = admin.get(&app.admin_api("resources/orders/records")).await.json();
     let row = list["data"].as_array().unwrap().iter().find(|r| r["key"] == empty).unwrap().clone();
     assert_eq!(row["counts"], json!({"lines": 0}));

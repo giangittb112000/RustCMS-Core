@@ -161,10 +161,6 @@ impl Rows {
         }
     }
 
-    /// Checks `value`, the list at `path`; adds problems to `errors` and returns
-    /// the list as stored (inputs hidden by their conditions removed), or
-    /// `None` when it is refused. `null` is left to the field's rules, but
-    /// holds no rows: refused under `min_items`.
     /// Fewest rows, when declared above 0.
     pub(crate) fn min_items(&self) -> Option<usize> {
         self.min_items.filter(|n| *n > 0)
@@ -211,6 +207,10 @@ impl Rows {
         Value::Object(row)
     }
 
+    /// Checks `value`, the list at `path`; adds problems to `errors` and returns
+    /// the list as stored (inputs hidden by their conditions removed), or
+    /// `None` when it is refused. `null` is left to the field's rules, but
+    /// holds no rows: refused under `min_items`.
     pub(crate) fn check(&self, path: &str, value: &Value, errors: &mut ValidationErrors) -> Option<Value> {
         let before = count(errors);
         let Some(rows) = value.as_array() else {
@@ -290,7 +290,12 @@ impl Rows {
                             errors.add(name.as_str(), "must be an integer");
                             continue;
                         }
-                        kept.insert(input.name.clone(), value.clone());
+                        // `3.0` is stored as `3`: typed readers (`i32`) refuse a float.
+                        let value = match value.as_f64() {
+                            Some(n) if *integer && !value.is_i64() && !value.is_u64() => Value::from(n as i64),
+                            _ => value.clone(),
+                        };
+                        kept.insert(input.name.clone(), value);
                     }
                 }
             }

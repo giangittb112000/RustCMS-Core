@@ -380,7 +380,10 @@ Repeater::make("lines")
   a stored row needs `update` on it; without an order column the rows cannot
   be reordered.
 - **`min_items` / `max_items`** are checked by the server on the parent's
-  rows when a save removes or adds rows.
+  rows when a save removes or adds rows, and `min_items` on the rows a new
+  parent creates (a create without the repeater has none).
+- **Rows edit their inputs only:** a value for another field of the child is
+  refused (`lines.8.status`: "is not allowed"), even one its own form writes.
 - **Errors** name the row by key or, for a new row, its reference:
   `lines.8.quantity`, `lines.n1.quantity`.
 - **History:** the parent's history shows "Rows changed" (which rows were

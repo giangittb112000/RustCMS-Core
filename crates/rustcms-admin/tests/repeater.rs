@@ -261,6 +261,17 @@ db_test!(the_schema_describes_the_rows, |db: TestDb| async move {
     assert_eq!((column["count"].clone(), column["label"].clone()), (json!(true), json!("Questions")));
 });
 
+db_test!(integer_inputs_are_stored_as_integers, |db: TestDb| async move {
+    let (app, admin) = setup(db).await;
+    let client = app.acting_as(&admin).await;
+    // `3.0` is an integer, stored as `3` (a typed reader's `i32` refuses floats).
+    let response = create(&client, &app, json!([{"question": "Size?", "votes": 3.0}])).await;
+    response.assert_status(StatusCode::CREATED);
+    let votes = response.json()["data"]["data"]["faq"][0]["votes"].clone();
+    assert!(votes.is_i64() || votes.is_u64(), "{votes}");
+    assert_eq!(votes, json!(3));
+});
+
 db_test!(csv_files_carry_rows_as_json_text, |db: TestDb| async move {
     let (app, admin) = setup(db).await;
     let client = app.acting_as(&admin).await;
