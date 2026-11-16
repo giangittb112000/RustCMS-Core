@@ -185,23 +185,63 @@ impl<R: Resource> ResourceAdapter<R> {
         let mut query = ListQuery { parent: Some((field.to_owned(), String::new())), ..Default::default() };
         self.admit_list(ctx, &query).await?;
         let zeros = || parents.iter().map(|k| (k.clone(), 0)).collect::<BTreeMap<_, _>>();
-        if !self.policy.view_depends_on_record() {
-            if !self.policy.allows(ctx, ability::VIEW, None).await {
-                return Ok(zeros());
-            }
-            let mut out = BTreeMap::new();
-            for key in parents {
-                query.parent = Some((field.to_owned(), key.clone()));
-                out.insert(key.clone(), self.list_select(ctx, &query)?.count(&ctx.db).await?);
-            }
-            return Ok(out);
-        }
         let column = self.column(field);
         let values: Vec<sea_orm::Value> = parents
             .iter()
             .filter_map(|key| column.kind.decode(&column.kind.from_query(&serde_json::json!(key))).ok())
             .filter_map(|mut v| (!v.is_empty()).then(|| v.swap_remove(0)))
             .collect();
+        // The wire value of the parent key, as the parent's envelope key.
+        let parent_of = |value: Option<&serde_json::Value>| match value {
+            Some(serde_json::Value::String(s)) => Some(s.clone()),
+            Some(serde_json::Value::Null) | None => None,
+            Some(other) => Some(other.to_string()),
+        };
+        if !self.policy.view_depends_on_record() {
+            if !self.policy.allows(ctx, ability::VIEW, None).await {
+                return Ok(zeros());
+            }
+            // One grouped query for the page: the relation's list (scope,
+            // trash) of every parent, distinct children counted per parent.
+            query.parent = None;
+            let mut grouped = self.list_select(ctx, &query)?.filter(column.column.is_in(values));
+            // The list's sort does not apply to counts (and would break the grouping).
+            sea_orm::QueryTrait::query(&mut grouped).clear_order_by();
+            let grouped = grouped
+                .select_only()
+                .column_as(column.column, "parent")
+                .expr_as(
+                    sea_orm::sea_query::Func::count_distinct(sea_orm::sea_query::Expr::col((
+                        Entity::<R>::default(),
+                        self.pk,
+                    ))),
+                    "n",
+                )
+                .group_by(column.column);
+            // Read by the key's kind (an untyped JSON read loses the count on SQLite).
+            let counted: Vec<(String, i64)> = match column.kind {
+                FieldKind::I32 => {
+                    let rows: Vec<(i32, i64)> = grouped.into_tuple().all(&ctx.db).await?;
+                    rows.into_iter().map(|(k, n)| (k.to_string(), n)).collect()
+                }
+                FieldKind::I64 => {
+                    let rows: Vec<(i64, i64)> = grouped.into_tuple().all(&ctx.db).await?;
+                    rows.into_iter().map(|(k, n)| (k.to_string(), n)).collect()
+                }
+                FieldKind::Uuid => {
+                    let rows: Vec<(uuid::Uuid, i64)> = grouped.into_tuple().all(&ctx.db).await?;
+                    rows.into_iter().map(|(k, n)| (k.to_string(), n)).collect()
+                }
+                _ => grouped.into_tuple().all(&ctx.db).await?,
+            };
+            let mut out = zeros();
+            for (parent, n) in counted {
+                if let Some(count) = out.get_mut(&parent) {
+                    *count = u64::try_from(n).unwrap_or(0);
+                }
+            }
+            return Ok(out);
+        }
         let select = self.list_select(ctx, &ListQuery::default())?.filter(column.column.is_in(values));
         let (keys, complete) =
             self.read_candidate_keys(&ctx.db, &select, LIST_SCAN_BATCH, MAX_LIST_SCAN / LIST_SCAN_BATCH).await?;
@@ -214,12 +254,7 @@ impl<R: Resource> ResourceAdapter<R> {
                 if !self.listable(ctx, &record).await {
                     continue;
                 }
-                // The wire value of the parent key, as the parent's envelope key.
-                let parent = match record.get(field) {
-                    Some(serde_json::Value::String(s)) => s.clone(),
-                    Some(other) => other.to_string(),
-                    None => continue,
-                };
+                let Some(parent) = parent_of(record.get(field)) else { continue };
                 if let Some(count) = out.get_mut(&parent) {
                     *count += 1;
                 }

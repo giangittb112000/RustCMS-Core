@@ -154,7 +154,8 @@ function Shown({ entry, value, ctx }: { entry: EntrySchema; value: JsonValue; ct
           {value.map((row, i) => (
             <li key={i} className="rounded-lg border border-border p-3">
               <div className="grid grid-cols-1 gap-x-6 gap-y-4 md:grid-cols-2">
-                <InfolistRenderer infolist={rows} data={(row && typeof row === "object" && !Array.isArray(row) ? row : {}) as Data} />
+                <InfolistRenderer infolist={rows} slug={ctx.slug} recordKey={ctx.recordKey}
+                  data={(row && typeof row === "object" && !Array.isArray(row) ? row : {}) as Data} />
               </div>
             </li>
           ))}

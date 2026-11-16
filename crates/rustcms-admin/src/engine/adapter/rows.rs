@@ -218,7 +218,9 @@ impl<R: Resource> ResourceAdapter<R> {
         parent_field: &str,
     ) -> AppResult<bool> {
         let mut input = self.accept_input(ctx, Operation::Update, data)?;
-        self.apply_conditions(ctx, Operation::Update, &mut input, Some(&self.record(&model)))?;
+        // Rows are locked through the child's view policy: the user views them.
+        let record = self.record(&model);
+        self.apply_conditions(ctx, Operation::Update, &mut input, Some((&record, true)), None)?;
         let data = R::mutate_before_update(ctx, txn, &model, input).await?;
         // The row stays the child of the parent that was locked and checked.
         if data.get(parent_field).is_some_and(|v| self.record(&model).get(parent_field) != Some(v)) {
@@ -251,9 +253,9 @@ impl<R: Resource> ResourceAdapter<R> {
         if let Some((column, value)) = position {
             input.insert(column.to_owned(), serde_json::Value::from(value));
         }
-        self.apply_conditions(ctx, Operation::Create, &mut input, None)?;
-        let parents = self.lock_parents(ctx, txn, self.parent_of_data(&input).flatten()).await?;
         let (_, field, _) = ctx.bound.clone().expect("rows are created with their parent");
+        self.apply_conditions(ctx, Operation::Create, &mut input, None, Some(field.as_str()))?;
+        let parents = self.lock_parents(ctx, txn, self.parent_of_data(&input).flatten()).await?;
         let parent_value = input.get(&field).cloned();
         let data = R::mutate_before_create(ctx, txn, input).await?;
         self.check_parent_written(ctx, &data, &parents)?;

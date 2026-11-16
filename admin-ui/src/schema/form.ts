@@ -107,7 +107,8 @@ export const KNOWN_INPUT_TYPES = new Set<string>([
 /** An infolist entry (vocabulary 14): its type ends in `_entry`, including newer ones. */
 export const isEntry = (c: ComponentSchema): c is EntrySchema => "name" in c && c.type.endsWith("_entry");
 export const isInput = (c: ComponentSchema): c is InputSchema => "name" in c && !c.type.endsWith("_entry");
-export const isLayout = (c: ComponentSchema): c is LayoutSchema => "components" in c;
+/** A layout (section, grid, tabs…): holds components and has no name (a repeatable entry holds its row entries). */
+export const isLayout = (c: ComponentSchema): c is LayoutSchema => "components" in c && !("name" in c);
 
 /** Every input of a form, depth-first. */
 export function inputsOf(components: ComponentSchema[]): InputSchema[] {

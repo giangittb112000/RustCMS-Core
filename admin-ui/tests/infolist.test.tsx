@@ -201,3 +201,19 @@ it("keeps the open tab when the stored values show a tab before it", () => {
   );
   expect(screen.getByRole("tab", { name: "More" })).toHaveAttribute("aria-selected", "true");
 });
+
+it("draws a repeatable entry's rows from the stored list, not as a layout", () => {
+  draw({
+    columns: 1,
+    components: [
+      entry("faq", {
+        type: "repeatable_entry", valueType: "json",
+        components: [entry("question"), entry("answer")],
+      } as Partial<EntrySchema>),
+    ],
+  }, { faq: [{ question: "Size?", answer: "M" }, { question: "Color?", answer: "Red" }] });
+  const rows = within(valueOf("faq")).getAllByRole("listitem");
+  expect(rows).toHaveLength(2);
+  expect(rows[0]).toHaveTextContent("Size?");
+  expect(rows[1]).toHaveTextContent("Red");
+});
