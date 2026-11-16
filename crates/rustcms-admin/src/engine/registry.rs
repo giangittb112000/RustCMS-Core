@@ -84,6 +84,30 @@ pub trait DynResource: Send + Sync {
     async fn list(&self, ctx: &Ctx, query: &ListQuery) -> AppResult<Page>;
     /// Reads one record.
     async fn find(&self, ctx: &Ctx, key: &str) -> AppResult<Envelope>;
+    /// The schema of a relationship repeater's row (`components` name this
+    /// resource's fields) for `op` (ADR 0040).
+    #[doc(hidden)]
+    fn row_schema(
+        &self,
+        ctx: &Ctx,
+        components: &[crate::ui::Component],
+        op: SchemaOperation,
+    ) -> Vec<crate::schema::ComponentSchema>;
+    /// The relationship repeaters of the form: relation, child slug, the
+    /// child fields the rows edit, the order column (ADR 0040).
+    #[doc(hidden)]
+    fn row_repeater_fields(&self) -> Vec<(&'static str, &'static str, Vec<String>, Option<String>)>;
+    /// Writes a relationship repeater's change to this resource's children
+    /// of one parent, in the parent's write `txn` (ADR 0040).
+    #[doc(hidden)]
+    #[allow(private_interfaces)]
+    async fn write_rows(
+        &self,
+        ctx: &Ctx,
+        txn: &Arc<DatabaseTransaction>,
+        target: crate::adapter::rows::RowTarget<'_>,
+        change: crate::adapter::rows::RowChange,
+    ) -> AppResult<crate::adapter::rows::RowsOutcome>;
     /// The computed values record `key`'s view page shows (ADR 0039), for a
     /// user who may view it.
     async fn computed(&self, ctx: &Ctx, key: &str) -> AppResult<crate::schema::ComputedValues>;
@@ -333,6 +357,26 @@ impl Registry {
                     relation.target,
                     relation.field
                 );
+            }
+        }
+        // Relationship repeaters edit fields of their child (ADR 0040).
+        for resource in self.resources.values() {
+            let slug = resource.slug();
+            for (name, target, inputs, order) in resource.row_repeater_fields() {
+                let child = &self.resources[target];
+                for input in &inputs {
+                    assert!(
+                        child.field_link(input).is_some(),
+                        "resource `{slug}`: repeater `{name}`: row input `{input}` is not a field of `{target}`"
+                    );
+                }
+                if let Some(column) = order {
+                    assert!(
+                        matches!(child.field_link(&column), Some((None, "i32" | "i64"))),
+                        "resource `{slug}`: repeater `{name}`: the order column `{column}` must be an integer field of \
+                         `{target}`"
+                    );
+                }
             }
         }
         let mut registry = self;

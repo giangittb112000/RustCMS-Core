@@ -179,7 +179,9 @@ impl<R: Resource> DynResource for ResourceAdapter<R> {
             abilities,
             form: FormSchema {
                 columns: self.form.columns,
-                components: self.components(ctx, &self.form.components, op, &links),
+                components: self
+                    .fill_row_repeaters(ctx, self.components(ctx, &self.form.components, op, &links), op)
+                    .await,
                 width: self.form.width,
             },
             table: self.table_schema(ctx).await,
@@ -192,6 +194,24 @@ impl<R: Resource> DynResource for ResourceAdapter<R> {
                 _ => None,
             },
         })
+    }
+
+    fn row_schema(&self, ctx: &Ctx, components: &[Component], op: SchemaOperation) -> Vec<ComponentSchema> {
+        self.components(ctx, components, op, &HashMap::new())
+    }
+
+    fn row_repeater_fields(&self) -> Vec<(&'static str, &'static str, Vec<String>, Option<String>)> {
+        self.row_repeaters.iter().map(|r| (r.name, r.target, r.inputs.clone(), r.order_column.clone())).collect()
+    }
+
+    async fn write_rows(
+        &self,
+        ctx: &Ctx,
+        txn: &Arc<sea_orm::DatabaseTransaction>,
+        target: crate::adapter::rows::RowTarget<'_>,
+        change: crate::adapter::rows::RowChange,
+    ) -> AppResult<crate::adapter::rows::RowsOutcome> {
+        self.write_rows_in(ctx, txn, target, change).await
     }
 
     async fn computed(&self, ctx: &Ctx, key: &str) -> AppResult<crate::schema::ComputedValues> {
@@ -433,6 +453,8 @@ impl<R: Resource> DynResource for ResourceAdapter<R> {
         let mut input = input;
         // Links chosen in the form (ADR 0035): admitted and checked, written after the record.
         let links = self.take_links(&wctx, Operation::Create, &mut input).await?;
+        // Relationship repeaters (ADR 0040): admitted and checked, written after the record.
+        let rows = self.take_rows(&wctx, Operation::Create, &mut input).await?;
         let bound = ctx.bound.as_ref().map(|(_, field, parent)| (field.clone(), self.fk_value(field, parent)));
         if let Some((field, value)) = &bound {
             input.insert(field.clone(), value.clone());
@@ -472,10 +494,13 @@ impl<R: Resource> DynResource for ResourceAdapter<R> {
         let model = active.insert(txn.as_ref()).await.map_err(|e| self.map_db_err(&wctx, e))?;
         self.check_parent_stored(&wctx, &model, &parents)?;
         let link_audits = self.write_links(&wctx, &txn, &model, links).await?;
+        // The children, once the parent is written (locked after it); `after_save` sees them.
+        let row_outcomes = self.write_row_changes(&wctx, &txn, &model, rows).await?;
         R::after_save(&wctx, &txn, &model).await?;
         // As stored once the hooks ran.
         self.audit_outcome(&wctx, &txn, "created", None, &model, false, true).await?;
         self.audit_links(&wctx, &txn, &model, link_audits).await?;
+        self.audit_rows(&wctx, &txn, &model, row_outcomes).await?;
         if let Some(row) = &ctx.import_row {
             crate::imports::record_row(txn.as_ref(), row, "created", &self.key_of(&model)).await?;
         }
@@ -502,6 +527,8 @@ impl<R: Resource> DynResource for ResourceAdapter<R> {
         let mut input = input;
         // Links chosen in the form (ADR 0035): admitted and checked, written after the record.
         let links = self.take_links(ctx, Operation::Update, &mut input).await?;
+        // Relationship repeaters (ADR 0040): admitted and checked, written after the record.
+        let rows = self.take_rows(ctx, Operation::Update, &mut input).await?;
         let input = self.accept_input(ctx, Operation::Update, input)?;
         let (txn, wctx) = self.begin(ctx).await?;
         if let Some(claim) = &claim
@@ -538,10 +565,13 @@ impl<R: Resource> DynResource for ResourceAdapter<R> {
         };
         self.check_parent_stored(&wctx, &model, &parents)?;
         let link_audits = self.write_links(&wctx, &txn, &model, links).await?;
+        // The children, once the parent is written (locked after it); `after_save` sees them.
+        let row_outcomes = self.write_row_changes(&wctx, &txn, &model, rows).await?;
         R::after_save(&wctx, &txn, &model).await?;
         // Nothing changed: nothing to record.
         self.audit_outcome(&wctx, &txn, "updated", Some(&before), &model, false, false).await?;
         self.audit_links(&wctx, &txn, &model, link_audits).await?;
+        self.audit_rows(&wctx, &txn, &model, row_outcomes).await?;
         if let Some(row) = &ctx.import_row {
             crate::imports::record_row(txn.as_ref(), row, "updated", &self.key_of(&model)).await?;
         }
@@ -557,22 +587,7 @@ impl<R: Resource> DynResource for ResourceAdapter<R> {
         self.admit(ctx, ability::DELETE).await?;
         let (txn, wctx) = self.begin(ctx).await?;
         let model = self.find_authorized_locked(&wctx, &txn, key, ability::DELETE, Trashed::Without).await?;
-        let event = if self.soft.is_some() { "trashed" } else { "deleted" };
-        self.audit_write(&wctx, &txn, event, &self.key_of(&model), None, None).await?;
-        if self.soft.is_some() {
-            // To the trash: related records are kept (no database cascade runs).
-            let mut active = model.into_active_model();
-            self.set_marker(&mut active, true)?;
-            let model = active.update(txn.as_ref()).await.map_err(|e| self.map_db_err(&wctx, e))?;
-            R::after_trash(&wctx, &txn, &model).await?;
-        } else {
-            Entity::<R>::delete_many()
-                .filter(self.pk.eq(model.get(self.pk)))
-                .exec(txn.as_ref())
-                .await
-                .map_err(|e| self.map_db_err(&wctx, e))?;
-            R::after_delete(&wctx, &txn, &model).await?;
-        }
+        self.delete_locked(&wctx, &txn, model).await?;
         Self::commit(txn, wctx).await?;
         Ok(())
     }

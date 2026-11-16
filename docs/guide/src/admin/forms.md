@@ -351,6 +351,56 @@ On view pages the rows are shown read-only; an [infolist](infolists.md)
 shows them with a `RepeatableEntry`. [Settings pages](settings.md#kinds) take
 repeaters too.
 
+### Child records
+
+With `.relationship()`, the rows are the child records of the has-many
+[relation](relationships.md) named like the repeater, edited in the parent's
+form (the lines of an order, the answers of a question):
+
+```rust
+fn relations() -> Vec<Relation> {
+    vec![Relation::has_many("lines", "order_lines", "order_id")]
+}
+
+Repeater::make("lines")
+    .relationship()
+    .order_column("position")
+    .schema(components![SelectInput::make("product_id"), NumberInput::make("quantity")])
+```
+
+- **Row inputs are the child's fields**, with the child's rules: its field
+  rules, validation, references, `scope()`, policy and hooks apply to every
+  row, as when the row is written from the relation section. The child's key
+  to the parent and the order column are set by the server, never inputs.
+- **A save sends a change, not the list:** the rows added, the fields changed
+  in each row, the rows removed, and the order. Rows the user did not touch,
+  rows another user added meanwhile, and rows the user cannot see are never
+  written or removed.
+- **One write:** the parent row, then its rows (removed, changed, added,
+  reordered), then the parent's `after_save`, which sees every row. A refusal
+  anywhere (a row's validation, a child's policy or hook) rolls back the
+  parent and every row.
+- **Permissions:** adding rows needs `create` on the child, changing them
+  `update`, removing them `delete` (each row's policy decides too); the form
+  offers only what the user may do.
+- **Removing** a row of a child with soft deletes moves it to the trash.
+- **`order_column(field)`** (an integer field of the child) keeps the rows in
+  the user's order: they take the positions the visible rows held; rows the
+  user cannot see keep theirs. A unique `(parent, position)` is fine. Moving
+  a stored row needs `update` on it; without an order column the rows cannot
+  be reordered.
+- **`min_items` / `max_items`** are checked by the server on the parent's
+  rows when a save removes or adds rows.
+- **Errors** name the row by key or, for a new row, its reference:
+  `lines.8.quantity`, `lines.n1.quantity`.
+- **History:** the parent's history shows "Rows changed" (which rows were
+  added, changed, removed, reordered); each row has its own entries.
+- The form edits up to `max_items` rows (at most 100); with more, the
+  repeater is read-only and the relation section edits them. View pages show
+  the rows in the relation section, not in the form.
+- **Not yet:** conditions in relationship rows, repeaters inside them, and
+  conditions on the repeater itself.
+
 ## Encrypted fields
 
 The demo's integrations keep an API token and environment variables

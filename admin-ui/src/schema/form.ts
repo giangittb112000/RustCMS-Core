@@ -7,6 +7,7 @@ import { asDocument } from "@/lib/rich-text";
 import { widget } from "@/lib/widgets";
 import { checkText, fromText, toText, type WireKind } from "@/lib/wire";
 import { type WireValues, formConditions, hasConditions, hiddenFields } from "./conditions";
+import { changeOf, parseState, relationFormValue } from "./relation-rows";
 import { parseRows, repeaterFormValue, rowProblems, wireRows } from "./repeater";
 import {
   isResourceSecret,
@@ -129,6 +130,8 @@ export function toFormValue(input: InputSchema, value: unknown): FormValue {
       // A change of links ("" for none): records never carry the links themselves.
       return "";
     case "repeater":
+      // Child records: only what the user changes (a new record starts with its declared rows).
+      if (input.repeater?.relationship) return relationFormValue(input);
       // Each row's form values as JSON text; a new record starts with its declared empty rows.
       return repeaterFormValue(input, value);
     case "secret_map":
@@ -171,6 +174,7 @@ export function fromFormValue(input: InputSchema, value: FormValue): unknown {
     case "belongs_to_many":
       return value === "" ? undefined : (JSON.parse(value as string) as JsonValue);
     case "repeater":
+      if (input.repeater?.relationship) return changeOf(input, value);
       return value === "" ? null : wireRows(input, value);
     case "secret_map":
       return secretMapOperation(value);
@@ -340,6 +344,14 @@ export function zodSchema(inputs: InputSchema[]) {
       case "repeater":
         shape[input.name] = z.string().superRefine((value, ctx) => {
           if (input.disabled || !input.repeater) return;
+          if (input.repeater.relationship) {
+            // Child records: each row's problems are shown in the row.
+            const state = parseState(value);
+            if (state && Object.keys(rowProblems(input.repeater, state.rows.map((r) => r.values))).length) {
+              ctx.addIssue({ code: "custom", message: t("repeater.rowErrors") });
+            }
+            return;
+          }
           const rows = parseRows(value);
           if (rows === null) {
             ctx.addIssue({ code: "custom", message: t("issue.invalid") });

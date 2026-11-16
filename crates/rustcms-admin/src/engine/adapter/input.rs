@@ -531,12 +531,7 @@ pub(super) fn json_repeaters<C: ColumnTrait>(
             (input.kind == InputType::Repeater) == input.repeater.is_some(),
             "resource `{slug}`: input `{name}`: repeater options (`schema`, `min_items`, …) are for repeaters"
         );
-        let Some(spec) = input.repeater.as_deref() else { continue };
-        // Relationship rows come with ADR 0040's second part: never a JSON field's unchecked rows.
-        assert!(
-            !spec.relationship,
-            "resource `{slug}`: repeater `{name}`: relationship repeaters are not supported yet"
-        );
+        let Some(spec) = input.repeater.as_deref().filter(|s| !s.relationship) else { continue };
         let column = columns.get(name).unwrap_or_else(|| panic!("resource `{slug}`: repeater `{name}` is not a field"));
         assert!(column.kind == FieldKind::Json, "resource `{slug}`: repeater `{name}` needs a JSON column");
         assert!(

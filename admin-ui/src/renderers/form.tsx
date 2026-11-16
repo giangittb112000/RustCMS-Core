@@ -37,6 +37,7 @@ import {
 import { RelationSelect, RelationValue } from "./relation-select";
 import { LinksWidget } from "./links";
 import { RepeaterWidget } from "./repeater";
+import { RelationRepeaterWidget } from "./relation-repeater";
 import { FileUploadWidget, MediaThumb } from "./media";
 import { RichEditorWidget, RichTextView } from "./rich-text";
 import { CustomField } from "./custom";
@@ -657,6 +658,9 @@ export function Widget({ id, input, ctx, value, onChange, onBlur, disabled, inva
         </NativeSelect>
       );
     case "repeater":
+      if (input.repeater?.relationship) {
+        return <RelationRepeaterWidget id={id} input={input} ctx={ctx} value={value} onChange={onChange} onBlur={onBlur} disabled={disabled} invalid={invalid} describedBy={describedBy} />;
+      }
       return <RepeaterWidget id={id} input={input} ctx={ctx} value={value} onChange={onChange} onBlur={onBlur} disabled={disabled} invalid={invalid} describedBy={describedBy} />;
     case "belongs_to_many":
       return <LinksWidget id={id} input={input} slug={ctx.slug} record={ctx.record} value={text} onChange={onChange} disabled={disabled} invalid={invalid} describedBy={describedBy} onBlur={onBlur} />;
