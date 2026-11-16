@@ -1,7 +1,9 @@
 {
   "abilities": {
     "create": true,
+    "export": true,
     "history": true,
+    "import": true,
     "viewAny": true
   },
   "form": {
@@ -194,12 +196,13 @@
         "valueType": "string"
       },
       {
-        "label": "Price",
-        "name": "price",
+        "count": true,
+        "label": "Questions",
+        "name": "faq",
         "searchable": false,
         "sortable": false,
         "type": "text",
-        "valueType": "i32"
+        "valueType": "json"
       }
     ],
     "filters": [],

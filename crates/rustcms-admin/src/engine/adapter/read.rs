@@ -65,9 +65,45 @@ impl<R: Resource> ResourceAdapter<R> {
                 },
                 labels: if viewable { labels } else { BTreeMap::new() },
                 trashed,
+                counts: BTreeMap::new(),
             });
         }
         Ok(out)
+    }
+
+    /// For each relation a count column names, the number of its records each
+    /// viewable record has that the user may list ([`Self::counted_by`] of the
+    /// relation's resource). A relation the user may not list gets no counts.
+    /// Presentation: a failure leaves the counts out.
+    pub(super) async fn add_counts(&self, ctx: &Ctx, envelopes: &mut [Envelope]) {
+        let parents: Vec<String> =
+            envelopes.iter().filter(|e| e.abilities.get(ability::VIEW) == Some(&true)).map(|e| e.key.clone()).collect();
+        if parents.is_empty() {
+            return;
+        }
+        let mut done = HashSet::new();
+        for name in self.table_ui.columns.iter().filter_map(|c| c.counts) {
+            if !done.insert(name) {
+                continue;
+            }
+            let Some(relation) = self.relations.iter().find(|r| r.name == name) else { continue };
+            let Some(target) = ctx.registry.get(relation.target) else { continue };
+            if !target.allows(ctx, ability::VIEW_ANY).await {
+                continue;
+            }
+            match target.counted_by(ctx, relation.field, &parents).await {
+                Ok(counts) => {
+                    for envelope in envelopes.iter_mut() {
+                        if let Some(count) = counts.get(&envelope.key) {
+                            envelope.counts.insert(name.to_owned(), *count);
+                        }
+                    }
+                }
+                // The relation's field is not readable: no counts.
+                Err(AppError::Forbidden) => {}
+                Err(err) => tracing::warn!(resource = R::SLUG, relation = name, %err, "relation counts unavailable"),
+            }
+        }
     }
 
     /// One `titles` lookup per relationship field per page (no N+1).

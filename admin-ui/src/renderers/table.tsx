@@ -21,8 +21,21 @@ export const KNOWN_FILTERS = new Set(["select", "ternary", "date_range"]);
 
 const same = (a: unknown, b: unknown) => JSON.stringify(a) === JSON.stringify(b);
 
+/** The number a count column shows: the items of a JSON list, or the server's count of a relation. */
+function countOf(column: ColumnSchema, record: Envelope): number | undefined {
+  if (column.counts) return record.counts?.[column.counts];
+  const value = record.data[column.name];
+  if (Array.isArray(value)) return value.length;
+  if (value && typeof value === "object") return Object.keys(value).length;
+  return value === null ? 0 : undefined;
+}
+
 export function Cell({ column, record }: { column: ColumnSchema; record: Envelope }) {
   useT();
+  if (column.count || column.counts) {
+    const count = countOf(column, record);
+    return <span className="tabular-nums">{count === undefined ? "" : count.toLocaleString()}</span>;
+  }
   const value = record.data[column.name] as JsonValue | undefined;
   // A registered cell draws the value; its column type is the fallback.
   if (column.cell) {

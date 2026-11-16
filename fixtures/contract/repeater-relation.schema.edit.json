@@ -103,6 +103,15 @@
         "sortable": false,
         "type": "text",
         "valueType": "string"
+      },
+      {
+        "counts": "lines",
+        "label": "Lines count",
+        "name": "lines_count",
+        "searchable": false,
+        "sortable": false,
+        "type": "text",
+        "valueType": "i32"
       }
     ],
     "filters": [],

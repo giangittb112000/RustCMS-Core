@@ -555,6 +555,16 @@ pub struct ColumnSchema {
     #[cfg_attr(feature = "ts", ts(optional))]
     #[serde(skip_serializing_if = "Option::is_none")]
     pub hide_below: Option<crate::ui::Breakpoint>,
+    /// Shows the number of items of the field's JSON list (vocabulary 15).
+    #[cfg_attr(feature = "ts", ts(as = "Option<bool>", optional))]
+    #[serde(skip_serializing_if = "std::ops::Not::not")]
+    pub count: bool,
+    /// Shows `counts[relation]` of each record: how many records of this
+    /// has-many relation it has that the user may list (vocabulary 15). The
+    /// column's `name` is not a field.
+    #[cfg_attr(feature = "ts", ts(optional))]
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub counts: Option<&'static str>,
 }
 
 /// Badge color for one value.

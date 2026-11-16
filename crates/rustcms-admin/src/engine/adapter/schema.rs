@@ -125,7 +125,11 @@ impl<R: Resource> ResourceAdapter<R> {
             walk(&infolist.components, &mut out, &field_label);
         }
         for column in &self.table_ui.columns {
-            out.extend(column.label.clone().or_else(|| field_label(&column.name)));
+            let default = || match column.counts {
+                Some(_) => Some(humanize(&column.name)),
+                None => field_label(&column.name),
+            };
+            out.extend(column.label.clone().or_else(default));
         }
         for filter in &self.table_ui.filters {
             out.extend(filter.label.clone().or_else(|| field_label(&filter.name)));
@@ -472,20 +476,52 @@ impl<R: Resource> ResourceAdapter<R> {
 
     pub(super) async fn table_schema(&self, ctx: &Ctx) -> TableSchema {
         let readable = |name: &str| self.field(name).is_some_and(|f| f.can_read(ctx));
-        let columns = self
-            .table_ui
-            .columns
-            .iter()
-            .filter(|c| readable(&c.name))
+        let mut columns = Vec::new();
+        for c in &self.table_ui.columns {
+            let Some(name) = c.counts else {
+                if readable(&c.name) {
+                    columns.push(c);
+                }
+                continue;
+            };
+            // As the relation's list: listable, and its parent field readable.
+            let relation = self.relations.iter().find(|r| r.name == name).expect("validated at registration");
+            if let Some(target) = ctx.registry.get(relation.target)
+                && target.allows(ctx, ability::VIEW_ANY).await
+                && target.field_access(ctx, relation.field).0
+            {
+                columns.push(c);
+            }
+        }
+        let columns = columns
+            .into_iter()
             .map(|c| {
+                if c.counts.is_some() {
+                    return ColumnSchema {
+                        kind: c.kind,
+                        name: c.name.clone(),
+                        label: ctx.t_in(R::SLUG, &c.label.clone().unwrap_or_else(|| humanize(&c.name))),
+                        value_type: FieldKind::I32.name(),
+                        sortable: false,
+                        searchable: false,
+                        colors: Vec::new(),
+                        relationship: None,
+                        cell: None,
+                        props: c.props.clone(),
+                        hide_below: c.hide_below,
+                        count: false,
+                        counts: c.counts,
+                    };
+                }
                 let field = self.field(&c.name).expect("validated at registration");
                 ColumnSchema {
                     kind: c.kind,
                     name: c.name.clone(),
                     label: ctx.t_in(R::SLUG, &c.label.clone().unwrap_or_else(|| field.display_label())),
                     value_type: self.column(&c.name).kind.name(),
-                    sortable: field.sortable,
-                    searchable: field.searchable,
+                    // A count column shows a number: sorting or searching its JSON text would mislead.
+                    sortable: field.sortable && !c.count,
+                    searchable: field.searchable && !c.count,
                     colors: c
                         .colors
                         .iter()
@@ -495,6 +531,8 @@ impl<R: Resource> ResourceAdapter<R> {
                     cell: c.cell.clone(),
                     props: c.props.clone(),
                     hide_below: c.hide_below,
+                    count: c.count,
+                    counts: None,
                 }
             })
             .collect();

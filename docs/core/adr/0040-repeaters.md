@@ -211,8 +211,26 @@ never send it.
   `limit` rows, default 10, with a link to the relation section). It does
   not hide the relation section (as in Filament: drop it from `relations()`
   if it is not wanted).
-- `TextColumn::make("faq").count()` shows a JSON repeater's number of rows.
-- The history shows a JSON repeater's change row by row.
+- `TextColumn::make("faq").count()` shows a JSON repeater's number of rows
+  (counted by the panel from the record's value).
+- `TextColumn::make("lines_count").counts("lines")` shows each record's number
+  of children, as Filament's `counts()`: list envelopes carry `counts`, the
+  children the user may list (the child's list query: scope, trash, view
+  policy). When the child's policy decides once, one count of the list's
+  query per record of the page (at most 100) rather than one grouped query,
+  which would have to rebuild the scope's joins and `DISTINCT` outside the
+  list's own query; when it decides per record, one bounded scan of the
+  page's children (at most 10,000 candidates for the whole page, each
+  checked; beyond, no counts). Users who may not list the relation get
+  neither the column nor the counts. Not sortable. Computed by the list route
+  only (relation lists, the repeater widget's reads and Rust callers of
+  `list` go without). `count()` columns are neither sortable nor searchable.
+- The history shows a JSON repeater's change row by row and input, matched
+  by position (`faq › 2 › question`; a row added or removed whole), and a
+  relationship repeater's `rows_changed` entry as the keys created, updated
+  and deleted.
+- CSV: exports write a JSON repeater as its JSON text; imports read it back
+  and check its rows as a form save does (errors at `faq.0.question`).
 
 ### Boot checks
 
@@ -226,7 +244,9 @@ repeater is not JSON; `relationship()` names no has-many relation, a row
 input is not a field of the child, the child's foreign key or order column
 is an input, the order column is not an integer field, a relationship row
 holds a relationship repeater, or a relationship repeater has
-`clear_when_hidden`; a condition in a row names no input of the row.
+`clear_when_hidden`; a condition in a row names no input of the row. A count
+column is refused when `count()` is on a non-JSON field or has a custom cell,
+or `counts()` names no has-many relation or takes a field's name.
 
 ## Consequences
 

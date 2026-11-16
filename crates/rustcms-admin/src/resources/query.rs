@@ -133,6 +133,12 @@ pub struct Envelope {
     #[cfg_attr(feature = "ts", ts(as = "Option<BTreeMap<String, String>>", optional))]
     #[serde(skip_serializing_if = "BTreeMap::is_empty")]
     pub labels: BTreeMap<String, String>,
+    /// In the list route's pages: how many records of each has-many relation a count column
+    /// shows the record has, among those the user may list (vocabulary 15).
+    /// Absent for a relation the user may not list or too many to check.
+    #[cfg_attr(feature = "ts", ts(as = "Option<BTreeMap<String, u64>>", optional))]
+    #[serde(skip_serializing_if = "BTreeMap::is_empty")]
+    pub counts: BTreeMap<String, u64>,
 }
 
 /// Pagination metadata.

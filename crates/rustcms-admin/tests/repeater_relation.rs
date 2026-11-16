@@ -79,8 +79,35 @@ impl Resource for OrderResource {
         Form::new().schema(components![TextInput::make("number"), lines()])
     }
 
+    fn table() -> Table {
+        Table::new().columns(vec![TextColumn::make("number"), TextColumn::make("lines_count").counts("lines")])
+    }
+
     fn relations() -> Vec<Relation> {
         vec![Relation::has_many("lines", "order_lines", "order_id")]
+    }
+}
+
+/// Lines: the panel's permissions, and lines named "secret" visible to no one
+/// (decided per record once [`PER_RECORD`] is set; nextest runs each test in
+/// its own process).
+struct LinePolicy;
+
+static PER_RECORD: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+
+#[async_trait::async_trait]
+impl Policy for LinePolicy {
+    async fn allows(&self, ctx: &Ctx, ability: &str, record: Option<&Data>) -> bool {
+        let secret = record.is_some_and(|r| r.get("product") == Some(&json!("secret")));
+        ctx.can(&format!("order_lines.{ability}")) && !(secret && PER_RECORD.load(std::sync::atomic::Ordering::SeqCst))
+    }
+
+    async fn admits(&self, ctx: &Ctx, ability: &str) -> bool {
+        ctx.can(&format!("order_lines.{ability}"))
+    }
+
+    fn view_depends_on_record(&self) -> bool {
+        PER_RECORD.load(std::sync::atomic::Ordering::SeqCst)
     }
 }
 
@@ -104,6 +131,10 @@ impl Resource for LineResource {
             Field::column(C::Position).guarded().readable(|_| true),
             Field::column(C::DeletedAt).guarded().readable(|_| true),
         ]
+    }
+
+    fn policy() -> std::sync::Arc<dyn Policy> {
+        std::sync::Arc::new(LinePolicy)
     }
 
     // Lines named "hidden" are outside everyone's scope.
@@ -397,6 +428,63 @@ db_test!(each_part_needs_its_ability_on_the_child, |db: TestDb| async move {
     assert!(view["form"]["components"].as_array().unwrap().iter().all(|c| c["name"] != "lines"));
 });
 
+db_test!(a_count_column_counts_the_rows_the_user_may_list, |db: TestDb| async move {
+    let (app, users) = setup(db).await;
+    let admin = app.acting_as(&users.admin).await;
+    let order = order_with_lines(&app, &admin).await;
+    // A line in the trash and the line outside the scope are not counted.
+    let c = line_key(&app, &order, "c").await;
+    update_order(&admin, &app, &order, json!({"lines": {"delete": [c]}})).await.assert_status(StatusCode::OK);
+    let schema = admin.get(&app.admin_api("resources/orders/schema")).await.json();
+    let column = schema["table"]["columns"].as_array().unwrap().iter().find(|c| c["name"] == "lines_count").cloned();
+    let column = column.expect("the count column");
+    assert_eq!((column["counts"].clone(), column["label"].clone()), (json!("lines"), json!("Lines count")));
+    assert_eq!(column["sortable"], json!(false));
+    let list = admin.get(&app.admin_api("resources/orders/records")).await.json();
+    assert_eq!(list["data"][0]["counts"], json!({"lines": 2}));
+    assert!(list["data"][0]["data"].get("lines_count").is_none());
+    // A record without lines counts zero; a single read carries no counts.
+    let empty = create_order(&admin, &app, json!({"create": []})).await.json()["data"]["key"].clone();
+    let list = admin.get(&app.admin_api("resources/orders/records")).await.json();
+    let row = list["data"].as_array().unwrap().iter().find(|r| r["key"] == empty).unwrap().clone();
+    assert_eq!(row["counts"], json!({"lines": 0}));
+    let one = admin.get(&app.admin_api(&format!("resources/orders/records/{order}"))).await.json();
+    assert!(one["data"].get("counts").is_none());
+
+    // A policy deciding per record: one scan for the page, each line checked.
+    app.state()
+        .db()
+        .execute_unprepared(&format!(
+            "INSERT INTO order_lines (order_id, product, quantity, position) VALUES ({order}, 'secret', 1, 9)"
+        ))
+        .await
+        .unwrap();
+    let counts =
+        |list: Value| -> Vec<Value> { list["data"].as_array().unwrap().iter().map(|r| r["counts"].clone()).collect() };
+    let list = admin.get(&app.admin_api("resources/orders/records")).await.json();
+    assert_eq!(counts(list), [json!({"lines": 3}), json!({"lines": 0})], "decided once: the scope alone");
+    PER_RECORD.store(true, std::sync::atomic::Ordering::SeqCst);
+    let list = admin.get(&app.admin_api("resources/orders/records")).await.json();
+    assert_eq!(counts(list), [json!({"lines": 2}), json!({"lines": 0})], "per record: the secret line is not listed");
+    PER_RECORD.store(false, std::sync::atomic::Ordering::SeqCst);
+
+    // Someone who may not list lines gets neither the column nor the counts.
+    let auth = app.state().service::<AuthState>().unwrap();
+    let rbac = RbacService::new(app.state().db(), &auth.resolver);
+    let viewer = UserFactory::new().name("Viewer").create(app.state().db()).await;
+    let role = rbac
+        .create_role(Actor::System, ADMIN_GUARD, "viewer", &["orders.view_any".to_owned(), "orders.view".to_owned()])
+        .await
+        .unwrap();
+    rbac.assign_role(Actor::System, viewer.id, role.id).await.unwrap();
+    let viewer = app.acting_as(&viewer).await;
+    let schema = viewer.get(&app.admin_api(&format!("resources/orders/schema?operation=view&key={order}"))).await;
+    let schema = schema.assert_status(StatusCode::OK).json();
+    assert!(schema["table"]["columns"].as_array().unwrap().iter().all(|c| c["name"] != "lines_count"));
+    let list = viewer.get(&app.admin_api("resources/orders/records")).await.json();
+    assert!(list["data"].as_array().unwrap().iter().all(|r| r.get("counts").is_none()));
+});
+
 macro_rules! refused_at_boot {
     ($test:ident, $resource:ident, $message:literal, $input:expr) => {
         pub struct $resource;
@@ -467,6 +555,58 @@ refused_at_boot!(
     JsonRule,
     "the child's field decides",
     Repeater::make("lines").relationship().schema(components![TextInput::make("product").required()])
+);
+
+macro_rules! column_refused_at_boot {
+    ($test:ident, $resource:ident, $message:literal, $column:expr) => {
+        pub struct $resource;
+
+        impl Resource for $resource {
+            type Entity = order::Entity;
+            const SLUG: &'static str = "orders";
+
+            fn meta() -> ResourceMeta {
+                ResourceMeta::new("Order")
+            }
+
+            fn fields() -> Vec<Field> {
+                vec![Field::column(order::Column::Number).required()]
+            }
+
+            fn table() -> Table {
+                Table::new().columns(vec![$column])
+            }
+
+            fn relations() -> Vec<Relation> {
+                vec![Relation::has_many("lines", "order_lines", "order_id")]
+            }
+        }
+
+        #[test]
+        #[should_panic(expected = $message)]
+        fn $test() {
+            Registry::new().register::<$resource>().register::<LineResource>().finish();
+        }
+    };
+}
+
+column_refused_at_boot!(
+    a_count_of_an_unknown_relation,
+    CountUnknown,
+    "counts `items`, which is not a has-many relation",
+    TextColumn::make("items_count").counts("items")
+);
+column_refused_at_boot!(
+    a_count_column_named_as_a_field,
+    CountFieldName,
+    "count column `number` has a field's name",
+    TextColumn::make("number").counts("lines")
+);
+column_refused_at_boot!(
+    an_item_count_of_a_text_field,
+    CountText,
+    "counts list items and needs a JSON field",
+    TextColumn::make("number").count()
 );
 
 #[allow(dead_code)]
