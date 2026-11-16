@@ -115,7 +115,11 @@ pub(super) async fn list(
     Query(pairs): Query<Vec<(String, String)>>,
 ) -> AppResult<Json<crate::Page>> {
     let query = list_query(pairs)?;
-    Ok(Json(resource(&ctx, &slug)?.list(&ctx, &query).await?))
+    let resource = resource(&ctx, &slug)?;
+    let mut page = resource.list(&ctx, &query).await?;
+    // The table's count columns (`TextColumn::counts`): this route only.
+    resource.add_counts(&ctx, &mut page.data).await;
+    Ok(Json(page))
 }
 
 pub(super) async fn find(

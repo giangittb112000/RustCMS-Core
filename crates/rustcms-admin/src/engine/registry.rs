@@ -84,6 +84,30 @@ pub trait DynResource: Send + Sync {
     async fn list(&self, ctx: &Ctx, query: &ListQuery) -> AppResult<Page>;
     /// Reads one record.
     async fn find(&self, ctx: &Ctx, key: &str) -> AppResult<Envelope>;
+    /// The schema of a relationship repeater's row (`components` name this
+    /// resource's fields) for `op` (ADR 0040).
+    #[doc(hidden)]
+    fn row_schema(
+        &self,
+        ctx: &Ctx,
+        components: &[crate::ui::Component],
+        op: SchemaOperation,
+    ) -> Vec<crate::schema::ComponentSchema>;
+    /// The relationship repeaters of the form: relation, child slug, the
+    /// child fields the rows edit, the order column (ADR 0040).
+    #[doc(hidden)]
+    fn row_repeater_fields(&self) -> Vec<(&'static str, &'static str, Vec<String>, Option<String>)>;
+    /// Writes a relationship repeater's change to this resource's children
+    /// of one parent, in the parent's write `txn` (ADR 0040).
+    #[doc(hidden)]
+    #[allow(private_interfaces)]
+    async fn write_rows(
+        &self,
+        ctx: &Ctx,
+        txn: &Arc<DatabaseTransaction>,
+        target: crate::adapter::rows::RowTarget<'_>,
+        change: crate::adapter::rows::RowChange,
+    ) -> AppResult<crate::adapter::rows::RowsOutcome>;
     /// The computed values record `key`'s view page shows (ADR 0039), for a
     /// user who may view it.
     async fn computed(&self, ctx: &Ctx, key: &str) -> AppResult<crate::schema::ComputedValues>;
@@ -122,6 +146,14 @@ pub trait DynResource: Send + Sync {
         date: Option<&str>,
         ranges: &[(chrono::DateTime<chrono::Utc>, chrono::DateTime<chrono::Utc>)],
     ) -> AppResult<Counted>;
+    /// How many records the user may list hold each of `parents` in `field`
+    /// (count columns); empty when too many must be checked one by one.
+    #[doc(hidden)]
+    async fn counted_by(&self, ctx: &Ctx, field: &str, parents: &[String]) -> AppResult<BTreeMap<String, u64>>;
+    /// Adds the counts of the table's count columns to a page of the list
+    /// route (the table only: relation lists and Rust callers go without).
+    #[doc(hidden)]
+    async fn add_counts(&self, ctx: &Ctx, envelopes: &mut [Envelope]);
     /// Fields the user may set by import.
     fn import_fields(&self, ctx: &Ctx) -> Vec<crate::ImportField>;
     /// Columns of `Field::encrypted*` fields (for `key:reencrypt`).
@@ -333,6 +365,36 @@ impl Registry {
                     relation.target,
                     relation.field
                 );
+            }
+        }
+        // Relationship repeaters edit fields of their child (ADR 0040).
+        for resource in self.resources.values() {
+            let slug = resource.slug();
+            for (name, target, inputs, order) in resource.row_repeater_fields() {
+                let child = &self.resources[target];
+                // Rows are written under the parent's lock; a child locking another
+                // parent would take that lock after its own rows (ADR 0035 order).
+                if let Some((field, locked)) = &child.meta().parent_lock {
+                    let relation = resource.relations().iter().find(|r| r.name == name).map(|r| r.field);
+                    assert!(
+                        *locked == slug && relation == Some(field.as_str()),
+                        "resource `{slug}`: repeater `{name}`: `{target}` locks its parent `{locked}` through `{field}`, \
+                         not through this relation"
+                    );
+                }
+                for input in &inputs {
+                    assert!(
+                        child.field_link(input).is_some(),
+                        "resource `{slug}`: repeater `{name}`: row input `{input}` is not a field of `{target}`"
+                    );
+                }
+                if let Some(column) = order {
+                    assert!(
+                        matches!(child.field_link(&column), Some((None, "i32" | "i64"))),
+                        "resource `{slug}`: repeater `{name}`: the order column `{column}` must be an integer field of \
+                         `{target}`"
+                    );
+                }
             }
         }
         let mut registry = self;

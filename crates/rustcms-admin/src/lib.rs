@@ -49,8 +49,9 @@ pub use ui::{
     BadgeColumn, BelongsToManySelect, BooleanColumn, BooleanEntry, Breakpoint, Checkbox, CheckboxList, Computed,
     ComputedEntry, Condition, CustomEntry, CustomInput, DateColumn, DatePicker, DateRangeFilter, DateTimePicker,
     FileUpload, Form, FormWidth, Grid, Hidden, Infolist, KeyValue, KeyValueEntry, MediaEntry, NumberInput,
-    RelationEntry, RichEditor, RichTextEntry, SecretInput, SecretMapInput, Section, SelectFilter, SelectInput, Split,
-    Tab, Table, Tabs, TernaryFilter, TextColumn, TextEntry, TextInput, Textarea, Toggle, When, when,
+    RelationEntry, RepeatableEntry, Repeater, RichEditor, RichTextEntry, SecretInput, SecretMapInput, Section,
+    SelectFilter, SelectInput, Split, Tab, Table, Tabs, TernaryFilter, TextColumn, TextEntry, TextInput, Textarea,
+    Toggle, When, when,
 };
 
 /// A JSON object in wire format (input, hook data, trusted records).

@@ -21,13 +21,67 @@ export function useEventLabel() {
 
 const value = (v: unknown) => (v === null || v === undefined ? "∅" : typeof v === "string" ? v : JSON.stringify(v));
 
+type Row = Record<string, unknown>;
+const isRow = (r: unknown): r is Row => r !== null && typeof r === "object" && !Array.isArray(r);
+/** The audit log's marks of a cut value: `{"more": n}` after a list's first items, `"…"` in an object. */
+const cut = (r: Row) => "…" in r || (Object.keys(r).length === 1 && typeof r.more === "number");
+const rowsOf = (v: unknown): Row[] | null =>
+  v === null || v === undefined ? []
+    : Array.isArray(v) && v.every((r) => isRow(r) && !cut(r)) ? (v as Row[]) : null;
+
+/**
+ * A list of rows (a repeater's JSON) as one line per changed row input,
+ * matched by position: `faq › 2 › question`; a row added or removed as a
+ * whole. `null` for anything else, a list the audit log cut, or no
+ * difference found (shown as one value).
+ */
+export function rowChanges(field: string, before: unknown, after: unknown): [string, unknown, unknown][] | null {
+  const [old, now] = [rowsOf(before), rowsOf(after)];
+  if (!old || !now || (old.length === 0 && now.length === 0)) return null;
+  const out: [string, unknown, unknown][] = [];
+  for (let i = 0; i < Math.max(old.length, now.length); i++) {
+    const [was, is] = [old[i], now[i]];
+    const label = `${field} › ${i + 1}`;
+    if (!was || !is) {
+      out.push([label, was, is]);
+      continue;
+    }
+    for (const key of new Set([...Object.keys(was), ...Object.keys(is)])) {
+      if (JSON.stringify(was[key]) !== JSON.stringify(is[key])) out.push([`${label} › ${key}`, was[key], is[key]]);
+    }
+  }
+  // Nothing told apart (e.g. `1` and `1.0`): the values as recorded.
+  return out.length > 0 ? out : null;
+}
+
+/** A relationship repeater's change on the parent (`rows_changed`): which child rows, by key. */
+function RowsChanged({ meta }: { meta: Record<string, unknown> }) {
+  const t = useT();
+  const keys = (v: unknown) => (Array.isArray(v) ? v.map((k) => `#${String(k)}`).join(", ") : "");
+  const parts: [string, string][] = [
+    [t("audit.rows.relation"), String(meta.relation ?? "")],
+    [t("audit.rows.created"), keys(meta.created)],
+    [t("audit.rows.updated"), keys(meta.updated)],
+    [t("audit.rows.deleted"), keys(meta.deleted)],
+    [t("audit.rows.reordered"), meta.reordered === true ? t("value.yes") : ""],
+  ];
+  return (
+    <dl className="grid grid-cols-[auto_minmax(0,1fr)] gap-x-3 text-xs">
+      {parts.filter(([, v]) => v).map(([k, v]) => <div key={k} className="contents"><dt className="text-muted-foreground">{k}</dt><dd className="break-all font-mono">{v}</dd></div>)}
+    </dl>
+  );
+}
+
 function Changes({ changes }: { changes: Record<string, unknown> }) {
   const t = useT();
   if (changes.overflow === true) {
     const fields = Array.isArray(changes.fields) ? changes.fields.map(String) : [];
     return <p className="text-sm text-muted-foreground">{t("audit.tooLarge", { fields: fields.join(", ") })}</p>;
   }
-  const rows = Object.entries(changes);
+  const rows = Object.entries(changes).flatMap(([field, pair]): [string, unknown, unknown][] => {
+    const [before, after] = Array.isArray(pair) && pair.length === 2 ? pair : [undefined, pair];
+    return rowChanges(field, before, after) ?? [[field, before, after]];
+  });
   if (rows.length === 0) return null;
   return (
     <table className="w-full table-fixed text-left text-xs">
@@ -39,8 +93,7 @@ function Changes({ changes }: { changes: Record<string, unknown> }) {
         </tr>
       </thead>
       <tbody>
-        {rows.map(([field, pair]) => {
-          const [before, after] = Array.isArray(pair) ? pair : [undefined, pair];
+        {rows.map(([field, before, after]) => {
           return (
             <tr key={field} className="border-t border-border align-top">
               <th scope="row" className="break-all py-1 pr-3 font-medium">{field}</th>
@@ -80,7 +133,7 @@ function Entry({ entry, showSubject }: { entry: AuditEntryView; showSubject: boo
       {open && (
         <div className="ml-9 mt-2 flex min-w-0 flex-col gap-2">
           {entry.changes && <Changes changes={entry.changes} />}
-          {entry.meta && <pre className="overflow-x-auto rounded-md bg-muted p-2 text-xs">{JSON.stringify(entry.meta, null, 2)}</pre>}
+          {entry.meta && entry.event === "rows_changed" ? <RowsChanged meta={entry.meta as Record<string, unknown>} /> : entry.meta && <pre className="overflow-x-auto rounded-md bg-muted p-2 text-xs">{JSON.stringify(entry.meta, null, 2)}</pre>}
           <dl className="grid grid-cols-[auto_minmax(0,1fr)] gap-x-3 text-xs text-muted-foreground">
             {entry.ip && <><dt>{t("audit.ip")}</dt><dd className="break-all">{entry.ip}</dd></>}
             {entry.userAgent && <><dt>{t("audit.userAgent")}</dt><dd className="break-all">{entry.userAgent}</dd></>}

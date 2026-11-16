@@ -13,6 +13,7 @@ mod operations;
 pub(crate) mod pivot;
 mod read;
 mod references;
+pub(crate) mod rows;
 mod schema;
 mod secrets;
 mod write;
@@ -98,6 +99,10 @@ pub(crate) struct ResourceAdapter<R: Resource> {
     number_bounds: HashMap<String, crate::engine::validate::Bounds>,
     /// Conditions under which inputs are shown (ADR 0037).
     conditions: crate::engine::conditions::FormConditions,
+    /// JSON repeaters, by field (ADR 0040).
+    repeaters: HashMap<String, crate::engine::repeater::Rows>,
+    /// Relationship repeaters (ADR 0040).
+    row_repeaters: Vec<rows::RowRepeater>,
     /// The record title (ADR 0038).
     title: Option<crate::engine::title::TitleTemplate>,
     /// The view page's entries, when declared (ADR 0039).
@@ -287,6 +292,10 @@ impl<R: Resource> ResourceAdapter<R> {
                 );
                 continue;
             }
+            // Relationship repeaters name a has-many relation (checked with the rows).
+            if input.repeater.as_deref().is_some_and(|s| s.relationship) {
+                continue;
+            }
             assert!(
                 seen.contains(input.name.as_str()),
                 "resource `{slug}`: form input `{}` is not a field",
@@ -297,6 +306,8 @@ impl<R: Resource> ResourceAdapter<R> {
         let static_options = input::static_options(slug, &mut form, &fields, &columns);
         let number_bounds = input::number_bounds(slug, &form, &columns);
         let conditions = input::form_conditions(slug, &form, &columns, &secrets, &fields);
+        let repeaters = input::json_repeaters(slug, &form, &columns);
+        let row_repeaters = rows::row_repeaters(slug, &form, &relations);
         for input in form.inputs().into_iter().filter(|i| i.kind == InputType::Custom) {
             let widget = input.widget.as_deref().unwrap_or_default();
             assert!(crate::ui::valid_widget(widget), "resource `{slug}`: invalid widget name `{widget}`");
@@ -354,7 +365,36 @@ impl<R: Resource> ResourceAdapter<R> {
         }
         let field = |name: &str| fields.iter().find(|f| f.name == name);
         for column in &table_ui.columns {
+            if let Some(relation) = column.counts {
+                // A count of a relation: the column is named by itself, never a field.
+                assert!(
+                    field(&column.name).is_none(),
+                    "resource `{slug}`: count column `{}` has a field's name",
+                    column.name
+                );
+                assert!(
+                    relations.iter().any(|r| r.name == relation && !r.is_many()),
+                    "resource `{slug}`: column `{}` counts `{relation}`, which is not a has-many relation",
+                    column.name
+                );
+                assert!(
+                    !column.count && column.cell.is_none(),
+                    "resource `{slug}`: count column `{}` takes neither count() nor a custom cell",
+                    column.name
+                );
+                continue;
+            }
             assert!(field(&column.name).is_some(), "resource `{slug}`: table column `{}` is not a field", column.name);
+            assert!(
+                !column.count || columns[&column.name].kind == FieldKind::Json,
+                "resource `{slug}`: column `{}` counts list items and needs a JSON field",
+                column.name
+            );
+            assert!(
+                !column.count || column.cell.is_none(),
+                "resource `{slug}`: count column `{}` takes no custom cell",
+                column.name
+            );
             assert!(
                 !secrets.contains_key(&column.name),
                 "resource `{slug}`: encrypted field `{}` cannot be a table column",
@@ -425,6 +465,8 @@ impl<R: Resource> ResourceAdapter<R> {
             static_options,
             number_bounds,
             conditions,
+            repeaters,
+            row_repeaters,
             action_conditions,
             title,
             table_ui,

@@ -40,11 +40,23 @@ pub struct TableColumn {
     pub(crate) cell: Option<String>,
     pub(crate) props: Option<Json>,
     pub(crate) hide_below: Option<Breakpoint>,
+    pub(crate) count: bool,
+    pub(crate) counts: Option<&'static str>,
 }
 
 impl TableColumn {
     fn new(name: impl Into<String>, kind: ColumnType) -> Self {
-        Self { name: name.into(), kind, label: None, colors: Vec::new(), cell: None, props: None, hide_below: None }
+        Self {
+            name: name.into(),
+            kind,
+            label: None,
+            colors: Vec::new(),
+            cell: None,
+            props: None,
+            hide_below: None,
+            count: false,
+            counts: None,
+        }
     }
 
     /// Drawn by the cell an extension script registered as `vendor/name`
@@ -71,6 +83,22 @@ impl TableColumn {
     /// Header label (default: the field name, humanized).
     pub fn label(mut self, label: impl Into<String>) -> Self {
         self.label = Some(label.into());
+        self
+    }
+
+    /// Shows how many items the field's JSON list holds (a repeater, a tags
+    /// list) instead of the items. The field needs a JSON column.
+    pub fn count(mut self) -> Self {
+        self.count = true;
+        self
+    }
+
+    /// Shows how many records of the has-many `relation` each record has,
+    /// among those the user may list (its scope and policy), as Filament's
+    /// `counts()`. The column's name is its own (`lines_count`), not a field;
+    /// not sortable. Shown only to users who may list the relation.
+    pub fn counts(mut self, relation: &'static str) -> Self {
+        self.counts = Some(relation);
         self
     }
 

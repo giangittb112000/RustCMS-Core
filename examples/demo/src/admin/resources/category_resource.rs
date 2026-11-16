@@ -37,7 +37,19 @@ impl Resource for CategoryResource {
         // An editor layout: the whole width, a main column and an aside.
         Form::new().width(FormWidth::Full).schema(components![
             Split::make()
-                .main(components![TextInput::make("name"), TextInput::make("slug").prefix("/categories/"),])
+                .main(components![
+                    TextInput::make("name"),
+                    TextInput::make("slug").prefix("/categories/"),
+                    // #region posts-repeater
+                    // The category's posts, edited in its form: each row is a post
+                    // (the posts resource's rules, policy and hooks apply).
+                    Repeater::make("posts")
+                        .relationship()
+                        .schema(components![TextInput::make("title"), Toggle::make("published")])
+                        .item_label("{title}")
+                        .add_action_label("Add a post"),
+                    // #endregion posts-repeater
+                ])
                 .aside(components![Section::make("Display").compact().collapsible(false).schema(components![
                     // #region color-input
                     // Edited by the demo's extension widget (resources/admin/js/demo/color.js).
@@ -52,6 +64,19 @@ impl Resource for CategoryResource {
         ])
     }
     // #endregion form
+
+    // #region table
+    /// The list: the category's fields and how many posts each has (those the
+    /// user may list).
+    fn table() -> Table {
+        Table::new().columns(vec![
+            TextColumn::make("name"),
+            TextColumn::make("slug"),
+            TextColumn::make("color"),
+            TextColumn::make("posts_count").label("Posts").counts("posts"),
+        ])
+    }
+    // #endregion table
 
     // #region infolist
     /// The view page: the slug with its prefix, the number of posts (computed),

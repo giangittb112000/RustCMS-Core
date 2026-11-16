@@ -3,7 +3,7 @@
 # RUSTCMS_DEMO_BIN: demo binary (default: debug build of the workspace).
 set -eu
 here=$(cd "$(dirname "$0")" && pwd)
-bin=${RUSTCMS_DEMO_BIN:-$here/../../target/debug/demo}
+bin=${RUSTCMS_DEMO_BIN:-${CARGO_TARGET_DIR:-$here/../../target}/debug/demo}
 db_dir=$(mktemp -d)
 export DATABASE_URL="sqlite://$db_dir/e2e.sqlite?mode=rwc"
 export APP_URL=http://localhost:8123

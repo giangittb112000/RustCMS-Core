@@ -70,10 +70,16 @@ pub(super) fn check_infolist<C: ColumnTrait, E: EntityTrait>(
                 kind == Some(FieldKind::Json) && field.is_some_and(|f| !f.rich_text && f.media.is_none())
             }
             EntryType::BooleanEntry => kind == Some(FieldKind::Bool),
+            EntryType::RepeatableEntry => {
+                kind == Some(FieldKind::Json) && field.is_some_and(|f| !f.rich_text && f.media.is_none())
+            }
             EntryType::TextEntry | EntryType::ComputedEntry | EntryType::CustomEntry => true,
         };
         assert!(fits, "{owner}: entry `{name}`: a {} does not fit this field", entry_label(entry.kind));
         check_options(&owner, entry, kind);
+        if entry.kind == EntryType::RepeatableEntry {
+            check_row_entries(&owner, entry, 1);
+        }
     }
     // Conditions name entries of the infolist, with the rules of forms (ADR 0037).
     let kind_of = |name: &str| {
@@ -94,7 +100,60 @@ fn entry_label(kind: EntryType) -> &'static str {
         EntryType::RichTextEntry => "RichTextEntry (rich text fields)",
         EntryType::ComputedEntry => "ComputedEntry",
         EntryType::CustomEntry => "CustomEntry",
+        EntryType::RepeatableEntry => "RepeatableEntry (JSON columns)",
     }
+}
+
+/// The entries of each row of a repeatable entry: keys of the row, so text,
+/// boolean, key/value, custom and (nested, three deep at most) repeatable
+/// entries, each once.
+fn check_row_entries(owner: &str, entry: &Entry, depth: u8) {
+    let here = format!("{owner}: repeatable entry `{}`", entry.name);
+    assert!(depth <= crate::engine::repeater::MAX_DEPTH, "{here}: repeatable entries nest 3 deep at most");
+    assert!(!entry.components.is_empty(), "{here}: the row has no entry (`.schema(components![…])`)");
+    check_layouts(&here, &entry.components, None);
+    assert!(!holds_inputs(&entry.components), "{here}: a row holds entries, not inputs");
+    let rows = Infolist::new().schema(entry.components.clone());
+    let mut seen = HashSet::new();
+    for row_entry in rows.entries() {
+        let name = row_entry.name.as_str();
+        assert!(seen.insert(name), "{here}: entry `{name}` appears twice in a row");
+        assert!(
+            matches!(
+                row_entry.kind,
+                EntryType::TextEntry
+                    | EntryType::BooleanEntry
+                    | EntryType::KeyValueEntry
+                    | EntryType::CustomEntry
+                    | EntryType::RepeatableEntry
+            ),
+            "{here}: entry `{name}`: a row shows its keys with text, boolean, key/value, custom and repeatable entries"
+        );
+        check_options(&here, row_entry, None);
+        if row_entry.kind == EntryType::RepeatableEntry {
+            check_row_entries(&here, row_entry, depth + 1);
+        }
+    }
+    // Conditions in a row name entries of the same row (values read from the row).
+    let kind_of = |name: &str| seen.contains(name).then_some((FieldKind::Json, None));
+    crate::engine::conditions::FormConditions::new(&here, &entry.components, &kind_of);
+}
+
+/// The schemas of a row's entries (values read from the row: kind `json`).
+fn row_components(components: &[Component], t: &dyn Fn(&str) -> String) -> Vec<ComponentSchema> {
+    components
+        .iter()
+        .filter_map(|component| match component {
+            Component::Entry(entry) => {
+                Some(ComponentSchema::Entry(entry_schema(entry, &humanize(&entry.name), "json", None, false, false, t)))
+            }
+            Component::Layout(layout) => {
+                let children = row_components(&layout.children, t);
+                (!children.is_empty()).then(|| ComponentSchema::Layout(layout_schema(layout, children, t)))
+            }
+            Component::Input(_) => None,
+        })
+        .collect()
 }
 
 /// Options that do not fit the entry, or its field's kind, are refused.
@@ -123,6 +182,7 @@ fn check_options(owner: &str, entry: &Entry, kind: Option<FieldKind>) {
     refuse("gallery", !d.gallery || entry.kind == EntryType::MediaEntry);
     refuse("outline", !d.outline || entry.kind == EntryType::RichTextEntry);
     refuse("props", d.props.is_none() || entry.kind == EntryType::CustomEntry);
+    refuse("schema", entry.components.is_empty() || entry.kind == EntryType::RepeatableEntry);
     if d.decimals.is_some() {
         let numeric =
             matches!(kind, None | Some(FieldKind::I32 | FieldKind::I64 | FieldKind::F64 | FieldKind::Decimal));
@@ -256,10 +316,19 @@ impl<R: Resource> ResourceAdapter<R> {
 /// declares none), help text and option labels.
 pub(crate) fn entry_strings(entry: &Entry, default_label: impl FnOnce() -> String, out: &mut Vec<String>) {
     out.push(entry.label.clone().unwrap_or_else(default_label));
+    other_strings(entry, out);
+}
+
+/// [`entry_strings`] but the label, and the entries of a repeatable entry's rows.
+fn other_strings(entry: &Entry, out: &mut Vec<String>) {
     out.extend(entry.help.clone());
     out.extend(entry.display.options.iter().map(|o| o.label.clone()));
     if let Some((yes, no)) = &entry.display.labels {
         out.extend([yes.clone(), no.clone()]);
+    }
+    for row_entry in Infolist::new().schema(entry.components.clone()).entries() {
+        out.push(row_entry.label.clone().unwrap_or_else(|| humanize(&row_entry.name)));
+        other_strings(row_entry, out);
     }
 }
 
@@ -323,6 +392,7 @@ fn entry_schema(
         link,
         widget: d.widget.clone(),
         props: d.props.clone(),
+        components: row_components(&entry.components, t),
     }
 }
 
@@ -340,12 +410,19 @@ pub(crate) fn check_page_infolist(owner: &str, infolist: &Infolist) {
         assert!(
             matches!(
                 entry.kind,
-                EntryType::TextEntry | EntryType::BooleanEntry | EntryType::KeyValueEntry | EntryType::CustomEntry
+                EntryType::TextEntry
+                    | EntryType::BooleanEntry
+                    | EntryType::KeyValueEntry
+                    | EntryType::CustomEntry
+                    | EntryType::RepeatableEntry
             ),
             "{owner}: entry `{name}`: a page's infolist shows its data with text, boolean, key/value and custom \
              entries only"
         );
         check_options(owner, entry, None);
+        if entry.kind == EntryType::RepeatableEntry {
+            check_row_entries(owner, entry, 1);
+        }
     }
     let kind_of = |_: &str| Some((FieldKind::Json, None));
     crate::engine::conditions::FormConditions::new(owner, &infolist.components, &kind_of);

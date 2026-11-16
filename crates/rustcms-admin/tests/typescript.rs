@@ -42,6 +42,8 @@ fn bindings() -> String {
         InputSchema::decl(&cfg),
         LayoutSchema::decl(&cfg),
         EntrySchema::decl(&cfg),
+        RepeaterSchema::decl(&cfg),
+        RepeaterRelationship::decl(&cfg),
         InfolistSchema::decl(&cfg),
         ComputedValues::decl(&cfg),
         ComponentSchema::decl(&cfg),

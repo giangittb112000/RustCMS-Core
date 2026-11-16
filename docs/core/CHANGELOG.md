@@ -17,6 +17,34 @@ All notable changes are documented here. The format follows
   `null`, else empty), required fields are required only when shown. Boot
   checks names, kinds, values, cycles, and refuses a conditional input whose
   column is not nullable and has no default.
+- JSON repeaters (vocabulary 15, ADR 0040): `Repeater::make("faq").schema(…)`
+  edits rows of inputs stored as a JSON array, with Filament's options
+  (`min_items`, `max_items`, `reorderable`, `collapsible`, `collapsed`,
+  `item_label`, `add_action_label`, `addable`, `deletable`, `default_items`,
+  `cloneable`); row inputs declare `required`, `max_length`, `integer`. The
+  server checks every row (errors at `faq.2.question`), removes inputs hidden
+  by the row's conditions, and refuses media, rich text and secrets in rows.
+  `SettingField::repeater` for settings pages; `RepeatableEntry` on view
+  pages; issue code `min_items`. Demo: footer links on the site settings.
+- Relationship repeaters (ADR 0040, part 2): `Repeater::make("lines")
+  .relationship().order_column("position")` edits the children of a has-many
+  relation in the parent's form. A save sends a change (create, update,
+  delete, order), written in the parent's transaction after its row with the
+  child's checks (scope and view policy under the lock, field rules,
+  references, policy per row, hooks, history); rows not named are never
+  touched, hidden rows keep their positions (two passes for a unique
+  position), soft-deleted children go to the trash, any refusal rolls back
+  everything. Errors at `lines.8.quantity` / `lines.n1.quantity`; issue codes
+  `not_a_row`, `row_order`; the parent's history shows "Rows changed".
+- Count columns and row history (ADR 0040, part 3): `TextColumn::make("faq")
+  .count()` shows how many items a JSON field holds;
+  `TextColumn::make("posts_count").counts("posts")` how many records of a
+  has-many relation each record has, among those the user may list (list
+  envelopes carry `counts`; the column is left out for users who may not list
+  the relation). The history shows a repeater's change line by row and input
+  (`faq › 2 › question`) and a relationship repeater's rows by key. CSV
+  exports write rows as JSON text and imports check them as forms do. Demo:
+  categories edit their posts in the form and count them in the list.
 - Infolists for record view pages (vocabulary 14, ADR 0039):
   `Resource::infolist()` replaces the read-only form on the view page with
   entries in the form's layouts: `TextEntry` (`badge`/`color`, `copyable`,

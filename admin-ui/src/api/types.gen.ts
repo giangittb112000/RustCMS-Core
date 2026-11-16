@@ -2,11 +2,11 @@
 
 export type JsonValue = number | string | boolean | Array<JsonValue> | { [key in string]: JsonValue } | null;
 
-export type InputType = "text_input" | "textarea" | "number_input" | "select" | "toggle" | "checkbox" | "checkbox_list" | "date_picker" | "date_time_picker" | "hidden" | "key_value" | "file_upload" | "rich_editor" | "custom" | "secret" | "secret_map" | "belongs_to_many";
+export type InputType = "text_input" | "textarea" | "number_input" | "select" | "toggle" | "checkbox" | "checkbox_list" | "date_picker" | "date_time_picker" | "hidden" | "key_value" | "file_upload" | "rich_editor" | "custom" | "secret" | "secret_map" | "belongs_to_many" | "repeater";
 
 export type LayoutType = "section" | "grid" | "tabs" | "tab" | "split" | "pane";
 
-export type EntryType = "text_entry" | "relation_entry" | "boolean_entry" | "key_value_entry" | "media_entry" | "rich_text_entry" | "computed_entry" | "custom_entry";
+export type EntryType = "text_entry" | "relation_entry" | "boolean_entry" | "key_value_entry" | "media_entry" | "rich_text_entry" | "computed_entry" | "custom_entry" | "repeatable_entry";
 
 export type ColumnType = "text" | "badge" | "boolean" | "date";
 
@@ -352,7 +352,15 @@ shownWhen?: Condition,
 /**
  * Hidden after a write, the field is cleared by the server (vocabulary 13).
  */
-clearWhenHidden?: boolean, };
+clearWhenHidden?: boolean, 
+/**
+ * JSON repeater rows: a whole number (vocabulary 15).
+ */
+integer?: boolean, 
+/**
+ * Repeaters: their rows (vocabulary 15, ADR 0040).
+ */
+repeater?: RepeaterSchema, };
 
 export type LayoutSchema = { 
 /**
@@ -504,7 +512,91 @@ widget?: string,
 /**
  * Settings of the custom entry.
  */
-props?: JsonValue, };
+props?: JsonValue, 
+/**
+ * Repeatable entries: the entries of each row (vocabulary 15).
+ */
+components?: Array<ComponentSchema>, };
+
+export type RepeaterSchema = { 
+/**
+ * The row's inputs and layouts.
+ */
+components: Array<ComponentSchema>, 
+/**
+ * Fewest rows.
+ */
+minItems?: number, 
+/**
+ * Most rows.
+ */
+maxItems?: number, 
+/**
+ * The user may reorder the rows.
+ */
+reorderable?: boolean, 
+/**
+ * Rows fold.
+ */
+collapsible?: boolean, 
+/**
+ * Rows start folded.
+ */
+collapsed?: boolean, 
+/**
+ * Each row's heading: `{input}` placeholders.
+ */
+itemLabel?: string, 
+/**
+ * The label of the button adding a row (translated).
+ */
+addActionLabel?: string, 
+/**
+ * Rows can be added.
+ */
+addable: boolean, 
+/**
+ * Rows can be removed.
+ */
+deletable: boolean, 
+/**
+ * Rows a create form starts with.
+ */
+defaultItems?: number, 
+/**
+ * A row can be copied.
+ */
+cloneable?: boolean, 
+/**
+ * Relationship repeaters: the child records and what the user may do.
+ */
+relationship?: RepeaterRelationship, };
+
+export type RepeaterRelationship = { 
+/**
+ * The child resource.
+ */
+resource: string, 
+/**
+ * The has-many relation (its list reads the rows).
+ */
+relation: string, 
+/**
+ * The user may add rows.
+ */
+create: boolean, 
+/**
+ * The user may change rows (each row's envelope decides too).
+ */
+update: boolean, 
+/**
+ * The user may remove rows (each row's envelope decides too).
+ */
+delete: boolean, 
+/**
+ * The child field holding each row's position (rows are shown in its order).
+ */
+orderColumn?: string, };
 
 export type InfolistSchema = { 
 /**
@@ -591,7 +683,17 @@ props?: JsonValue,
  * Hidden on screens narrower than this breakpoint (`sm`: 640 px, `md`:
  * 768 px, `lg`: 1024 px); presentation only (vocabulary 10).
  */
-hideBelow?: Breakpoint, };
+hideBelow?: Breakpoint, 
+/**
+ * Shows the number of items of the field's JSON list (vocabulary 15).
+ */
+count?: boolean, 
+/**
+ * Shows `counts[relation]` of each record: how many records of this
+ * has-many relation it has that the user may list (vocabulary 15). The
+ * column's `name` is not a field.
+ */
+counts?: string, };
 
 export type BadgeColor = { 
 /**
@@ -763,7 +865,13 @@ trashed?: boolean,
 /**
  * Titles of related records for `belongs_to` fields (`#key` when not visible).
  */
-labels?: { [key in string]: string }, };
+labels?: { [key in string]: string }, 
+/**
+ * In the list route's pages: how many records of each has-many relation a count column
+ * shows the record has, among those the user may list (vocabulary 15).
+ * Absent for a relation the user may not list or too many to check.
+ */
+counts?: { [key in string]: number }, };
 
 export type PageMeta = { 
 /**

@@ -124,6 +124,11 @@ reflects the action's per-record predicate (`visible_when`); the server
 decides it again when the action runs (one record: 403; several: `denied`). Older clients show every
 offered action as a button. Columns may carry `hideBelow` (`sm`, `md`,
 `lg`): hidden by CSS on narrower screens; older clients show them.
+Vocabulary 15 adds count columns: `count: true` shows the number of items of
+the field's JSON value (a list's length, an object's keys, `0` for null);
+`counts: "<relation>"` shows the envelope's `counts[relation]` (its `name` is
+not a field, nothing shown when absent). Both are drawn as a number whatever
+their `type`, and never sortable.
 
 Vocabulary 11 adds the editor layout: layouts `split` (children: `pane`s with
 `id` `main` and `aside`, either left out when the user sees nothing in it;
@@ -146,6 +151,33 @@ client rules; view pages evaluate them on the record's values. The server
 evaluates them again on every write, on the resulting values, drops values
 sent for hidden inputs and requires required fields only when shown. Older
 clients show every input; the server ignores what they send for hidden ones.
+
+Vocabulary 15 adds repeaters (ADR 0040): inputs of type `repeater` carry
+`repeater` (`components`: the row's inputs and layouts, each an
+`InputSchema`; `minItems`, `maxItems`, `reorderable`, `collapsible`,
+`collapsed`, `itemLabel` (`{input}` placeholders), `addActionLabel`,
+`addable`, `deletable`, `defaultItems`, `cloneable`). A JSON repeater's value
+is an array of objects keyed by the row's inputs; row inputs may carry
+`integer: true`. Clients send rows without empty inputs, evaluate a row's
+conditions on that row, and show problems in their row. Error paths below a
+repeater: `name.index.input` (`faq.2.question`, nested `faq.2.links.0.url`),
+`name.index` for a row, `name` for the list. Entries of type
+`repeatable_entry` carry `components`: the entries of each row (kind
+`json`). New issue code `min_items`. Older clients show repeaters read-only
+and never send them.
+
+Relationship repeaters have `valueType: "rows"` and `repeater.relationship`
+(`resource`, `relation`, `create`, `update`, `delete`, `orderColumn`); their
+row inputs are the child's. Clients read the rows from
+`records/{key}/relations/{relation}?per_page=…` (each row's `abilities` say
+whether it may be changed or removed) and send a change, never the list:
+`{create?: [{ref, data}], update?: [{key, data}], delete?: [keys], order?:
+[keys and refs]}` (`ref`: `[a-z0-9-]{1,16}`; at most 100 entries per part;
+`order` lists every row the user sees, once). Error paths: `name.key.input`
+and `name.ref.input`; `name.key` for a row; `name` for the change. Issue
+codes `not_a_row` (a key that is not a visible child of this record) and
+`row_order`. The parent's history has `rows_changed` entries whose `meta`
+lists `relation`, `created`, `updated`, `deleted`, `reordered`.
 
 Vocabulary 14 adds infolists (ADR 0039): a view schema (`operation=view`)
 of a resource that declares one carries `infolist` (`InfolistSchema`:
@@ -262,6 +294,11 @@ Record keys are strings in URLs and envelopes (`"42"`, a UUID, or a natural key)
 - `abilities` also holds one entry per action (`"publish": true`), decided by the policy and the action's `visible_when` on that record.
 - `labels` holds titles of related records. A related record the user may not
   see is shown as `#<key>`.
+- `counts` (the list route `GET resources/{slug}/records` only, not relation
+  lists; vocabulary 15) holds, per relation a count column
+  names, how many of its records the user may list (scope, policy, trash).
+  Absent for a user who may not list the relation, and on a page whose
+  related records are too many to check one by one.
 - `trashed: true` marks a record in the trash (soft deletes; absent otherwise).
   Its abilities are `view`, `restore` and `force_delete` only; an active
   record of a soft-delete resource has `restore` and `force_delete` false.

@@ -81,7 +81,15 @@ impl<R: Resource> ResourceAdapter<R> {
             // the resulting values are known (`apply_conditions`).
             let required = field.required && !self.conditions.is_conditional(name);
             let rule = InputRule { options, bounds, ..self.rule(name, required) };
-            if check_input(name, &rule, value, &mut errors)
+            let accepted = check_input(name, &rule, value, &mut errors);
+            // A JSON repeater: each row checked, stored without its hidden inputs.
+            if accepted && let Some(rows) = self.repeaters.get(name.as_str()) {
+                if let Some(list) = rows.check(name, value, &mut errors) {
+                    canonical.push((name.clone(), list));
+                }
+                continue;
+            }
+            if accepted
                 && !value.is_null()
                 && let Some(Options::One { scale, .. }) = options
                 && let Ok(value) = crate::wire::canonical(rule.kind, scale, value)
@@ -90,6 +98,17 @@ impl<R: Resource> ResourceAdapter<R> {
             }
         }
         if op == Operation::Create {
+            // A repeater with `min_items` left out of a create has no rows.
+            for (name, rows) in &self.repeaters {
+                let writable = self.field(name).is_some_and(|f| f.can_write(op, ctx));
+                if let Some(min) = rows.min_items()
+                    && writable
+                    && !input.contains_key(name)
+                    && !self.conditions.is_conditional(name)
+                {
+                    errors.add(name.as_str(), format!("must have at least {min} items"));
+                }
+            }
             for field in self
                 .fields
                 .iter()
@@ -419,6 +438,41 @@ pub(super) fn form_conditions<C: ColumnTrait>(
         );
     }
     conditions
+}
+
+/// The JSON repeaters of the form (ADR 0040), checked at boot; panics on a
+/// repeater whose column is not JSON, rules meant for JSON rows on other
+/// inputs, or repeater options on an input that is not one.
+pub(super) fn json_repeaters<C: ColumnTrait>(
+    slug: &str,
+    form: &Form,
+    columns: &HashMap<String, ColumnInfo<C>>,
+) -> HashMap<String, crate::engine::repeater::Rows> {
+    let mut out = HashMap::new();
+    for input in form.inputs() {
+        let name = input.name.as_str();
+        assert!(
+            !input.required && input.max_length.is_none() && !input.integer,
+            "resource `{slug}`: input `{name}`: `required`, `max_length` and `integer` are for inputs of JSON \
+             repeater rows (elsewhere the field decides)"
+        );
+        assert!(
+            (input.kind == InputType::Repeater) == input.repeater.is_some(),
+            "resource `{slug}`: input `{name}`: repeater options (`schema`, `min_items`, …) are for repeaters"
+        );
+        let Some(spec) = input.repeater.as_deref().filter(|s| !s.relationship) else { continue };
+        let column = columns.get(name).unwrap_or_else(|| panic!("resource `{slug}`: repeater `{name}` is not a field"));
+        assert!(column.kind == FieldKind::Json, "resource `{slug}`: repeater `{name}` needs a JSON column");
+        assert!(
+            spec.order_column.is_none(),
+            "resource `{slug}`: repeater `{name}`: `order_column` is for relationship repeaters"
+        );
+        out.insert(
+            name.to_owned(),
+            crate::engine::repeater::Rows::compile(&format!("resource `{slug}`"), name, spec, 1),
+        );
+    }
+    out
 }
 
 /// What `clear_when_hidden` writes: the declared default, else `null`, else

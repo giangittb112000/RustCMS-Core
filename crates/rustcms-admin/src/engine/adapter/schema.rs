@@ -90,6 +90,9 @@ impl<R: Resource> ResourceAdapter<R> {
                         out.extend(input.placeholder.clone());
                         out.extend(input.help.clone());
                         out.extend(input.options.iter().map(|o| o.label.clone()));
+                        if let Some(spec) = input.repeater.as_deref() {
+                            crate::engine::repeater::display_strings(spec, out);
+                        }
                     }
                     Component::Layout(layout) => {
                         out.extend(layout.label.clone());
@@ -122,7 +125,11 @@ impl<R: Resource> ResourceAdapter<R> {
             walk(&infolist.components, &mut out, &field_label);
         }
         for column in &self.table_ui.columns {
-            out.extend(column.label.clone().or_else(|| field_label(&column.name)));
+            let default = || match column.counts {
+                Some(_) => Some(humanize(&column.name)),
+                None => field_label(&column.name),
+            };
+            out.extend(column.label.clone().or_else(default));
         }
         for filter in &self.table_ui.filters {
             out.extend(filter.label.clone().or_else(|| field_label(&filter.name)));
@@ -259,7 +266,110 @@ impl<R: Resource> ResourceAdapter<R> {
             number: input.number.as_deref().copied(),
             shown_when: input.shown_when.as_deref().cloned(),
             clear_when_hidden: input.clear_when_hidden,
+            integer: false,
+            repeater: self.repeater_schema(ctx, input, disabled),
         })
+    }
+
+    /// The rows of a repeater input (JSON: as declared; relationship rows come
+    /// with ADR 0040's second part).
+    fn repeater_schema(&self, ctx: &Ctx, input: &Input, disabled: bool) -> Option<Box<crate::schema::RepeaterSchema>> {
+        let spec = input.repeater.as_deref()?;
+        let t = |text: &str| ctx.t_in(R::SLUG, text);
+        Some(Box::new(crate::engine::repeater::rows_schema(spec, &t, disabled)))
+    }
+
+    /// The input of a relationship repeater, before its rows are filled in.
+    fn row_repeater_input(&self, ctx: &Ctx, input: &Input) -> InputSchema {
+        let relation = self.relations.iter().find(|r| r.name == input.name);
+        let label = input
+            .label
+            .clone()
+            .or_else(|| relation.and_then(|r| r.label.clone()))
+            .unwrap_or_else(|| humanize(&input.name));
+        InputSchema {
+            kind: InputType::Repeater,
+            name: input.name.clone(),
+            label: ctx.t_in(R::SLUG, &label),
+            value_type: "rows",
+            nullable: false,
+            default: None,
+            disabled: false,
+            write_only: false,
+            rules: Vec::new(),
+            column_span: input.column_span,
+            placeholder: None,
+            help: input.help.as_deref().map(|h| ctx.t_in(R::SLUG, h)),
+            mode: None,
+            options: Vec::new(),
+            relationship: None,
+            widget: None,
+            props: None,
+            media: None,
+            links: None,
+            prefix: None,
+            suffix: None,
+            number: None,
+            shown_when: None,
+            clear_when_hidden: false,
+            integer: false,
+            repeater: None,
+        }
+    }
+
+    /// Fills in the rows of the relationship repeaters in `components`: the
+    /// child's inputs for the operation and what the user may do; a repeater
+    /// whose child the user may not list is left out.
+    pub(super) async fn fill_row_repeaters(
+        &self,
+        ctx: &Ctx,
+        components: Vec<ComponentSchema>,
+        op: SchemaOperation,
+    ) -> Vec<ComponentSchema> {
+        let mut out = Vec::with_capacity(components.len());
+        for component in components {
+            match component {
+                ComponentSchema::Input(mut input) if input.value_type == "rows" => {
+                    let Some(repeater) = self.row_repeaters.iter().find(|r| r.name == input.name) else { continue };
+                    let Some(child) = ctx.registry.get(repeater.target) else { continue };
+                    if !child.allows(ctx, ability::VIEW_ANY).await {
+                        continue;
+                    }
+                    let create = child.admits(ctx, ability::CREATE).await && child.allows(ctx, ability::CREATE).await;
+                    let update = op == SchemaOperation::Edit && child.admits(ctx, ability::UPDATE).await;
+                    let delete = op == SchemaOperation::Edit && child.admits(ctx, ability::DELETE).await;
+                    let rows = child.row_schema(ctx, &repeater.spec.components, op);
+                    let t = |text: &str| ctx.t_in(R::SLUG, text);
+                    let relationship = crate::schema::RepeaterRelationship {
+                        resource: repeater.target,
+                        relation: repeater.name,
+                        create,
+                        update,
+                        delete,
+                        order_column: repeater.order_column.clone(),
+                    };
+                    input.disabled = !(create || update || delete);
+                    let mut schema =
+                        crate::engine::repeater::options_schema(&repeater.spec, rows, &t, Some(relationship));
+                    // Empty rows to start with are for new records only.
+                    if op != SchemaOperation::Create {
+                        schema.default_items = None;
+                    }
+                    // Without an order column an order is never stored: no reordering offered.
+                    schema.reorderable = repeater.order_column.is_some();
+                    input.repeater = Some(Box::new(schema));
+                    out.push(ComponentSchema::Input(input));
+                }
+                ComponentSchema::Layout(mut layout) => {
+                    layout.components = Box::pin(self.fill_row_repeaters(ctx, layout.components, op)).await;
+                    if !layout.components.is_empty() {
+                        out.push(ComponentSchema::Layout(layout));
+                    }
+                }
+                other => out.push(other),
+            }
+        }
+        out
     }
 
     /// What the user may change with each `BelongsToManySelect` of the form
@@ -329,6 +439,8 @@ impl<R: Resource> ResourceAdapter<R> {
             number: None,
             shown_when: None,
             clear_when_hidden: false,
+            integer: false,
+            repeater: None,
         })
     }
 
@@ -346,6 +458,10 @@ impl<R: Resource> ResourceAdapter<R> {
                     .get(&input.name)
                     .and_then(|l| self.links_input_schema(ctx, input, *l))
                     .map(ComponentSchema::Input),
+                // Relationship repeaters: their rows come from the child (`fill_row_repeaters`); never on view pages.
+                Component::Input(input) if input.repeater.as_deref().is_some_and(|s| s.relationship) => {
+                    (op != SchemaOperation::View).then(|| ComponentSchema::Input(self.row_repeater_input(ctx, input)))
+                }
                 Component::Input(input) => self.input_schema(ctx, input, op).map(ComponentSchema::Input),
                 // Forms hold no entries (refused at boot).
                 Component::Entry(_) => None,
@@ -360,20 +476,52 @@ impl<R: Resource> ResourceAdapter<R> {
 
     pub(super) async fn table_schema(&self, ctx: &Ctx) -> TableSchema {
         let readable = |name: &str| self.field(name).is_some_and(|f| f.can_read(ctx));
-        let columns = self
-            .table_ui
-            .columns
-            .iter()
-            .filter(|c| readable(&c.name))
+        let mut columns = Vec::new();
+        for c in &self.table_ui.columns {
+            let Some(name) = c.counts else {
+                if readable(&c.name) {
+                    columns.push(c);
+                }
+                continue;
+            };
+            // As the relation's list: listable, and its parent field readable.
+            let relation = self.relations.iter().find(|r| r.name == name).expect("validated at registration");
+            if let Some(target) = ctx.registry.get(relation.target)
+                && target.allows(ctx, ability::VIEW_ANY).await
+                && target.field_access(ctx, relation.field).0
+            {
+                columns.push(c);
+            }
+        }
+        let columns = columns
+            .into_iter()
             .map(|c| {
+                if c.counts.is_some() {
+                    return ColumnSchema {
+                        kind: c.kind,
+                        name: c.name.clone(),
+                        label: ctx.t_in(R::SLUG, &c.label.clone().unwrap_or_else(|| humanize(&c.name))),
+                        value_type: FieldKind::I32.name(),
+                        sortable: false,
+                        searchable: false,
+                        colors: Vec::new(),
+                        relationship: None,
+                        cell: None,
+                        props: c.props.clone(),
+                        hide_below: c.hide_below,
+                        count: false,
+                        counts: c.counts,
+                    };
+                }
                 let field = self.field(&c.name).expect("validated at registration");
                 ColumnSchema {
                     kind: c.kind,
                     name: c.name.clone(),
                     label: ctx.t_in(R::SLUG, &c.label.clone().unwrap_or_else(|| field.display_label())),
                     value_type: self.column(&c.name).kind.name(),
-                    sortable: field.sortable,
-                    searchable: field.searchable,
+                    // A count column shows a number: sorting or searching its JSON text would mislead.
+                    sortable: field.sortable && !c.count,
+                    searchable: field.searchable && !c.count,
                     colors: c
                         .colors
                         .iter()
@@ -383,6 +531,8 @@ impl<R: Resource> ResourceAdapter<R> {
                     cell: c.cell.clone(),
                     props: c.props.clone(),
                     hide_below: c.hide_below,
+                    count: c.count,
+                    counts: None,
                 }
             })
             .collect();
@@ -514,5 +664,7 @@ fn pivot_input_schema(
         number: None,
         shown_when: None,
         clear_when_hidden: false,
+        integer: false,
+        repeater: None,
     }
 }

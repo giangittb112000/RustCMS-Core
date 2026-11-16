@@ -286,6 +286,129 @@ Field::column(post::Column::Attributes).key_value().max_items(20).max_length(200
 KeyValue::make("attributes").help("Extra details shown with the post, e.g. reading_time = 5 min"),
 ```
 
+## Repeaters
+
+A `Repeater` edits a list of rows, each row several inputs, as Filament's
+does. Its value is a JSON array of objects in the column of its name
+(`[{"question": "…", "answer": "…"}]`); the column must be JSON.
+
+```rust
+Repeater::make("faq")
+    .schema(components![
+        TextInput::make("question").required().max_length(200),
+        Textarea::make("answer").required(),
+        SelectInput::make("kind").options([("text", "Text"), ("link", "Link")]),
+        TextInput::make("url").shown_when(when("kind").eq("link")),
+    ])
+    .min_items(1)
+    .max_items(20)
+    .reorderable()
+    .collapsible()
+    .item_label("{question}")
+    .add_action_label("Add a question")
+    .cloneable()
+```
+
+- **A row's rules are on its inputs.** A row is part of one column, with no
+  field of its own, so its inputs say what they need: `.required()`,
+  `.max_length(n)` on text, `.integer()`, `.min(n)`, `.max(n)` on numbers,
+  `options` on selects (rows have no relationships). Elsewhere these rules
+  come from the field, and the boot refuses them on inputs.
+- **Values in a row:** text for `TextInput` and `Textarea`, a JSON number for
+  `NumberInput`, `true`/`false` for `Toggle` and `Checkbox`, the option's value
+  for `SelectInput`, a list for `CheckboxList`, `YYYY-MM-DD` for `DatePicker`,
+  an RFC 3339 instant for `DateTimePicker`, an object of text for `KeyValue`,
+  any JSON for `CustomInput`, and a list for a nested `Repeater` (three deep at
+  most). Empty inputs are left out of the row.
+- **Each row is checked on the server**, like a form: a key the row does not
+  declare is refused, then each input's rules, then `min_items` and
+  `max_items`. Errors name the row and the input: `faq.2.question`
+  (`faq.2.links.0.url` nested, `faq` for the list); the panel shows them in
+  their row.
+- **Conditions** (`shown_when`) in a row name inputs of the same row. An
+  input hidden by its condition is removed from the stored row, and
+  `required` means "required when shown".
+- **Options:** `min_items`, `max_items`, `reorderable` (buttons, or drag the
+  handle), `collapsible` / `collapsed`, `item_label("{input}")` (each row's
+  heading, a template as [record titles](resources.md#titles-from-several-fields)),
+  `add_action_label`, `addable(false)`, `deletable(false)`,
+  `default_items(n)` (rows a create form starts with), `cloneable`.
+- **Not in rows (yet):** `FileUpload` and `RichEditor` (their media escape the
+  [reference checks](media.md)), secrets, belongs-to-many inputs, tabs and
+  splits.
+
+On view pages the rows are shown read-only; an [infolist](infolists.md)
+shows them with a `RepeatableEntry`. [Settings pages](settings.md#kinds) take
+repeaters too.
+
+### Child records
+
+With `.relationship()`, the rows are the child records of the has-many
+[relation](relationships.md) named like the repeater, edited in the parent's
+form (the lines of an order, the answers of a question):
+
+```rust
+fn relations() -> Vec<Relation> {
+    vec![Relation::has_many("lines", "order_lines", "order_id")]
+}
+
+Repeater::make("lines")
+    .relationship()
+    .order_column("position")
+    .schema(components![SelectInput::make("product_id"), NumberInput::make("quantity")])
+```
+
+- **Row inputs are the child's fields**, with the child's rules: its field
+  rules, validation, references, `scope()`, policy and hooks apply to every
+  row, as when the row is written from the relation section. The child's key
+  to the parent and the order column are set by the server, never inputs.
+- **A save sends a change, not the list:** the rows added, the fields changed
+  in each row, the rows removed, and the order. Rows the user did not touch,
+  rows another user added meanwhile, and rows the user cannot see are never
+  written or removed.
+- **One write:** the parent row, then its rows (removed, changed, added,
+  reordered), then the parent's `after_save`, which sees every row. A refusal
+  anywhere (a row's validation, a child's policy or hook) rolls back the
+  parent and every row.
+- **Permissions:** adding rows needs `create` on the child, changing them
+  `update`, removing them `delete` (each row's policy decides too); the form
+  offers only what the user may do.
+- **Removing** a row of a child with soft deletes moves it to the trash.
+- **`order_column(field)`** (an integer field of the child) keeps the rows in
+  the user's order: they take the positions the visible rows held; rows the
+  user cannot see keep theirs. A unique `(parent, position)` is fine. Moving
+  a stored row needs `update` on it; without an order column the rows cannot
+  be reordered.
+- **`min_items` / `max_items`** are checked by the server on the parent's
+  rows when a save removes or adds rows, and `min_items` on the rows a new
+  parent creates (a create without the repeater has none).
+- **Rows edit their inputs only:** a value for another field of the child is
+  refused (`lines.8.status`: "is not allowed"), even one its own form writes.
+- **Errors** name the row by key or, for a new row, its reference:
+  `lines.8.quantity`, `lines.n1.quantity`.
+- **History:** the parent's history shows "Rows changed" (which rows were
+  added, changed, removed, reordered, by key); each row has its own entries.
+- The form edits up to `max_items` rows (at most 100); with more, the
+  repeater is read-only and the relation section edits them. View pages show
+  the rows in the relation section, not in the form.
+- **Not yet:** conditions in relationship rows, repeaters inside them, and
+  conditions on the repeater itself.
+
+The demo's categories edit their posts this way (each row is a post):
+
+<<< @/../../../examples/demo/src/admin/resources/category_resource.rs#posts-repeater [src/admin/resources/category_resource.rs]
+
+### Repeaters in lists, history and CSV
+
+- A [count column](tables.md#counts) shows the number of rows:
+  `TextColumn::make("faq").count()` for a JSON repeater,
+  `TextColumn::make("lines_count").counts("lines")` for a relationship.
+- The history shows a JSON repeater's change by row and input
+  (`faq › 2 › question`), rows matched by position.
+- [CSV exports](import-export.md) write a JSON repeater as its JSON text;
+  imports read that text and check each row as a save does (errors at
+  `faq.0.question`). Relationship repeaters are not part of CSV files.
+
 ## Encrypted fields
 
 The demo's integrations keep an API token and environment variables
@@ -350,6 +473,12 @@ Besides the layout and encrypted-field rules above, the boot stops when:
 - `min`, `max` or `step` is on an input that is not a `NumberInput`, or on a
   column that does not hold numbers; `min` is above `max`; the step is not
   positive; or two inputs of one field have different bounds;
+- a repeater's row is empty, holds tabs, splits, media, rich text, secrets or
+  belongs-to-many inputs, or a select without options; a row input repeats a
+  name; repeaters nest deeper than three; `item_label` names no input of the
+  row; `min_items` or `default_items` is above `max_items`; the column is not
+  JSON; `required`, `max_length` or `integer` is on an input outside a JSON
+  row; repeater options are on an input that is not a repeater;
 - a condition names something that is not an input of the form, or an
   encrypted field; `is_true` is on a field that is not a boolean; `eq`, `ne`
   or `is_in` is on a JSON, rich text, media, date-time or key/value field, or

@@ -6,6 +6,7 @@ pub(crate) mod conditions;
 pub mod context;
 pub mod idempotency;
 pub mod registry;
+pub(crate) mod repeater;
 pub(crate) mod title;
 pub(crate) mod validate;
 pub mod wire;

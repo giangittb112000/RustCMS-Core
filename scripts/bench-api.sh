@@ -26,8 +26,9 @@ command -v jq >/dev/null || { echo "jq is missing" >&2; exit 1; }
 
 bin=${BENCH_BIN:+$(cd "$(dirname "$BENCH_BIN")" && pwd)/$(basename "$BENCH_BIN")}
 if [ -z "$bin" ]; then
-    (cd "$root/bench/api" && CARGO_TARGET_DIR="$root/target" cargo build --release -q)
-    bin="$root/target/release/bench-api"
+    target=${CARGO_TARGET_DIR:-$root/target}
+    (cd "$root/bench/api" && CARGO_TARGET_DIR="$target" cargo build --release -q)
+    bin="$target/release/bench-api"
 fi
 
 cd "$root"

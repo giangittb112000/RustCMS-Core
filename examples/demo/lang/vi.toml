@@ -25,6 +25,11 @@
 "Extra details shown with the post, e.g. reading_time = 5 min" = "Thông tin thêm hiển thị cùng bài viết, ví dụ reading_time = 5 phút"
 
 "Site" = "Trang web"
+"Footer links" = "Liên kết cuối trang"
+"Label" = "Nhãn"
+"Url" = "Địa chỉ"
+"Add a link" = "Thêm liên kết"
+"Add a post" = "Thêm bài viết"
 "Site name" = "Tên trang"
 "Tagline" = "Khẩu hiệu"
 "Comments open" = "Cho phép bình luận"

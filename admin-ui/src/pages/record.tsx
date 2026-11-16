@@ -20,7 +20,7 @@ import { Components, ReadOnlyComponents, formWidthClass, gridCols } from "@/rend
 import { MEDIA_SLUG, MediaPreview } from "@/renderers/media-library";
 import { InfolistRenderer, hasComputed } from "@/renderers/infolist";
 import { ActionNoticeView, RecordActions, useActionRunner } from "@/components/actions";
-import { type FormValues, defaultValues, hiddenNames, inputsOf, payloadOf, protectLossyJson, relabel } from "@/schema/form";
+import { type FormValues, defaultValues, hiddenNames, inputsOf, payloadOf, protectLossyJson, relabel, serverErrors } from "@/schema/form";
 import { errorText, show, type Text, useLocale, useT } from "@/i18n";
 import { editResolver } from "@/schema/resolver";
 import type { PendingWrite } from "@/app/session";
@@ -149,10 +149,8 @@ function RecordForm({
   const locale = useLocale();
   useEffect(() => {
     const known = new Set(inputsOf(components).map((i) => i.name));
-    for (const [field, messages] of Object.entries(refused.current?.fieldErrors ?? {})) {
-      if (known.has(field) && form.getFieldState(field).error?.type === "server") {
-        form.setError(field, { type: "server", message: messages.join(" ") });
-      }
+    for (const [field, error] of Object.entries(serverErrors(refused.current?.fieldErrors ?? {}, known).byInput)) {
+      if (form.getFieldState(field).error?.type === "server") form.setError(field, { type: "server", ...error });
     }
     // The panel's own checks run again, in the new language.
     const shown = Object.keys(form.formState.errors).filter((f) => form.getFieldState(f).error?.type !== "server");
@@ -239,14 +237,11 @@ function RecordForm({
       if (e instanceof ApiError && e.status === 422) {
         const known = new Set(inputs.map((i) => i.name));
         refused.current = e;
-        for (const [field, messages] of Object.entries(e.fieldErrors)) {
-          if (known.has(field)) form.setError(field, { type: "server", message: messages.join(" ") });
-        }
+        const routed = serverErrors(e.fieldErrors, known);
+        for (const [field, error] of Object.entries(routed.byInput)) form.setError(field, { type: "server", ...error });
         setFormErrors(() => () => {
           const other: string[] = [...e.formErrors];
-          for (const [field, messages] of Object.entries(e.fieldErrors)) {
-            if (!known.has(field)) other.push(`${field}: ${messages.join(" ")}`);
-          }
+          for (const [field, messages] of routed.other) other.push(`${field}: ${messages.join(" ")}`);
           return other.length || Object.keys(e.fieldErrors).length ? other : [e.message];
         });
         focusFirstError();

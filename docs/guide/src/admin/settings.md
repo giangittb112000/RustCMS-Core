@@ -62,6 +62,16 @@ Reading it, in the demo's runtime branding:
 | `secret(name)` | `Secret` | [see below](#secrets) |
 | `media(name)` | `Option<uuid::Uuid>` (always nullable) | [media input](media.md#media-fields): pick or upload one file |
 | `media_list(name, max)` | `Vec<uuid::Uuid>` | up to `max` files, in order |
+| `repeater(Repeater::make(name).schema(…))` | `Vec<T>` of a `Serialize + Deserialize` struct | rows of inputs ([repeaters](forms.md#repeaters)) |
+
+The demo's footer links:
+
+<<< @/../../../examples/demo/src/admin/pages/site_settings_page.rs#repeater [src/admin/pages/site_settings_page.rs]
+
+Rows are stored without their empty inputs and without inputs a condition
+hides, so the row struct must read them: make the fields of inputs that are
+not required `Option` or `#[serde(default)]` (the boot tries a row holding
+only the required inputs).
 
 | Modifier | |
 |---|---|

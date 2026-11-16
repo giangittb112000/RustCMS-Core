@@ -1,0 +1,218 @@
+{
+  "abilities": {
+    "create": true,
+    "export": true,
+    "history": true,
+    "import": true,
+    "viewAny": true
+  },
+  "form": {
+    "columns": 1,
+    "components": [
+      {
+        "columnSpan": 1,
+        "disabled": false,
+        "label": "Name",
+        "name": "name",
+        "nullable": false,
+        "rules": [
+          {
+            "rule": "required"
+          }
+        ],
+        "type": "text_input",
+        "valueType": "string"
+      },
+      {
+        "columnSpan": 1,
+        "disabled": false,
+        "label": "Faq",
+        "name": "faq",
+        "nullable": true,
+        "repeater": {
+          "addActionLabel": "Add a question",
+          "addable": true,
+          "cloneable": true,
+          "collapsible": true,
+          "components": [
+            {
+              "columnSpan": 1,
+              "disabled": false,
+              "label": "Question",
+              "name": "question",
+              "nullable": false,
+              "rules": [
+                {
+                  "rule": "required"
+                },
+                {
+                  "rule": "max_length",
+                  "value": 20
+                }
+              ],
+              "type": "text_input",
+              "valueType": "string"
+            },
+            {
+              "columnSpan": 1,
+              "disabled": false,
+              "label": "Answer",
+              "name": "answer",
+              "nullable": true,
+              "rules": [],
+              "type": "textarea",
+              "valueType": "string"
+            },
+            {
+              "columnSpan": 1,
+              "disabled": false,
+              "label": "Kind",
+              "name": "kind",
+              "nullable": true,
+              "options": [
+                {
+                  "label": "Text",
+                  "value": "text"
+                },
+                {
+                  "label": "Link",
+                  "value": "link"
+                }
+              ],
+              "rules": [],
+              "type": "select",
+              "valueType": "string"
+            },
+            {
+              "columnSpan": 1,
+              "disabled": false,
+              "label": "Url",
+              "name": "url",
+              "nullable": true,
+              "rules": [],
+              "shownWhen": {
+                "name": "kind",
+                "op": "eq",
+                "value": "link"
+              },
+              "type": "text_input",
+              "valueType": "string"
+            },
+            {
+              "columnSpan": 1,
+              "disabled": false,
+              "integer": true,
+              "label": "Votes",
+              "name": "votes",
+              "nullable": true,
+              "number": {
+                "min": 0.0
+              },
+              "rules": [],
+              "type": "number_input",
+              "valueType": "f64"
+            },
+            {
+              "columnSpan": 1,
+              "disabled": false,
+              "label": "Pinned",
+              "name": "pinned",
+              "nullable": false,
+              "rules": [],
+              "type": "toggle",
+              "valueType": "bool"
+            },
+            {
+              "columnSpan": 1,
+              "disabled": false,
+              "label": "Links",
+              "name": "links",
+              "nullable": true,
+              "repeater": {
+                "addable": true,
+                "components": [
+                  {
+                    "columnSpan": 1,
+                    "disabled": false,
+                    "label": "Href",
+                    "name": "href",
+                    "nullable": false,
+                    "rules": [
+                      {
+                        "rule": "required"
+                      }
+                    ],
+                    "type": "text_input",
+                    "valueType": "string"
+                  }
+                ],
+                "deletable": true,
+                "maxItems": 2
+              },
+              "rules": [],
+              "type": "repeater",
+              "valueType": "json"
+            }
+          ],
+          "deletable": true,
+          "itemLabel": "{question}",
+          "maxItems": 3,
+          "minItems": 1,
+          "reorderable": true
+        },
+        "rules": [],
+        "type": "repeater",
+        "valueType": "json"
+      },
+      {
+        "columnSpan": 1,
+        "disabled": false,
+        "label": "Price",
+        "name": "price",
+        "nullable": true,
+        "rules": [],
+        "type": "number_input",
+        "valueType": "i32"
+      }
+    ]
+  },
+  "operation": "create",
+  "resource": {
+    "label": "Product",
+    "pluralLabel": "Products",
+    "slug": "products",
+    "titleField": "name"
+  },
+  "schemaVersion": 2,
+  "table": {
+    "actions": [],
+    "columns": [
+      {
+        "label": "Name",
+        "name": "name",
+        "searchable": false,
+        "sortable": false,
+        "type": "text",
+        "valueType": "string"
+      },
+      {
+        "count": true,
+        "label": "Questions",
+        "name": "faq",
+        "searchable": false,
+        "sortable": false,
+        "type": "text",
+        "valueType": "json"
+      }
+    ],
+    "filters": [],
+    "perPageOptions": [
+      10,
+      25,
+      50,
+      100
+    ],
+    "searchable": false
+  },
+  "vocabularyVersion": 15
+}

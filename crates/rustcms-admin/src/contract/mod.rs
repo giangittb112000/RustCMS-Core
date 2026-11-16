@@ -13,7 +13,7 @@ use crate::ui::{
 /// Version of the schema structure.
 pub const SCHEMA_VERSION: u32 = 2;
 /// Version of the component, column and filter vocabulary.
-pub const VOCABULARY_VERSION: u32 = 14;
+pub const VOCABULARY_VERSION: u32 = 15;
 
 /// Navigation entry and identity of a resource.
 #[derive(Debug, Clone, PartialEq, Serialize)]
@@ -196,6 +196,88 @@ pub struct InputSchema {
     #[cfg_attr(feature = "ts", ts(as = "Option<bool>", optional))]
     #[serde(skip_serializing_if = "std::ops::Not::not")]
     pub clear_when_hidden: bool,
+    /// JSON repeater rows: a whole number (vocabulary 15).
+    #[cfg_attr(feature = "ts", ts(as = "Option<bool>", optional))]
+    #[serde(skip_serializing_if = "std::ops::Not::not")]
+    pub integer: bool,
+    /// Repeaters: their rows (vocabulary 15, ADR 0040).
+    #[cfg_attr(feature = "ts", ts(as = "Option<RepeaterSchema>", optional))]
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub repeater: Option<Box<RepeaterSchema>>,
+}
+
+/// The rows of a repeater (vocabulary 15, ADR 0040). Options absent when unset.
+#[derive(Debug, Clone, PartialEq, Serialize)]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
+#[serde(rename_all = "camelCase")]
+pub struct RepeaterSchema {
+    /// The row's inputs and layouts.
+    pub components: Vec<ComponentSchema>,
+    /// Fewest rows.
+    #[cfg_attr(feature = "ts", ts(optional))]
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub min_items: Option<u32>,
+    /// Most rows.
+    #[cfg_attr(feature = "ts", ts(optional))]
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub max_items: Option<u32>,
+    /// The user may reorder the rows.
+    #[cfg_attr(feature = "ts", ts(as = "Option<bool>", optional))]
+    #[serde(skip_serializing_if = "std::ops::Not::not")]
+    pub reorderable: bool,
+    /// Rows fold.
+    #[cfg_attr(feature = "ts", ts(as = "Option<bool>", optional))]
+    #[serde(skip_serializing_if = "std::ops::Not::not")]
+    pub collapsible: bool,
+    /// Rows start folded.
+    #[cfg_attr(feature = "ts", ts(as = "Option<bool>", optional))]
+    #[serde(skip_serializing_if = "std::ops::Not::not")]
+    pub collapsed: bool,
+    /// Each row's heading: `{input}` placeholders.
+    #[cfg_attr(feature = "ts", ts(optional))]
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub item_label: Option<String>,
+    /// The label of the button adding a row (translated).
+    #[cfg_attr(feature = "ts", ts(optional))]
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub add_action_label: Option<String>,
+    /// Rows can be added.
+    pub addable: bool,
+    /// Rows can be removed.
+    pub deletable: bool,
+    /// Rows a create form starts with.
+    #[cfg_attr(feature = "ts", ts(optional))]
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub default_items: Option<u32>,
+    /// A row can be copied.
+    #[cfg_attr(feature = "ts", ts(as = "Option<bool>", optional))]
+    #[serde(skip_serializing_if = "std::ops::Not::not")]
+    pub cloneable: bool,
+    /// Relationship repeaters: the child records and what the user may do.
+    #[cfg_attr(feature = "ts", ts(optional))]
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub relationship: Option<RepeaterRelationship>,
+}
+
+/// A relationship repeater's child records (ADR 0040).
+#[derive(Debug, Clone, PartialEq, Serialize)]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
+#[serde(rename_all = "camelCase")]
+pub struct RepeaterRelationship {
+    /// The child resource.
+    pub resource: &'static str,
+    /// The has-many relation (its list reads the rows).
+    pub relation: &'static str,
+    /// The user may add rows.
+    pub create: bool,
+    /// The user may change rows (each row's envelope decides too).
+    pub update: bool,
+    /// The user may remove rows (each row's envelope decides too).
+    pub delete: bool,
+    /// The child field holding each row's position (rows are shown in its order).
+    #[cfg_attr(feature = "ts", ts(optional))]
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub order_column: Option<String>,
 }
 
 /// The changes a `belongs_to_many` input may send (checked again by the
@@ -389,6 +471,10 @@ pub struct EntrySchema {
     #[cfg_attr(feature = "ts", ts(optional, type = "JsonValue"))]
     #[serde(skip_serializing_if = "Option::is_none")]
     pub props: Option<serde_json::Value>,
+    /// Repeatable entries: the entries of each row (vocabulary 15).
+    #[cfg_attr(feature = "ts", ts(as = "Option<Vec<ComponentSchema>>", optional))]
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub components: Vec<ComponentSchema>,
 }
 
 /// A record's view page (vocabulary 14, ADR 0039).
@@ -469,6 +555,16 @@ pub struct ColumnSchema {
     #[cfg_attr(feature = "ts", ts(optional))]
     #[serde(skip_serializing_if = "Option::is_none")]
     pub hide_below: Option<crate::ui::Breakpoint>,
+    /// Shows the number of items of the field's JSON list (vocabulary 15).
+    #[cfg_attr(feature = "ts", ts(as = "Option<bool>", optional))]
+    #[serde(skip_serializing_if = "std::ops::Not::not")]
+    pub count: bool,
+    /// Shows `counts[relation]` of each record: how many records of this
+    /// has-many relation it has that the user may list (vocabulary 15). The
+    /// column's `name` is not a field.
+    #[cfg_attr(feature = "ts", ts(optional))]
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub counts: Option<&'static str>,
 }
 
 /// Badge color for one value.
