@@ -12,7 +12,7 @@ use crate::context::Ctx;
 use crate::ui::{Component, FormWidth};
 
 /// What a record's view page shows (ADR 0039): entries in the form's layouts.
-/// Empty (the default): the view page shows the form read-only. Declared: it
+/// Empty (the default): entries made from the form, read-only. Declared: it
 /// replaces the form on the view page.
 #[derive(Debug, Clone)]
 pub struct Infolist {

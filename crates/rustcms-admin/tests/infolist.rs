@@ -329,17 +329,23 @@ db_test!(a_declared_infolist_replaces_the_view_page, |db: TestDb| async move {
     assert_eq!(entry("learners")["label"], json!("Learners"));
     assert_eq!(entry("revenue")["label"], json!("Revenue"));
 
-    // The form is still there (older panels draw it), and the other operations have no infolist.
+    // The form is still there (the dashboard reads it), and the other operations have no infolist.
     assert!(!schema["form"]["components"].as_array().unwrap().is_empty());
     let edit = admin.get(&app.admin_api(&format!("resources/courses/schema?operation=edit&key={course}"))).await.json();
     assert!(edit.get("infolist").is_none());
     let create = admin.get(&app.admin_api("resources/courses/schema?operation=create")).await.json();
     assert!(create.get("infolist").is_none());
 
-    // A resource without an infolist keeps its read-only form.
+    // Lists ask for `view` without a key: no infolist (only a record's view page draws it).
+    let keyless = admin.get(&app.admin_api("resources/courses/schema?operation=view")).await.json();
+    assert!(keyless.get("infolist").is_none());
+
+    // A resource without an infolist: entries made from its form (plan branch 4).
     let teachers = admin.get(&app.admin_api("resources/teachers/records")).await.json();
     let teacher = teachers["data"][0]["key"].as_str().unwrap().to_owned();
-    assert!(view_schema(&admin, &app, "teachers", &teacher).await.get("infolist").is_none());
+    let made = view_schema(&admin, &app, "teachers", &teacher).await;
+    assert_eq!(entries(&made["infolist"]["components"])[0]["type"], json!("text_entry"));
+    assert_eq!(names(&made["infolist"]["components"]), ["name"]);
 });
 
 db_test!(entries_the_user_may_not_read_are_left_out, |db: TestDb| async move {

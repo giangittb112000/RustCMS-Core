@@ -193,8 +193,9 @@ impl<R: Resource> DynResource for ResourceAdapter<R> {
                 (Some(record), SchemaOperation::View) => self.relation_schemas(ctx, record).await,
                 _ => Vec::new(),
             },
-            infolist: match op {
-                SchemaOperation::View => self.infolist_schema(ctx).await,
+            // Only a record's view page draws it (lists ask for `view` without a key).
+            infolist: match (&viewed, op) {
+                (Some(_), SchemaOperation::View) => self.infolist_schema(ctx).await,
                 _ => None,
             },
         })

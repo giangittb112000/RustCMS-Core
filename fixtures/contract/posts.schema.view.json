@@ -79,6 +79,59 @@
       }
     ]
   },
+  "infolist": {
+    "columns": 2,
+    "components": [
+      {
+        "columns": 1,
+        "components": [
+          {
+            "columnSpan": 1,
+            "label": "Title",
+            "multiline": true,
+            "name": "title",
+            "type": "text_entry",
+            "valueType": "string"
+          },
+          {
+            "columnSpan": 1,
+            "label": "Price",
+            "multiline": true,
+            "name": "price",
+            "type": "text_entry",
+            "valueType": "decimal"
+          }
+        ],
+        "label": "Content",
+        "type": "section"
+      },
+      {
+        "columnSpan": 1,
+        "label": "Category",
+        "name": "category_id",
+        "relationship": {
+          "resource": "categories"
+        },
+        "type": "relation_entry",
+        "valueType": "i32"
+      },
+      {
+        "columnSpan": 1,
+        "label": "Published",
+        "name": "published",
+        "type": "boolean_entry",
+        "valueType": "bool"
+      },
+      {
+        "columnSpan": 1,
+        "label": "Published at",
+        "multiline": true,
+        "name": "published_at",
+        "type": "text_entry",
+        "valueType": "instant"
+      }
+    ]
+  },
   "operation": "view",
   "relations": [
     {
