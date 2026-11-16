@@ -1,0 +1,85 @@
+{
+  "about": "Shared cases for input conditions (ADR 0037): the Rust engine (engine/conditions.rs) and the SPA (schema/conditions.ts) must hide exactly `hidden` for `values` (wire form). Decimals have scale 2.",
+  "forms": [
+    {
+      "name": "an input shown for one value",
+      "components": [
+        { "name": "link_type", "valueType": "string" },
+        { "name": "url", "valueType": "string", "shownWhen": { "op": "eq", "name": "link_type", "value": "external" } }
+      ],
+      "cases": [
+        { "values": { "link_type": "external" }, "hidden": [] },
+        { "values": { "link_type": "internal", "url": "https://x" }, "hidden": ["url"] },
+        { "values": {}, "hidden": ["url"] }
+      ]
+    },
+    {
+      "name": "a section and an input inside it",
+      "components": [
+        { "name": "on_sale", "valueType": "bool" },
+        {
+          "type": "section",
+          "shownWhen": { "op": "is_true", "name": "on_sale" },
+          "components": [
+            { "name": "discount", "valueType": "i32" },
+            { "name": "note", "valueType": "string", "shownWhen": { "op": "filled", "name": "discount" } }
+          ]
+        }
+      ],
+      "cases": [
+        { "values": { "on_sale": true, "discount": 10 }, "hidden": [] },
+        { "values": { "on_sale": true, "discount": null }, "hidden": ["note"] },
+        { "values": { "on_sale": false, "discount": 10, "note": "x" }, "hidden": ["discount", "note"] }
+      ]
+    },
+    {
+      "name": "canonical numbers and a chain through a hidden field",
+      "components": [
+        { "name": "price", "valueType": "decimal" },
+        { "name": "count", "valueType": "i64" },
+        { "name": "featured", "valueType": "bool", "shownWhen": { "op": "is_in", "name": "price", "values": ["10.50", "20"] } },
+        { "name": "badge", "valueType": "string", "shownWhen": { "op": "is_true", "name": "featured" } },
+        { "name": "lucky", "valueType": "string", "shownWhen": { "op": "eq", "name": "count", "value": "7" } }
+      ],
+      "cases": [
+        { "values": { "price": "10.5", "featured": true, "count": "007" }, "hidden": [] },
+        { "values": { "price": "20.00", "featured": false, "count": "8" }, "hidden": ["badge", "lucky"] },
+        { "values": { "price": "1", "featured": true, "count": "7" }, "hidden": ["badge", "featured"] },
+        { "values": { "price": "10.504", "featured": true, "count": "7" }, "hidden": ["badge", "featured"] }
+      ]
+    },
+    {
+      "name": "combined conditions, ne and blank text",
+      "components": [
+        { "name": "a", "valueType": "string" },
+        { "name": "b", "valueType": "bool" },
+        { "name": "kind", "valueType": "string" },
+        {
+          "name": "either",
+          "valueType": "string",
+          "shownWhen": { "op": "any", "conditions": [{ "op": "filled", "name": "a" }, { "op": "is_true", "name": "b" }] }
+        },
+        {
+          "name": "both",
+          "valueType": "string",
+          "shownWhen": { "op": "all", "conditions": [{ "op": "filled", "name": "a" }, { "op": "ne", "name": "kind", "value": "draft" }] }
+        }
+      ],
+      "cases": [
+        { "values": { "a": "x", "b": false, "kind": "final" }, "hidden": [] },
+        { "values": { "a": "   ", "b": true, "kind": "final" }, "hidden": ["both"] },
+        { "values": { "a": "x", "b": false, "kind": "draft" }, "hidden": ["both"] },
+        { "values": { "a": "", "b": false, "kind": null }, "hidden": ["both", "either"] }
+      ]
+    },
+    {
+      "name": "a field with an unconditional input is always shown",
+      "components": [
+        { "name": "on", "valueType": "bool" },
+        { "name": "code", "valueType": "string", "shownWhen": { "op": "is_true", "name": "on" } },
+        { "type": "section", "components": [{ "name": "code", "valueType": "string" }] }
+      ],
+      "cases": [{ "values": { "on": false }, "hidden": [] }]
+    }
+  ]
+}

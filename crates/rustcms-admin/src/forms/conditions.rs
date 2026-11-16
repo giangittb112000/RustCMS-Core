@@ -1,0 +1,171 @@
+//! Conditions under which an input or a layout is shown (ADR 0037).
+//!
+//! ```rust,ignore
+//! TextInput::make("url").shown_when(when("link_type").eq("external")),
+//! Section::make("Discount").shown_when(when("on_sale").is_true()).schema(components![…]),
+//! TextInput::make("code").shown_when(Condition::any([when("a").filled(), when("b").is_true()])),
+//! ```
+//!
+//! Conditions are data: the SPA evaluates them on every change (no request),
+//! the server again on every write, where it decides.
+
+use serde::Serialize;
+use serde_json::Value;
+
+/// When an input or a layout is shown: a test of another input's value, or
+/// several combined. Serialized as `{"op": "eq", "name": …, "value": …}`,
+/// `{"op": "all", "conditions": [...]}`, … (vocabulary 13).
+#[derive(Debug, Clone, PartialEq, Serialize)]
+#[cfg_attr(test, derive(serde::Deserialize))]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
+#[serde(tag = "op", rename_all = "snake_case")]
+pub enum Condition {
+    /// The value equals `value` (in canonical wire form).
+    Eq {
+        /// Input name.
+        name: String,
+        /// Compared value.
+        value: Value,
+    },
+    /// The value differs from `value`.
+    Ne {
+        /// Input name.
+        name: String,
+        /// Compared value.
+        value: Value,
+    },
+    /// The value is one of `values`.
+    IsIn {
+        /// Input name.
+        name: String,
+        /// Allowed values.
+        values: Vec<Value>,
+    },
+    /// The value is set: not `null`, `""`, `[]` or `{}`.
+    Filled {
+        /// Input name.
+        name: String,
+    },
+    /// The value is `true`.
+    IsTrue {
+        /// Input name.
+        name: String,
+    },
+    /// Every condition holds.
+    All {
+        /// Combined conditions.
+        conditions: Vec<Condition>,
+    },
+    /// At least one condition holds.
+    Any {
+        /// Combined conditions.
+        conditions: Vec<Condition>,
+    },
+}
+
+impl Condition {
+    /// Every condition holds.
+    pub fn all(conditions: impl IntoIterator<Item = Condition>) -> Self {
+        Self::All { conditions: conditions.into_iter().collect() }
+    }
+
+    /// At least one condition holds.
+    pub fn any(conditions: impl IntoIterator<Item = Condition>) -> Self {
+        Self::Any { conditions: conditions.into_iter().collect() }
+    }
+
+    /// Input names this condition reads, depth first, possibly repeated.
+    pub(crate) fn names(&self) -> Vec<&str> {
+        let mut out = Vec::new();
+        self.collect_names(&mut out);
+        out
+    }
+
+    fn collect_names<'a>(&'a self, out: &mut Vec<&'a str>) {
+        match self {
+            Self::Eq { name, .. }
+            | Self::Ne { name, .. }
+            | Self::IsIn { name, .. }
+            | Self::Filled { name }
+            | Self::IsTrue { name } => out.push(name),
+            Self::All { conditions } | Self::Any { conditions } => {
+                conditions.iter().for_each(|c| c.collect_names(out));
+            }
+        }
+    }
+
+    /// Both conditions.
+    pub(crate) fn and(self, other: Condition) -> Self {
+        match self {
+            Self::All { mut conditions } => {
+                conditions.push(other);
+                Self::All { conditions }
+            }
+            first => Self::All { conditions: vec![first, other] },
+        }
+    }
+}
+
+/// Starts a condition on the value of input `name`.
+pub fn when(name: impl Into<String>) -> When {
+    When(name.into())
+}
+
+/// A condition being built on one input's value ([`when`]).
+#[derive(Debug, Clone)]
+pub struct When(String);
+
+impl When {
+    /// The value equals `value`.
+    pub fn eq(self, value: impl Into<Value>) -> Condition {
+        Condition::Eq { name: self.0, value: value.into() }
+    }
+
+    /// The value differs from `value`.
+    pub fn ne(self, value: impl Into<Value>) -> Condition {
+        Condition::Ne { name: self.0, value: value.into() }
+    }
+
+    /// The value is one of `values`.
+    pub fn is_in<V: Into<Value>>(self, values: impl IntoIterator<Item = V>) -> Condition {
+        Condition::IsIn { name: self.0, values: values.into_iter().map(Into::into).collect() }
+    }
+
+    /// The value is set: not `null`, `""`, `[]` or `{}`.
+    pub fn filled(self) -> Condition {
+        Condition::Filled { name: self.0 }
+    }
+
+    /// The value is `true` (a boolean input).
+    pub fn is_true(self) -> Condition {
+        Condition::IsTrue { name: self.0 }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use serde_json::json;
+
+    use super::*;
+
+    #[test]
+    fn serializes_as_tagged_data() {
+        assert_eq!(
+            serde_json::to_value(when("link_type").eq("external")).unwrap(),
+            json!({"op": "eq", "name": "link_type", "value": "external"})
+        );
+        assert_eq!(
+            serde_json::to_value(Condition::any([when("a").filled(), when("b").is_in([1, 2])])).unwrap(),
+            json!({"op": "any", "conditions": [
+                {"op": "filled", "name": "a"},
+                {"op": "is_in", "name": "b", "values": [1, 2]},
+            ]})
+        );
+    }
+
+    #[test]
+    fn lists_names_and_combines() {
+        let condition = when("a").is_true().and(Condition::all([when("b").filled(), when("a").ne(3)]));
+        assert_eq!(condition.names(), ["a", "b", "a"]);
+    }
+}

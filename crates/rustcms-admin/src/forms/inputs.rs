@@ -93,6 +93,10 @@ pub struct Input {
     pub(crate) suffix: Option<String>,
     /// Boxed: most inputs have none, and forms hold many inputs.
     pub(crate) number: Option<Box<NumberBounds>>,
+    /// When the input is shown (ADR 0037); boxed for the same reason.
+    pub(crate) shown_when: Option<Box<super::Condition>>,
+    /// Hidden after a write: the field takes its cleared value.
+    pub(crate) clear_when_hidden: bool,
 }
 
 impl Input {
@@ -115,6 +119,8 @@ impl Input {
             prefix: None,
             suffix: None,
             number: None,
+            shown_when: None,
+            clear_when_hidden: false,
         }
     }
 
@@ -186,6 +192,26 @@ impl Input {
     /// integers, `any` otherwise). A presentation hint: not checked.
     pub fn step(mut self, value: impl Into<f64>) -> Self {
         self.number.get_or_insert_with(Box::default).step = Some(value.into());
+        self
+    }
+
+    /// Shows the input only when `condition` holds (ADR 0037): the panel
+    /// hides it as the user types, and the server ignores a value sent for it
+    /// while hidden. `required` then means "required when shown".
+    ///
+    /// ```rust,ignore
+    /// TextInput::make("url").shown_when(when("link_type").eq("external"))
+    /// ```
+    pub fn shown_when(mut self, condition: super::Condition) -> Self {
+        self.shown_when = Some(Box::new(condition));
+        self
+    }
+
+    /// When the input is hidden after a write, sets its field to the
+    /// column's declared default, else `null`, else an empty text or list
+    /// (instead of keeping the stored value). For inputs with a condition.
+    pub fn clear_when_hidden(mut self) -> Self {
+        self.clear_when_hidden = true;
         self
     }
 

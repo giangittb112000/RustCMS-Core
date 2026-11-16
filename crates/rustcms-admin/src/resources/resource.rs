@@ -59,7 +59,8 @@ pub struct ResourceMeta {
     pub(crate) sort: i32,
     pub(crate) navigation: bool,
     pub(crate) key: KeyStrategy,
-    pub(crate) title_field: Option<String>,
+    /// The title template (`{field}` placeholders), parsed and checked at boot.
+    pub(crate) title: Option<String>,
     pub(crate) constraints: Vec<ConstraintMap>,
     pub(crate) soft_delete: Option<String>,
     pub(crate) audit: bool,
@@ -80,7 +81,7 @@ impl ResourceMeta {
             sort: 0,
             navigation: true,
             key: KeyStrategy::DbGenerated,
-            title_field: None,
+            title: None,
             constraints: Vec::new(),
             soft_delete: None,
             audit: true,
@@ -142,9 +143,22 @@ impl ResourceMeta {
         self
     }
 
-    /// Field used as the record title (labels, relationship options).
+    /// Field used as the record title (labels, relationship options):
+    /// `title("name")` is `title_template("{name}")`.
     pub fn title(mut self, field: impl Into<String>) -> Self {
-        self.title_field = Some(field.into());
+        self.title = Some(format!("{{{}}}", field.into()));
+        self
+    }
+
+    /// The record title from several fields, for records that share a name:
+    /// `title_template("{name} (grade {grade})")` shows "Math (grade 10)" in
+    /// headings, breadcrumbs, relationship selects (searched over every field
+    /// of the template, each word of the search matching one of them) and
+    /// labels. A `null` field shows as empty. A user who
+    /// may not read one of the fields sees no title (the record's key). The
+    /// fields are checked at boot.
+    pub fn title_template(mut self, template: impl Into<String>) -> Self {
+        self.title = Some(template.into());
         self
     }
 

@@ -6,6 +6,7 @@ import type { ComponentSchema, InputSchema, JsonValue } from "@/api/types";
 import { asDocument } from "@/lib/rich-text";
 import { widget } from "@/lib/widgets";
 import { checkText, fromText, toText, type WireKind } from "@/lib/wire";
+import { type WireValues, formConditions, hasConditions, hiddenFields } from "./conditions";
 import {
   isResourceSecret,
   parseSecret,
@@ -202,18 +203,42 @@ export function defaultValues(inputs: InputSchema[], data?: Record<string, unkno
   return Object.fromEntries(inputs.map((i) => [i.name, toFormValue(i, data ? data[i.name] : i.default)]));
 }
 
+/** What the form's values mean on the wire, for evaluating conditions (unreadable values are null). */
+export function wireValues(inputs: InputSchema[], values: FormValues): WireValues {
+  const out: WireValues = {};
+  for (const input of inputs) {
+    const value = values[input.name];
+    if (value === undefined) continue;
+    try {
+      out[input.name] = fromFormValue(input, value);
+    } catch {
+      out[input.name] = null;
+    }
+  }
+  return out;
+}
+
+/** The fields hidden by the form's conditions for `values` (ADR 0037). */
+export function hiddenNames(components: ComponentSchema[], values: FormValues): Set<string> {
+  if (!hasConditions(components)) return new Set();
+  return hiddenFields(formConditions(components), wireValues(inputsOf(components), values));
+}
+
 /**
  * Payload of a submit: enabled inputs only; on edit only changed ones
  * (`dirty`), so fields changed by someone else meanwhile are not overwritten.
- * Write-only inputs are sent only when filled in.
+ * Write-only inputs are sent only when filled in; inputs hidden by their
+ * conditions (`hidden`) never (their drafts stay in the form).
  */
 export function payloadOf(
   inputs: InputSchema[],
   values: FormValues,
   dirty?: Partial<Record<string, unknown>>,
+  hidden?: Set<string>,
 ): Record<string, unknown> {
   const out: Record<string, unknown> = {};
   for (const input of inputs) {
+    if (hidden?.has(input.name)) continue;
     // Disabled inputs are not writable; unknown (newer) input types are never submitted.
     if (input.disabled || !KNOWN_INPUT_TYPES.has(input.type)) continue;
     // Settings secrets are sent from their explicit intent (keep, replace,

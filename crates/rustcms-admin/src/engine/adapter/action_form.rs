@@ -30,11 +30,22 @@ impl<R: Resource> ResourceAdapter<R> {
                 errors.add(name.as_str(), "is not allowed");
             }
         }
+        let value_of = |field: &ActionField| {
+            data.get(&field.name).cloned().or_else(|| field.default.clone()).unwrap_or(serde_json::Value::Null)
+        };
+        // Conditions (ADR 0037): a hidden field reaches the handler as `null`,
+        // whatever was sent, and is not required.
+        let hidden = match self.action_conditions.get(action.name) {
+            Some(conditions) => conditions.hidden(&action.form.iter().map(|f| (f.name.clone(), value_of(f))).collect()),
+            None => Default::default(),
+        };
         let mut out = Data::new();
         for field in &action.form {
-            let value =
-                data.get(&field.name).cloned().or_else(|| field.default.clone()).unwrap_or(serde_json::Value::Null);
-            let Some(mut value) = canonical(field, &value, &mut errors) else { continue };
+            if hidden.contains(&field.name) {
+                out.insert(field.name.clone(), serde_json::Value::Null);
+                continue;
+            }
+            let Some(mut value) = canonical(field, &value_of(field), &mut errors) else { continue };
             if let (Some(target), serde_json::Value::String(key)) = (field.belongs_to, &value) {
                 match ctx.registry.get(target).and_then(|t| t.canonical_key(key)) {
                     Some(key) => value = serde_json::Value::String(key),
@@ -139,11 +150,29 @@ impl<R: Resource> ResourceAdapter<R> {
                     prefix: None,
                     suffix: None,
                     number: None,
+                    shown_when: field.input.shown_when.as_deref().cloned(),
+                    clear_when_hidden: false,
                 })
             })
             .collect();
         Some(FormSchema { columns: 1, components, width: Default::default() })
     }
+}
+
+/// The conditions of an action's form (ADR 0037), checked at boot.
+pub(super) fn form_conditions(
+    slug: &str,
+    action: &str,
+    form: &[ActionField],
+) -> crate::engine::conditions::FormConditions {
+    let components: Vec<crate::ui::Component> =
+        form.iter().map(|f| crate::ui::Component::Input(f.input.clone())).collect();
+    let kind_of = |name: &str| form.iter().find(|f| f.name == name).map(|f| (f.kind, None));
+    crate::engine::conditions::FormConditions::new(
+        &format!("resource `{slug}`, action `{action}`"),
+        &components,
+        &kind_of,
+    )
 }
 
 /// `value` of `field` in canonical form, or `None` after adding its problem.

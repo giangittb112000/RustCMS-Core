@@ -385,6 +385,8 @@ pub(crate) trait DynSettings: Send + Sync {
     fn fields(&self) -> &[SettingField];
     fn form(&self) -> &Form;
     fn defaults(&self) -> &Map<String, Value>;
+    /// Conditions under which the form's inputs are shown (ADR 0037).
+    fn conditions(&self) -> &crate::engine::conditions::FormConditions;
     /// The group as stored, typed and checked by the application.
     async fn validate(&self, state: &AppState, ctx: &Ctx, stored: &Stored) -> AppResult<()>;
     /// The application's hook after a save, with the group before and after (typed).
@@ -403,6 +405,7 @@ pub(crate) struct SettingsAdapter<T> {
     fields: Vec<SettingField>,
     form: Form,
     defaults: Map<String, Value>,
+    conditions: crate::engine::conditions::FormConditions,
     _settings: PhantomData<T>,
 }
 
@@ -547,7 +550,19 @@ impl<T: SettingsPage> SettingsAdapter<T> {
                 );
             }
         }
-        Self { meta: T::meta(), fields, form, defaults, _settings: PhantomData }
+        // Conditions read the fields' values; a hidden field keeps its value, or
+        // takes its default with `clear_when_hidden`.
+        let kind_of =
+            |name: &str| fields.iter().find(|f| f.name == name && !f.is_secret()).map(|f| (f.kind.value_kind(), None));
+        let conditions =
+            crate::engine::conditions::FormConditions::new(&format!("settings `{group}`"), &form.components, &kind_of);
+        for (name, clear) in conditions.conditional() {
+            assert!(
+                !clear || fields.iter().any(|f| f.name == name && !f.is_secret()),
+                "settings `{group}`: secret `{name}` cannot have `clear_when_hidden`"
+            );
+        }
+        Self { meta: T::meta(), fields, form, defaults, conditions, _settings: PhantomData }
     }
 }
 
@@ -571,6 +586,10 @@ impl<T: SettingsPage> DynSettings for SettingsAdapter<T> {
 
     fn defaults(&self) -> &Map<String, Value> {
         &self.defaults
+    }
+
+    fn conditions(&self) -> &crate::engine::conditions::FormConditions {
+        &self.conditions
     }
 
     async fn validate(&self, state: &AppState, ctx: &Ctx, stored: &Stored) -> AppResult<()> {

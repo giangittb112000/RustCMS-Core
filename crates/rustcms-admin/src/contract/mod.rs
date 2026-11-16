@@ -6,12 +6,12 @@ use std::collections::BTreeMap;
 
 use serde::Serialize;
 
-use crate::ui::{ColumnType, FilterType, FormWidth, InputType, LayoutType, NumberBounds, SelectOption};
+use crate::ui::{ColumnType, Condition, FilterType, FormWidth, InputType, LayoutType, NumberBounds, SelectOption};
 
 /// Version of the schema structure.
 pub const SCHEMA_VERSION: u32 = 2;
 /// Version of the component, column and filter vocabulary.
-pub const VOCABULARY_VERSION: u32 = 12;
+pub const VOCABULARY_VERSION: u32 = 13;
 
 /// Navigation entry and identity of a resource.
 #[derive(Debug, Clone, PartialEq, Serialize)]
@@ -32,10 +32,14 @@ pub struct ResourceInfo {
     #[cfg_attr(feature = "ts", ts(optional))]
     #[serde(skip_serializing_if = "Option::is_none")]
     pub group: Option<String>,
-    /// Field used as record title.
+    /// Field used as record title (a title of one field; see `title_fields`).
     #[cfg_attr(feature = "ts", ts(optional))]
     #[serde(skip_serializing_if = "Option::is_none")]
     pub title_field: Option<String>,
+    /// Fields of a record title of several fields, in template order (ADR 0038).
+    #[cfg_attr(feature = "ts", ts(as = "Option<Vec<String>>", optional))]
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub title_fields: Vec<String>,
     /// Navigation position (`ResourceMeta::sort`), absent when 0.
     #[cfg_attr(feature = "ts", ts(optional))]
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -181,6 +185,15 @@ pub struct InputSchema {
     #[cfg_attr(feature = "ts", ts(optional))]
     #[serde(skip_serializing_if = "Option::is_none")]
     pub number: Option<NumberBounds>,
+    /// Shown only when this holds (vocabulary 13, ADR 0037): evaluated on
+    /// every change; the server drops values sent for hidden inputs.
+    #[cfg_attr(feature = "ts", ts(optional))]
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub shown_when: Option<Condition>,
+    /// Hidden after a write, the field is cleared by the server (vocabulary 13).
+    #[cfg_attr(feature = "ts", ts(as = "Option<bool>", optional))]
+    #[serde(skip_serializing_if = "std::ops::Not::not")]
+    pub clear_when_hidden: bool,
 }
 
 /// The changes a `belongs_to_many` input may send (checked again by the
@@ -244,6 +257,10 @@ pub struct LayoutSchema {
     #[cfg_attr(feature = "ts", ts(as = "Option<bool>", optional))]
     #[serde(skip_serializing_if = "std::ops::Not::not")]
     pub aside_first: bool,
+    /// Shown, with everything in it, only when this holds (vocabulary 13).
+    #[cfg_attr(feature = "ts", ts(optional))]
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub shown_when: Option<Condition>,
 }
 
 /// An element of a form: input or layout, told apart by `type`.

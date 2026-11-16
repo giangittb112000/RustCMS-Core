@@ -10,7 +10,7 @@ import { Button } from "@/components/ui/button";
 import { Dialog } from "@/components/ui/dialog";
 import { useT } from "@/i18n";
 import { Components } from "@/renderers/form";
-import { type FormValues, defaultValues, inputsOf, payloadOf } from "@/schema/form";
+import { type FormValues, defaultValues, hiddenNames, inputsOf, payloadOf } from "@/schema/form";
 import { editResolver } from "@/schema/resolver";
 
 export function SchemaFormDialog(props: {
@@ -55,7 +55,10 @@ function Body({ onClose, form, slug, optionsPath, data, submitLabel, onSubmit, c
   const partial = mode !== "action";
   // Checked as submitted: all inputs of an action, the changed ones of a link.
   const dirty = useRef<(name: string) => boolean>(() => true);
-  const resolver = useMemo(() => editResolver(inputs, partial, (name) => dirty.current(name)), [inputs, partial]);
+  const resolver = useMemo(
+    () => editResolver(inputs, partial, (name) => dirty.current(name), components),
+    [inputs, partial, components],
+  );
   const values = useForm<FormValues>({ defaultValues: defaultValues(inputs, data), resolver });
   dirty.current = (name) => values.getFieldState(name).isDirty;
   const [notice, setNotice] = useState<string | null>(null);
@@ -64,7 +67,8 @@ function Body({ onClose, form, slug, optionsPath, data, submitLabel, onSubmit, c
     setBusy(true);
     try {
       const changed = partial ? Object.fromEntries(inputs.map((i) => [i.name, values.getFieldState(i.name).isDirty])) : undefined;
-      await onSubmit(payloadOf(inputs, current, changed));
+      // Inputs hidden by their conditions are never sent (ADR 0037).
+      await onSubmit(payloadOf(inputs, current, changed, hiddenNames(components, current)));
       onClose();
     } catch (e) {
       if (e instanceof ApiError && e.status === 422) {

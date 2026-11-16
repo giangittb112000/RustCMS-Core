@@ -219,6 +219,51 @@ categories use it:
 Misusing them (a split inside a section, two splits, a grid that folds, a
 prefix on a number input) stops the boot.
 
+## Showing inputs under conditions
+
+`.shown_when(condition)` on an input or a layout shows it only while the
+condition holds on the form's values:
+
+```rust
+SelectInput::make("link_type").options([("internal", "Internal"), ("external", "External")]),
+TextInput::make("url").shown_when(when("link_type").eq("external")),
+Toggle::make("on_sale"),
+Section::make("Sale").shown_when(when("on_sale").is_true()).schema(components![
+    NumberInput::make("discount").clear_when_hidden(),
+]),
+```
+
+| Condition | Holds when the input's value |
+|---|---|
+| `when("x").eq(v)`, `.ne(v)` | equals (differs from) `v` |
+| `when("x").is_in([a, b])` | is one of the values |
+| `when("x").filled()` | is set: not `null`, blank text, `[]` or `{}` |
+| `when("x").is_true()` | is `true` (a boolean) |
+| `Condition::all([…])`, `Condition::any([…])` | every / one of the conditions hold |
+
+- **Live in the browser.** The panel re-evaluates conditions on every change
+  (each keystroke, selection or toggle), without a request: the inputs a
+  condition reads need no extra declaration. A hidden input keeps what the
+  user typed until the form is saved, so showing it again brings it back.
+- **The server decides.** On every write it evaluates the conditions on the
+  values the record will have (the stored record merged with the request; on
+  create, the request and the columns' defaults). A value sent for a hidden
+  input is never stored; a hidden field keeps its stored value, or, with
+  `.clear_when_hidden()`, takes its column's default, else `null`, else an
+  empty text or list.
+- **Required when shown.** A `.required()` field under a condition is only
+  required while it is shown.
+- A layout's condition applies to everything in it; a hidden input counts as
+  empty for the conditions of other inputs. A field shown by another input
+  without a condition is always shown.
+- Conditions compare values; logic that needs the database belongs in hooks.
+  Condition only on fields every user of the form may read: the panel treats
+  a field it does not receive as empty.
+
+The same works on [settings pages](settings.md) and in
+[action forms](actions.md) (`ActionField::shown_when`; a hidden field reaches
+the handler as `null`).
+
 ## Leaving with unsaved changes
 
 A create or edit form with changes not saved asks before the user leaves it:
@@ -308,7 +353,18 @@ Besides the layout and encrypted-field rules above, the boot stops when:
 - a key/value field is not a JSON column;
 - `min`, `max` or `step` is on an input that is not a `NumberInput`, or on a
   column that does not hold numbers; `min` is above `max`; the step is not
-  positive; or two inputs of one field have different bounds.
+  positive; or two inputs of one field have different bounds;
+- a condition names something that is not an input of the form, or an
+  encrypted field; `is_true` is on a field that is not a boolean; `eq`, `ne`
+  or `is_in` is on a JSON, rich text, media, date-time or key/value field, or
+  compares with a value that is not of the field's kind; conditions depend on
+  each other in a cycle; a `BelongsToManySelect` or an encrypted field has a
+  condition; a relationship field has `clear_when_hidden`;
+- an input under a condition has a column that is not nullable and has no
+  default (a record created while it is hidden could not be stored: declare a
+  default or make the column nullable); `clear_when_hidden` is on an input
+  without a condition, or on a non-nullable number, date or boolean column
+  without a declared default.
 
 [Settings pages](settings.md) follow the same layout rules.
 

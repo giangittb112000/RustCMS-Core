@@ -123,7 +123,10 @@ its way.
 ### Layout and checks
 
 `form()` arranges the inputs with the usual [form layouts](forms.md)
-(sections, grids, tabs); each input names a field, and may change its label,
+(sections, grids, tabs), and may show them
+[under conditions](forms.md#showing-inputs-under-conditions): a hidden
+setting keeps its value (its default with `.clear_when_hidden()`), and a
+required one is required only when shown. Each input names a field, and may change its label,
 help or option labels (not its values). `validate` checks the whole group
 before it is saved, inside the write (its `ctx` has the transaction and the
 user's current permissions, and `ctx.t` for translated messages). Secrets

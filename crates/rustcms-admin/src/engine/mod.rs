@@ -2,8 +2,10 @@
 //! wire format, idempotency, and the adapter that runs authorized CRUD.
 
 pub(crate) mod adapter;
+pub(crate) mod conditions;
 pub mod context;
 pub mod idempotency;
 pub mod registry;
+pub(crate) mod title;
 pub(crate) mod validate;
 pub mod wire;

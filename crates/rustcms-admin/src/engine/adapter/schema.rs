@@ -151,7 +151,22 @@ impl<R: Resource> ResourceAdapter<R> {
             plural_label: self.meta.plural_label.clone().unwrap_or_else(|| format!("{}s", self.meta.label)),
             icon: self.meta.icon.clone(),
             group: self.meta.group.clone(),
-            title_field: self.meta.title_field.clone(),
+            title_field: self.title.as_ref().and_then(|t| t.single_field()).map(str::to_owned),
+            // Listed only for a title of several fields (`title_field` holds a single one).
+            title_fields: self
+                .title
+                .as_ref()
+                .filter(|t| t.single_field().is_none())
+                .map(|t| {
+                    let mut fields: Vec<String> = Vec::new();
+                    for field in t.fields() {
+                        if !fields.iter().any(|f| f == field) {
+                            fields.push(field.to_owned());
+                        }
+                    }
+                    fields
+                })
+                .unwrap_or_default(),
             sort: (self.meta.sort != 0).then_some(self.meta.sort),
             nav: (!self.meta.navigation).then_some(false),
         }
@@ -231,6 +246,8 @@ impl<R: Resource> ResourceAdapter<R> {
             prefix: input.prefix.clone(),
             suffix: input.suffix.clone(),
             number: input.number.as_deref().copied(),
+            shown_when: input.shown_when.as_deref().cloned(),
+            clear_when_hidden: input.clear_when_hidden,
         })
     }
 
@@ -299,6 +316,8 @@ impl<R: Resource> ResourceAdapter<R> {
             prefix: None,
             suffix: None,
             number: None,
+            shown_when: None,
+            clear_when_hidden: false,
         })
     }
 
@@ -329,6 +348,7 @@ impl<R: Resource> ResourceAdapter<R> {
                             collapsed: layout.collapsed,
                             compact: layout.compact,
                             aside_first: layout.aside_first,
+                            shown_when: layout.shown_when.as_deref().cloned(),
                         })
                     })
                 }
@@ -471,5 +491,7 @@ fn pivot_input_schema(
         prefix: None,
         suffix: None,
         number: None,
+        shown_when: None,
+        clear_when_hidden: false,
     }
 }

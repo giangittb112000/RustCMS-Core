@@ -1,6 +1,6 @@
 //! `GET` and `PUT <admin>/api/settings/{group}`.
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 use std::sync::Arc;
 
 use axum::Router;
@@ -218,6 +218,7 @@ fn components(ctx: &Ctx, page: &dyn DynSettings, items: &[Component], disabled: 
                         collapsed: layout.collapsed,
                         compact: layout.compact,
                         aside_first: layout.aside_first,
+                        shown_when: layout.shown_when.as_deref().cloned(),
                     })
                 })
             }
@@ -266,6 +267,8 @@ fn input_schema(ctx: &Ctx, field: &SettingField, input: &crate::ui::Input, disab
         suffix: input.suffix.clone(),
         // The setting's own bounds: the ones checked on save.
         number: field.input.number.as_deref().copied(),
+        shown_when: input.shown_when.as_deref().cloned(),
+        clear_when_hidden: input.clear_when_hidden,
     }
 }
 
@@ -342,7 +345,9 @@ async fn update(
         }
         let options = field.options();
         let options = (!options.is_empty()).then_some(Options::One { values: &options, scale: None });
-        let rule = InputRule { options, ..field.rule() };
+        // Under a condition, `required` is checked once the shown fields are known.
+        let required = field.required && !page.conditions().is_conditional(name);
+        let rule = InputRule { options, required, ..field.rule() };
         if check_input(name, &rule, value, &mut errors)
             && let Some(media) = &field.media
         {
@@ -361,6 +366,29 @@ async fn update(
         errors.add_form("This was changed by someone else meanwhile. Reload and try again.");
         return Err(errors.into());
     }
+
+    // Conditions (ADR 0037) on the stored group merged with the request: a
+    // hidden field keeps its stored value (its default with
+    // `clear_when_hidden`) and is not required; a value sent for it is dropped.
+    let resulting: Map<String, Value> = page
+        .fields()
+        .iter()
+        .filter(|f| !f.is_secret())
+        .map(|f| {
+            let value = data.get(&f.name).or_else(|| stored.values.get(&f.name)).unwrap_or(&page.defaults()[&f.name]);
+            (f.name.clone(), value.clone())
+        })
+        .collect();
+    let hidden = page.conditions().hidden(&resulting);
+    let cleared: BTreeSet<&str> = page
+        .conditions()
+        .conditional()
+        .filter(|(name, clear)| *clear && hidden.contains(*name))
+        .map(|(n, _)| n)
+        .collect();
+    let mut data = data;
+    data.retain(|name, _| !hidden.contains(name));
+    writes.retain(|name, _| !hidden.contains(name));
 
     let mut values = Map::new();
     let mut secrets = BTreeMap::new();
@@ -389,16 +417,21 @@ async fn update(
                 Some(plain) => {
                     secrets.insert(field.name.clone(), plain);
                 }
-                None if field.required => errors.add(field.name.as_str(), "is required"),
+                None if field.required && !hidden.contains(&field.name) => {
+                    errors.add(field.name.as_str(), "is required");
+                }
                 None => {}
             }
         } else {
-            let value = data
-                .get(&field.name)
-                .or_else(|| stored.values.get(&field.name))
-                .unwrap_or(&page.defaults()[&field.name])
-                .clone();
-            if value.is_null() && field.required {
+            let value = if cleared.contains(field.name.as_str()) {
+                page.defaults()[&field.name].clone()
+            } else {
+                data.get(&field.name)
+                    .or_else(|| stored.values.get(&field.name))
+                    .unwrap_or(&page.defaults()[&field.name])
+                    .clone()
+            };
+            if value.is_null() && field.required && !hidden.contains(&field.name) {
                 errors.add(field.name.as_str(), "is required");
             }
             values.insert(field.name.clone(), value);

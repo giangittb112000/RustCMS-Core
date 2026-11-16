@@ -133,6 +133,19 @@ the value); `FormSchema.width` is `wide` or `full` (absent: the default
 width). Older clients show splits and panes as plain groups, sections open,
 inputs without their prefix, at the default width.
 
+Vocabulary 13 adds conditions (ADR 0037): inputs and layouts may carry
+`shownWhen`, a condition tagged by `op`: `eq` and `ne` (`name`, `value`),
+`is_in` (`name`, `values`), `filled` and `is_true` (`name`), `all` and `any`
+(`conditions`); inputs may carry `clearWhenHidden: true`. Values are wire
+values; integers and decimals compare numerically. Clients evaluate
+conditions on every change of the form's values (a layout's condition applies
+to its children; a hidden input's value counts as `null` for the others),
+do not render what is hidden, keep its draft, never send it, and skip its
+client rules; view pages evaluate them on the record's values. The server
+evaluates them again on every write, on the resulting values, drops values
+sent for hidden inputs and requires required fields only when shown. Older
+clients show every input; the server ignores what they send for hidden ones.
+
 Vocabulary 12 adds number bounds: `number_input` inputs may carry `number`,
 `{min?, max?, step?}` (JSON numbers). The server checks `min` and `max` on
 every client write of the field (`min_value`, `max_value` issues); `step` is

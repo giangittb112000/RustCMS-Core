@@ -7,6 +7,22 @@ All notable changes are documented here. The format follows
 ## [Unreleased]
 
 ### Added
+- Inputs and layouts shown under conditions (vocabulary 13, ADR 0037; contributed by @giangittb112000):
+  `.shown_when(when("x").eq(v))` (`ne`, `is_in`, `filled`, `is_true`,
+  `Condition::all/any`) on inputs, layouts, settings forms and
+  `ActionField`s, and `.clear_when_hidden()`. The panel evaluates them on
+  every change, without a request; the server again on every write (create,
+  update, settings, actions, CSV imports): values sent for hidden inputs are
+  dropped, hidden `clear_when_hidden` fields take their column's default (else
+  `null`, else empty), required fields are required only when shown. Boot
+  checks names, kinds, values, cycles, and refuses a conditional input whose
+  column is not nullable and has no default.
+- Record titles from several fields (ADR 0038; contributed by @giangittb112000):
+  `ResourceMeta::title_template("{name} (grade {grade})")` for headings,
+  breadcrumbs, row menus, relationship selects (searched over every field of
+  the template, ordered by them) and labels; `title(f)` is `{f}`. No title
+  when the user may not read one of its fields. `ResourceInfo.title_fields`
+  lists the fields of a title of several. Boot checks the placeholders.
 - Number bounds (vocabulary 12; contributed by @giangittb112000): `NumberInput::make(…).min(n).max(n).step(n)`
   and `SettingField::min/max/step` (integer settings). `min` and `max` bound
   client writes on every path (issues `min_value`, `max_value`); `step` is a

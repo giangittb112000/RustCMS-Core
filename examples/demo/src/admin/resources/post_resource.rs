@@ -55,7 +55,8 @@ impl Resource for PostResource {
             Tab::make("Publishing").columns(2).schema(components![
                 SelectInput::make("category_id"),
                 Toggle::make("published"),
-                DateTimePicker::make("published_at"),
+                // Only for published posts: hidden (and not saved) while unpublished.
+                DateTimePicker::make("published_at").shown_when(when("published").is_true()),
                 // Linked from the form too, not only on the post's page.
                 BelongsToManySelect::make("tags"),
             ]),
