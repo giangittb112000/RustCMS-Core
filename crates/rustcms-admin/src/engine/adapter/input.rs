@@ -3,6 +3,7 @@
 
 use super::*;
 use crate::engine::validate::Bounds;
+use crate::ui::NumberBounds;
 
 impl<R: Resource> ResourceAdapter<R> {
     /// The idempotency claim of a create (through a relation: of that parent).
@@ -404,6 +405,18 @@ pub(super) fn number_bounds<C: ColumnTrait>(
 ) -> HashMap<String, Bounds> {
     let mut out: HashMap<String, Bounds> = HashMap::new();
     let context = format!("resource `{slug}`");
+    // Every input of a field shows the same bounds, none included.
+    let mut declared: HashMap<&str, Option<NumberBounds>> = HashMap::new();
+    for input in form.inputs() {
+        let range = input.number.as_deref().copied();
+        if let Some(previous) = declared.insert(input.name.as_str(), range) {
+            assert!(
+                previous == range,
+                "resource `{slug}`: field `{}` appears in several inputs that do not have the same bounds",
+                input.name
+            );
+        }
+    }
     for input in form.inputs() {
         let Some(range) = input.number.as_deref().copied() else { continue };
         let name = &input.name;
@@ -421,13 +434,14 @@ pub(super) fn number_bounds<C: ColumnTrait>(
         );
         let column = column.expect("a number column");
         crate::engine::validate::check_bounds(&context, name, &range, column.kind);
-        let scale = crate::wire::decimal_scale(column.column.def().get_column_type());
-        if let Some(previous) = out.insert(name.clone(), Bounds::new(range, scale)) {
-            assert!(
-                previous.range == range,
-                "resource `{slug}`: field `{name}` appears in several inputs that do not have the same bounds"
-            );
+        let def = column.column.def();
+        let column_type = def.get_column_type();
+        let single = matches!(column_type, sea_orm::sea_query::ColumnType::Float);
+        if single {
+            crate::engine::validate::check_single_bounds(&context, name, &range);
         }
+        let scale = crate::wire::decimal_scale(column_type);
+        out.insert(name.clone(), Bounds::new(range, scale).single(single));
     }
     out
 }

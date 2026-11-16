@@ -44,11 +44,20 @@ pub(crate) struct Bounds {
     pub scale: Option<u32>,
     /// `min` and `max` as decimals, read once from the bounds as written.
     exact: (Option<Decimal>, Option<Decimal>),
+    /// The column stores an `f32`: a number is checked as that `f32` (what
+    /// is read back) against the bounds as `f32`s, so a value read back is
+    /// accepted again (`0.1` reads back as `0.10000000149…` from an `f32`).
+    single: bool,
 }
 
 impl Bounds {
     pub(crate) fn new(range: NumberBounds, scale: Option<u32>) -> Self {
-        Self { range, scale, exact: (range.min.and_then(exact), range.max.and_then(exact)) }
+        Self { range, scale, exact: (range.min.and_then(exact), range.max.and_then(exact)), single: false }
+    }
+
+    /// The same bounds for an `f32` column.
+    pub(crate) fn single(self, single: bool) -> Self {
+        Self { single, ..self }
     }
 }
 
@@ -164,11 +173,12 @@ fn option_problem(rule: &InputRule<'_>, value: &Value) -> Option<String> {
 /// databases round (PostgreSQL and MySQL away from zero, the wire to even),
 /// so a value that passes is never stored out of the range.
 fn bounds_problem(rule: &InputRule<'_>, value: &Value) -> Option<String> {
-    let Bounds { range, scale, exact: (min_exact, max_exact) } = rule.bounds?;
+    let Bounds { range, scale, exact: (min_exact, max_exact), single } = rule.bounds?;
     let decoded = rule.kind.decode(value).ok()?.into_iter().next()?;
     let candidates: Vec<Number> = match decoded {
         sea_orm::Value::Int(Some(n)) => vec![Number::Exact(Decimal::from(n))],
         sea_orm::Value::BigInt(Some(n)) => vec![Number::Exact(Decimal::from(n))],
+        sea_orm::Value::Double(Some(n)) if single => vec![Number::Single(n as f32)],
         sea_orm::Value::Double(Some(n)) => vec![Number::Float(n)],
         sea_orm::Value::Decimal(Some(d)) => {
             let mut out = vec![Number::Exact(d)];
@@ -193,10 +203,12 @@ fn bounds_problem(rule: &InputRule<'_>, value: &Value) -> Option<String> {
     }
 }
 
-/// A decoded number: exact (integers, decimals) or a float.
+/// A decoded number: exact (integers, decimals), a float, or a float as an
+/// `f32` column stores it.
 enum Number {
     Exact(Decimal),
     Float(f64),
+    Single(f32),
 }
 
 impl Number {
@@ -210,8 +222,21 @@ impl Number {
                 f64::try_from(*n).ok().and_then(|n| n.partial_cmp(&bound)).unwrap_or(Ordering::Equal)
             }
             (Self::Float(n), _) => n.partial_cmp(&bound).unwrap_or(Ordering::Equal),
+            (Self::Single(n), _) => n.partial_cmp(&(bound as f32)).unwrap_or(Ordering::Equal),
         }
     }
+}
+
+/// Checks the bounds of an `f32` column: compared as `f32`s, they must stay
+/// finite and not round to 0 (`1e-50` would bound nothing).
+pub(crate) fn check_single_bounds(context: &str, name: &str, bounds: &NumberBounds) {
+    assert!(
+        [bounds.min, bounds.max].into_iter().flatten().all(|n| {
+            let single = n as f32;
+            single.is_finite() && (n == 0.0 || single != 0.0)
+        }),
+        "{context}: number input `{name}` stores an `f32`: its bounds must be finite and not round to 0 as `f32`s"
+    );
 }
 
 /// Checks a declaration of bounds for a value of `kind`; panics with
@@ -420,18 +445,23 @@ mod tests {
         };
         assert_eq!(first(&tenth, json!("0.1")), None);
 
-        // An `f32` column stores the nearest `f32`: rounding keeps the order, so a
-        // value within the bounds is within them as stored (as `f32`s).
+        // An `f32` column: a number is checked as the `f32` stored, against the
+        // bounds as `f32`s; what is read back (`0.1` as 0.10000000149…) is
+        // accepted again.
         let ratio = InputRule {
-            bounds: within(NumberBounds { min: Some(1e-30), max: Some(0.1), step: None }, None),
+            bounds: Some(Bounds::new(NumberBounds { min: Some(1e-30), max: Some(0.1), step: None }, None).single(true)),
             ..InputRule::of(FieldKind::F64)
         };
-        for (sent, accepted) in [(0.1, true), (0.099_999_999, true), (0.100_000_001, false), (1e-31, false)] {
+        let read_back = f64::from(0.1_f32);
+        for (sent, accepted) in [(0.1, true), (read_back, true), (0.100_000_1, false), (1e-31, false)] {
             assert_eq!(first(&ratio, json!(sent)).is_none(), accepted, "{sent}");
-            if accepted {
-                assert!((sent as f32) <= (0.1_f32) && (sent as f32) >= (1e-30_f32), "{sent} stored within the bounds");
-            }
         }
+        // An `f64` column: compared as sent.
+        let double = InputRule {
+            bounds: within(NumberBounds { max: Some(0.1), ..bounds }, None),
+            ..InputRule::of(FieldKind::F64)
+        };
+        assert!(first(&double, json!(read_back)).is_some());
 
         // Trusted writes (hooks) are not bounded.
         let mut errors = ValidationErrors::new();
@@ -445,6 +475,12 @@ mod tests {
         assert_eq!(exact(-2.5), Some("-2.5".parse().unwrap()));
         assert_eq!(exact(1e-30), None, "beyond a decimal's precision: not rounded to 0");
         assert_eq!(exact(1e30), None, "beyond a decimal's range");
+    }
+
+    #[test]
+    #[should_panic(expected = "not round to 0")]
+    fn single_bounds_hold_as_f32() {
+        check_single_bounds("t", "ratio", &NumberBounds { min: Some(1e-50), ..Default::default() });
     }
 
     #[test]

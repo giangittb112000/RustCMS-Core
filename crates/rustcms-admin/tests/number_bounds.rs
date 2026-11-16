@@ -24,6 +24,7 @@ pub mod gauge {
         pub reading: Option<i64>,
         #[sea_orm(column_type = "Decimal(Some((10, 2)))", nullable)]
         pub price: Option<Decimal>,
+        pub ratio: Option<f32>,
     }
 
     #[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]
@@ -39,6 +40,7 @@ fn gauge_fields() -> Vec<Field> {
         Field::column(C::Level).required(),
         Field::column(C::Reading),
         Field::column(C::Price),
+        Field::column(C::Ratio),
     ]
 }
 
@@ -63,6 +65,7 @@ impl Resource for GaugeResource {
             NumberInput::make("level").min(1).max(5),
             NumberInput::make("reading").max(1000).step(10),
             NumberInput::make("price").min(0.5).step(0.01),
+            NumberInput::make("ratio").max(0.1),
         ])
     }
 
@@ -259,3 +262,32 @@ refused_at_boot!(
     "field `level` appears in several inputs that do not have the same bounds",
     components![NumberInput::make("level").max(5), NumberInput::make("level").max(6)]
 );
+
+refused_at_boot!(
+    bounds_on_one_input_of_a_field_only,
+    HalfBounds,
+    "field `level` appears in several inputs that do not have the same bounds",
+    components![NumberInput::make("level").max(5), NumberInput::make("level")]
+);
+
+refused_at_boot!(
+    f32_bounds_that_round_to_zero,
+    TinyBounds,
+    "its bounds must be finite and not round to 0",
+    components![NumberInput::make("ratio").min(1e-50)]
+);
+
+db_test!(an_f32_value_read_back_is_accepted_again, |db: TestDb| async move {
+    let (app, admin) = setup(db).await;
+    let client = app.acting_as(&admin).await;
+    let created = create(&client, &app, json!({"name": "r", "level": 1, "ratio": 0.1})).await;
+    created.assert_status(StatusCode::CREATED);
+    let key = created.json()["data"]["key"].as_str().unwrap().to_owned();
+    let url = app.admin_api(&format!("resources/gauges/records/{key}"));
+    // The f32 reads back as 0.10000000149…, above 0.1 as an f64: still within.
+    let read = client.get(&url).await.json()["data"]["data"]["ratio"].clone();
+    assert!(read.as_f64().is_some_and(|r| r > 0.1), "{read}");
+    client.send(axum::http::Method::PATCH, &url, Some(&json!({"ratio": read}))).await.assert_status(StatusCode::OK);
+    let above = client.send(axum::http::Method::PATCH, &url, Some(&json!({"ratio": 0.1000001}))).await;
+    assert_eq!(issue(&above, "ratio")["code"], json!("max_value"));
+});
