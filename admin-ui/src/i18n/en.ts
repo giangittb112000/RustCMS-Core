@@ -734,8 +734,6 @@ export const en = {
   "rich.code": "Code block",
   "rich.link": "Link",
   "rich.image": "Insert image",
-  "relation.loadingLabel": "Loading label…",
-  "relation.labelUnavailable": "Label unavailable",
   "relation.select": "Select…",
   "relation.searchOptions": "Search options",
   "relation.searchPlaceholder": "Search…",

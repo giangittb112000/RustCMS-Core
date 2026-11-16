@@ -446,7 +446,8 @@ impl<R: Resource> ResourceAdapter<R> {
         infolist::check_infolist(slug, &infolist, &computed, &fields, &columns);
 
         Self {
-            infolist: (!infolist.is_empty()).then_some(infolist),
+            // Without `infolist()`, the form read-only (plan branch 4).
+            infolist: Some(if infolist.is_empty() { infolist::from_form(&form, &fields, &columns) } else { infolist }),
             computed,
             table: Entity::<R>::default().table_name().to_owned(),
             soft,

@@ -1,0 +1,569 @@
+{
+  "abilities": {
+    "create": true,
+    "delete": true,
+    "history": true,
+    "update": true,
+    "view": true,
+    "viewAny": true
+  },
+  "form": {
+    "columns": 2,
+    "components": [
+      {
+        "columns": 2,
+        "components": [
+          {
+            "columnSpan": 1,
+            "disabled": true,
+            "help": "Shown in lists",
+            "label": "Title",
+            "name": "title",
+            "nullable": false,
+            "prefix": "#",
+            "rules": [],
+            "type": "text_input",
+            "valueType": "string"
+          },
+          {
+            "columnSpan": 2,
+            "disabled": true,
+            "label": "Summary",
+            "name": "summary",
+            "nullable": true,
+            "rules": [],
+            "type": "textarea",
+            "valueType": "string"
+          },
+          {
+            "columnSpan": 1,
+            "disabled": true,
+            "label": "Pin",
+            "mode": "password",
+            "name": "pin",
+            "nullable": true,
+            "rules": [],
+            "type": "text_input",
+            "valueType": "string"
+          },
+          {
+            "columnSpan": 1,
+            "disabled": true,
+            "label": "Level",
+            "name": "level",
+            "nullable": false,
+            "options": [
+              {
+                "label": "Easy",
+                "value": "easy"
+              },
+              {
+                "label": "Hard",
+                "value": "hard"
+              }
+            ],
+            "rules": [],
+            "type": "select",
+            "valueType": "string"
+          },
+          {
+            "columnSpan": 1,
+            "disabled": true,
+            "label": "Category",
+            "name": "category_id",
+            "nullable": true,
+            "relationship": {
+              "resource": "categories"
+            },
+            "rules": [],
+            "type": "select",
+            "valueType": "i32"
+          }
+        ],
+        "label": "Basics",
+        "type": "section"
+      },
+      {
+        "columns": 1,
+        "components": [
+          {
+            "columns": 1,
+            "components": [
+              {
+                "columnSpan": 1,
+                "disabled": true,
+                "label": "Body",
+                "name": "body",
+                "nullable": true,
+                "rules": [],
+                "type": "rich_editor",
+                "valueType": "json"
+              },
+              {
+                "columnSpan": 1,
+                "disabled": true,
+                "label": "Faq",
+                "name": "faq",
+                "nullable": true,
+                "repeater": {
+                  "addable": true,
+                  "components": [
+                    {
+                      "columnSpan": 1,
+                      "disabled": true,
+                      "label": "Question",
+                      "name": "question",
+                      "nullable": true,
+                      "rules": [],
+                      "type": "text_input",
+                      "valueType": "string"
+                    },
+                    {
+                      "columnSpan": 1,
+                      "disabled": true,
+                      "label": "Kind",
+                      "name": "kind",
+                      "nullable": true,
+                      "options": [
+                        {
+                          "label": "Text",
+                          "value": "text"
+                        },
+                        {
+                          "label": "Link",
+                          "value": "link"
+                        }
+                      ],
+                      "rules": [],
+                      "type": "select",
+                      "valueType": "string"
+                    },
+                    {
+                      "columnSpan": 1,
+                      "disabled": true,
+                      "label": "Ref",
+                      "name": "ref",
+                      "nullable": true,
+                      "rules": [],
+                      "type": "hidden",
+                      "valueType": "json"
+                    },
+                    {
+                      "columnSpan": 1,
+                      "disabled": true,
+                      "label": "Url",
+                      "name": "url",
+                      "nullable": true,
+                      "rules": [],
+                      "shownWhen": {
+                        "name": "kind",
+                        "op": "eq",
+                        "value": "link"
+                      },
+                      "type": "text_input",
+                      "valueType": "string"
+                    },
+                    {
+                      "columnSpan": 1,
+                      "disabled": true,
+                      "label": "Asked on",
+                      "name": "asked_on",
+                      "nullable": true,
+                      "rules": [],
+                      "type": "date_picker",
+                      "valueType": "date"
+                    },
+                    {
+                      "columnSpan": 1,
+                      "disabled": true,
+                      "label": "Pinned",
+                      "name": "pinned",
+                      "nullable": false,
+                      "rules": [],
+                      "type": "toggle",
+                      "valueType": "bool"
+                    },
+                    {
+                      "columnSpan": 1,
+                      "disabled": true,
+                      "label": "Links",
+                      "name": "links",
+                      "nullable": true,
+                      "repeater": {
+                        "addable": true,
+                        "components": [
+                          {
+                            "columnSpan": 1,
+                            "disabled": true,
+                            "label": "Href",
+                            "name": "href",
+                            "nullable": true,
+                            "rules": [],
+                            "type": "text_input",
+                            "valueType": "string"
+                          }
+                        ],
+                        "deletable": true
+                      },
+                      "rules": [],
+                      "type": "repeater",
+                      "valueType": "json"
+                    }
+                  ],
+                  "deletable": true
+                },
+                "rules": [],
+                "type": "repeater",
+                "valueType": "json"
+              }
+            ],
+            "id": "content",
+            "label": "Content",
+            "type": "tab"
+          },
+          {
+            "columns": 1,
+            "components": [
+              {
+                "columnSpan": 1,
+                "disabled": true,
+                "label": "Serial",
+                "name": "serial",
+                "nullable": false,
+                "rules": [],
+                "type": "hidden",
+                "valueType": "i64"
+              }
+            ],
+            "id": "internal",
+            "label": "Internal",
+            "type": "tab"
+          }
+        ],
+        "type": "tabs"
+      },
+      {
+        "columnSpan": 1,
+        "disabled": true,
+        "label": "Draft",
+        "name": "draft",
+        "nullable": false,
+        "rules": [],
+        "type": "toggle",
+        "valueType": "bool"
+      },
+      {
+        "columnSpan": 1,
+        "disabled": true,
+        "label": "Stars",
+        "name": "stars",
+        "nullable": false,
+        "rules": [],
+        "type": "toggle",
+        "valueType": "i32"
+      },
+      {
+        "columnSpan": 1,
+        "disabled": true,
+        "label": "Cover",
+        "name": "cover",
+        "nullable": true,
+        "rules": [],
+        "shownWhen": {
+          "name": "serial",
+          "op": "eq",
+          "value": "9007199254740993"
+        },
+        "type": "text_input",
+        "valueType": "string"
+      },
+      {
+        "columnSpan": 1,
+        "disabled": true,
+        "label": "Title again",
+        "name": "title",
+        "nullable": false,
+        "rules": [],
+        "type": "text_input",
+        "valueType": "string"
+      }
+    ]
+  },
+  "infolist": {
+    "columns": 2,
+    "components": [
+      {
+        "columns": 2,
+        "components": [
+          {
+            "columnSpan": 1,
+            "label": "Title",
+            "multiline": true,
+            "name": "title",
+            "prefix": "#",
+            "type": "text_entry",
+            "valueType": "string"
+          },
+          {
+            "columnSpan": 2,
+            "label": "Summary",
+            "multiline": true,
+            "name": "summary",
+            "type": "text_entry",
+            "valueType": "string"
+          },
+          {
+            "columnSpan": 1,
+            "label": "Pin",
+            "multiline": true,
+            "name": "pin",
+            "password": true,
+            "type": "text_entry",
+            "valueType": "string"
+          },
+          {
+            "columnSpan": 1,
+            "label": "Level",
+            "multiline": true,
+            "name": "level",
+            "options": [
+              {
+                "label": "Easy",
+                "value": "easy"
+              },
+              {
+                "label": "Hard",
+                "value": "hard"
+              }
+            ],
+            "type": "text_entry",
+            "valueType": "string"
+          },
+          {
+            "columnSpan": 1,
+            "label": "Category",
+            "link": true,
+            "name": "category_id",
+            "relationship": {
+              "resource": "categories"
+            },
+            "type": "relation_entry",
+            "valueType": "i32"
+          }
+        ],
+        "label": "Basics",
+        "type": "section"
+      },
+      {
+        "columns": 1,
+        "components": [
+          {
+            "columns": 1,
+            "components": [
+              {
+                "columnSpan": 1,
+                "label": "Body",
+                "name": "body",
+                "type": "rich_text_entry",
+                "valueType": "json"
+              },
+              {
+                "columnSpan": 1,
+                "components": [
+                  {
+                    "columnSpan": 1,
+                    "label": "Question",
+                    "multiline": true,
+                    "name": "question",
+                    "type": "text_entry",
+                    "valueType": "string"
+                  },
+                  {
+                    "columnSpan": 1,
+                    "label": "Kind",
+                    "multiline": true,
+                    "name": "kind",
+                    "options": [
+                      {
+                        "label": "Text",
+                        "value": "text"
+                      },
+                      {
+                        "label": "Link",
+                        "value": "link"
+                      }
+                    ],
+                    "type": "text_entry",
+                    "valueType": "string"
+                  },
+                  {
+                    "columnSpan": 1,
+                    "label": "Url",
+                    "multiline": true,
+                    "name": "url",
+                    "shownWhen": {
+                      "name": "kind",
+                      "op": "eq",
+                      "value": "link"
+                    },
+                    "type": "text_entry",
+                    "valueType": "string"
+                  },
+                  {
+                    "columnSpan": 1,
+                    "label": "Asked on",
+                    "multiline": true,
+                    "name": "asked_on",
+                    "type": "text_entry",
+                    "valueType": "date"
+                  },
+                  {
+                    "columnSpan": 1,
+                    "label": "Pinned",
+                    "name": "pinned",
+                    "type": "boolean_entry",
+                    "valueType": "bool"
+                  },
+                  {
+                    "columnSpan": 1,
+                    "components": [
+                      {
+                        "columnSpan": 1,
+                        "label": "Href",
+                        "multiline": true,
+                        "name": "href",
+                        "type": "text_entry",
+                        "valueType": "string"
+                      }
+                    ],
+                    "label": "Links",
+                    "name": "links",
+                    "type": "repeatable_entry",
+                    "valueType": "json"
+                  }
+                ],
+                "label": "Faq",
+                "name": "faq",
+                "type": "repeatable_entry",
+                "valueType": "json"
+              }
+            ],
+            "id": "content",
+            "label": "Content",
+            "type": "tab"
+          }
+        ],
+        "type": "tabs"
+      },
+      {
+        "columnSpan": 1,
+        "label": "Draft",
+        "name": "draft",
+        "type": "boolean_entry",
+        "valueType": "bool"
+      },
+      {
+        "columnSpan": 1,
+        "label": "Stars",
+        "multiline": true,
+        "name": "stars",
+        "type": "text_entry",
+        "valueType": "i32"
+      },
+      {
+        "columnSpan": 1,
+        "label": "Cover",
+        "multiline": true,
+        "name": "cover",
+        "shownWhen": {
+          "name": "serial",
+          "op": "eq",
+          "value": "9007199254740993"
+        },
+        "type": "text_entry",
+        "valueType": "string"
+      },
+      {
+        "columnSpan": 1,
+        "label": "Title again",
+        "multiline": true,
+        "name": "title",
+        "type": "text_entry",
+        "valueType": "string"
+      }
+    ]
+  },
+  "operation": "view",
+  "resource": {
+    "label": "Lesson",
+    "pluralLabel": "Lessons",
+    "slug": "lessons",
+    "titleField": "title"
+  },
+  "schemaVersion": 2,
+  "table": {
+    "actions": [],
+    "columns": [
+      {
+        "label": "Title",
+        "name": "title",
+        "searchable": false,
+        "sortable": false,
+        "type": "text",
+        "valueType": "string"
+      },
+      {
+        "label": "Summary",
+        "name": "summary",
+        "searchable": false,
+        "sortable": false,
+        "type": "text",
+        "valueType": "string"
+      },
+      {
+        "label": "Pin",
+        "name": "pin",
+        "searchable": false,
+        "sortable": false,
+        "type": "text",
+        "valueType": "string"
+      },
+      {
+        "label": "Level",
+        "name": "level",
+        "searchable": false,
+        "sortable": false,
+        "type": "text",
+        "valueType": "string"
+      },
+      {
+        "label": "Category",
+        "name": "category_id",
+        "relationship": {
+          "resource": "categories"
+        },
+        "searchable": false,
+        "sortable": false,
+        "type": "text",
+        "valueType": "i32"
+      },
+      {
+        "label": "Draft",
+        "name": "draft",
+        "searchable": false,
+        "sortable": false,
+        "type": "boolean",
+        "valueType": "bool"
+      }
+    ],
+    "filters": [],
+    "perPageOptions": [
+      10,
+      25,
+      50,
+      100
+    ],
+    "searchable": false
+  },
+  "vocabularyVersion": 15
+}

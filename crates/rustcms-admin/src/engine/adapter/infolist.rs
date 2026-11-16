@@ -90,6 +90,85 @@ pub(super) fn check_infolist<C: ColumnTrait, E: EntityTrait>(
     crate::engine::conditions::FormConditions::new(&format!("{owner} (infolist)"), &infolist.components, &kind_of);
 }
 
+/// The view page of a resource without `infolist()`: its form shown read-only,
+/// each input as the entry that draws its value as the form's read-only view
+/// always has (plan branch 4). Inputs that show nothing there (hidden,
+/// belongs-to-many, secrets, relationship repeaters) are left out; an entry
+/// that would not fit its field falls back to text, so no form fails at boot.
+/// Not checked as a declared infolist: the form's own checks hold (a field
+/// may appear twice, a condition may name a hidden input).
+pub(super) fn from_form<C: ColumnTrait>(
+    form: &Form,
+    fields: &[Field],
+    columns: &HashMap<String, ColumnInfo<C>>,
+) -> Infolist {
+    let components = entries_of(&form.components, &|input| {
+        let field = fields.iter().find(|f| f.name == input.name && f.secret.is_none())?;
+        form_entry(input, Some((field, columns.get(&field.name)?.kind)))
+    });
+    Infolist { columns: form.columns, components, width: None }
+}
+
+/// The entry showing `input` read-only: of a field (`field`, with its column
+/// kind), or of a repeater row (`None`: the row's value, of the input's kind).
+fn form_entry(input: &Input, field: Option<(&Field, FieldKind)>) -> Option<Entry> {
+    use crate::engine::repeater::row_kind;
+    let json = |f: &Field, kind: FieldKind| kind == FieldKind::Json && !f.rich_text && f.media.is_none();
+    let kind = match (input.kind, field) {
+        (InputType::Hidden | InputType::BelongsToMany | InputType::Secret | InputType::SecretMap, _) => return None,
+        (InputType::Repeater, _) if input.repeater.as_deref().is_none_or(|spec| spec.relationship) => return None,
+        (InputType::Repeater, Some((f, kind))) if !json(f, kind) => EntryType::TextEntry,
+        (InputType::Repeater, _) => EntryType::RepeatableEntry,
+        (InputType::Select, Some((f, _))) if f.belongs_to.is_some() => EntryType::RelationEntry,
+        (InputType::Toggle | InputType::Checkbox, Some((_, FieldKind::Bool)) | None) => EntryType::BooleanEntry,
+        (InputType::KeyValue, Some((f, kind))) if json(f, kind) => EntryType::KeyValueEntry,
+        (InputType::KeyValue, None) => EntryType::KeyValueEntry,
+        (InputType::FileUpload, Some((f, _))) if f.media.is_some() => EntryType::MediaEntry,
+        (InputType::RichEditor, Some((f, _))) if f.rich_text => EntryType::RichTextEntry,
+        _ => EntryType::TextEntry,
+    };
+    let mut entry = Entry::new(input.name.clone(), kind);
+    entry.label = input.label.clone();
+    entry.column_span = input.column_span;
+    entry.shown_when = input.shown_when.clone();
+    if field.is_none() {
+        entry.row_kind = Some(row_kind(input));
+    }
+    if kind == EntryType::TextEntry {
+        let d = &mut entry.display;
+        // The read-only view keeps line breaks, and JSON indented, everywhere.
+        d.multiline = true;
+        d.options = input.options.clone();
+        d.list = input.kind == InputType::CheckboxList;
+        if input.kind == InputType::TextInput {
+            d.password = input.mode == Some("password");
+            d.prefix = input.prefix.clone();
+            d.suffix = input.suffix.clone();
+        }
+    }
+    if kind == EntryType::RepeatableEntry {
+        let spec = input.repeater.as_deref()?;
+        entry.components = entries_of(&spec.components, &|input| form_entry(input, None));
+    }
+    Some(entry)
+}
+
+/// `components` with each input as the entry `entry` makes of it (none:
+/// left out), in their layouts (layouts left empty dropped).
+fn entries_of(components: &[Component], entry: &dyn Fn(&Input) -> Option<Entry>) -> Vec<Component> {
+    components
+        .iter()
+        .filter_map(|component| match component {
+            Component::Input(input) => entry(input).map(Component::Entry),
+            Component::Layout(layout) => {
+                let children = entries_of(&layout.children, entry);
+                (!children.is_empty()).then(|| Component::Layout(Layout { children, ..layout.clone() }))
+            }
+            Component::Entry(_) => None,
+        })
+        .collect()
+}
+
 fn entry_label(kind: EntryType) -> &'static str {
     match kind {
         EntryType::TextEntry => "TextEntry",
@@ -145,7 +224,8 @@ fn row_components(components: &[Component], t: &dyn Fn(&str) -> String) -> Vec<C
         .iter()
         .filter_map(|component| match component {
             Component::Entry(entry) => {
-                Some(ComponentSchema::Entry(entry_schema(entry, &humanize(&entry.name), "json", None, false, false, t)))
+                let (label, value_type) = (humanize(&entry.name), entry.row_kind.map_or("json", FieldKind::name));
+                Some(ComponentSchema::Entry(entry_schema(entry, &label, value_type, None, false, false, t)))
             }
             Component::Layout(layout) => {
                 let children = row_components(&layout.children, t);

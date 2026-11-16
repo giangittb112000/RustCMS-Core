@@ -1,0 +1,53 @@
+{
+  "abilities": {
+    "delete": true,
+    "update": true,
+    "view": true
+  },
+  "data": {
+    "body": {
+      "content": [
+        {
+          "content": [
+            {
+              "text": "Hello",
+              "type": "text"
+            }
+          ],
+          "type": "paragraph"
+        }
+      ],
+      "type": "doc",
+      "version": 1
+    },
+    "category_id": 1,
+    "cover": "cover.png",
+    "draft": false,
+    "faq": [
+      {
+        "asked_on": "2026-11-16",
+        "kind": "link",
+        "links": [
+          {
+            "href": "/a"
+          }
+        ],
+        "pinned": true,
+        "question": "Why?",
+        "ref": "r1",
+        "url": "https://example.com"
+      }
+    ],
+    "level": "hard",
+    "pin": "1234",
+    "serial": "9007199254740993",
+    "stars": 4,
+    "summary": "Line one\nLine two",
+    "title": "Fractions"
+  },
+  "key": "1",
+  "labels": {
+    "category_id": "Tools"
+  },
+  "title": "Fractions"
+}

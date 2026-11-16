@@ -9,7 +9,9 @@ import { useForm } from "react-hook-form";
 import { SessionContext } from "@/api/context";
 import type { ComponentSchema, InputSchema, LayoutSchema } from "@/api/types";
 import { createSession } from "@/app/session";
-import { Components, ReadOnlyComponents, formWidthClass } from "@/renderers/form";
+import { Components, formWidthClass } from "@/renderers/form";
+import { InfolistRenderer } from "@/renderers/infolist";
+import { infolistOf } from "./view";
 import { type FormValues, defaultValues, inputsOf } from "@/schema/form";
 
 const text = (name: string, label: string, more: Partial<InputSchema> = {}): InputSchema => ({
@@ -95,7 +97,7 @@ it("shows a prefix and a suffix inside the input, never in the value, read with 
 
 it("lays a viewed record out the same way, its prefix and suffix around the value", () => {
   const { container } = render(
-    <Providers><ReadOnlyComponents components={editor()} data={{ title: "Hi", slug: "hello", status: "draft" }} slug="posts" record="1" /></Providers>,
+    <Providers><InfolistRenderer infolist={infolistOf(editor())} data={{ title: "Hi", slug: "hello", status: "draft" }} slug="posts" recordKey="1" /></Providers>,
   );
   expect(container.textContent).toContain("/posts/hello.html");
   expect(container.querySelector("aside")).toHaveClass("lg:sticky");

@@ -39,19 +39,6 @@ function selectedLabel(options: SelectOption[] | undefined, value: string) {
   return value === "" ? "" : (current?.label ?? `#${keyOf(value)}`);
 }
 
-/** View labels use only the authorized selected-key endpoint, never a search or related record fetch. */
-export function RelationValue({ slug, field, record, value }: {
-  slug: string; field: string; record: string; value: string;
-}) {
-  const t = useT();
-  const selected = useSelectedOption(slug, field, record, value);
-  return <span>
-    {selectedLabel(selected.data, value)}
-    {selected.isLoading && <span className="ml-2 text-xs text-muted-foreground" role="status">{t("relation.loadingLabel")}</span>}
-    {selected.error && <span className="ml-2 text-xs text-muted-foreground">{t("relation.labelUnavailable")}</span>}
-  </span>;
-}
-
 /**
  * Select over related records, loaded from the field's options endpoint
  * (scoped and authorized by the server; labels the user may not read come back as `#key`).

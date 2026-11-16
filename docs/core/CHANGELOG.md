@@ -86,6 +86,14 @@ All notable changes are documented here. The format follows
   stay text.
 
 ### Changed
+- Admin panel: a record's view page without `infolist()` is drawn by an
+  infolist made from its form (plan branch 4), one read-only renderer instead
+  of two; values look as before. A `belongs_to` field's title comes with the
+  record (no request per value) and links to the related record when the user
+  may list it. The view schema carries `infolist` only for a record (with a
+  key). View page conditions read fields as the edit form does (with their
+  kind, `null` when the form hides them); a list of records in a text entry
+  shows as indented JSON.
 - Validation issues: `{min}`, `{max}` and `{bytes}` placeholders only match
   numbers, so an application's message such as "must be at least 18 years
   old" stays `custom`.

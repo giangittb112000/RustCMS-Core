@@ -8,7 +8,7 @@ import { render, screen, waitFor, within } from "@testing-library/react";
 import { http, HttpResponse, delay } from "msw";
 import { setupServer } from "msw/node";
 import { SessionContext } from "@/api/context";
-import type { EntrySchema, InfolistSchema } from "@/api/types";
+import type { ComponentSchema, EntrySchema, InfolistSchema } from "@/api/types";
 import { createAppRouter } from "@/app/router";
 import { createSession } from "@/app/session";
 import { registerEntry, resetWidgets } from "@/lib/widgets";
@@ -173,4 +173,81 @@ it("draws custom entries with their script, and unknown entries as text", () => 
   expect(valueOf("rating")).toHaveTextContent("★★★");
   expect(valueOf("future")).toHaveTextContent("raw");
   expect(valueOf("future")).toHaveAttribute("data-fallback", "true");
+});
+
+it("draws a repeatable entry's rows from each row, not as a layout", () => {
+  const faq = entry("faq", {
+    type: "repeatable_entry", valueType: "json",
+    components: [entry("question"), entry("asked_on", { valueType: "date" })],
+  });
+  const { container } = draw(list(faq), { faq: [{ question: "Why?", asked_on: "2026-11-16" }, { question: "How?" }] });
+  const rows = container.querySelectorAll("ol > li");
+  expect(rows).toHaveLength(2);
+  expect(within(rows[0] as HTMLElement).getByText("Why?")).toBeInTheDocument();
+  expect(rows[0]!.querySelector("time")?.getAttribute("dateTime")).toBe("2026-11-16");
+  expect(within(rows[1] as HTMLElement).getByText("How?")).toBeInTheDocument();
+});
+
+it("keeps line breaks only where asked, and in values shown as raw JSON", () => {
+  const faq = entry("faq", { type: "repeatable_entry", valueType: "json", components: [entry("question")] });
+  const { container } = draw(
+    list(faq, entry("note", { multiline: true }), entry("flag", { type: "boolean_entry", valueType: "bool" })),
+    { faq: [{ question: "One\nTwo" }], note: "A\nB", flag: { odd: 1 } },
+  );
+  // A row's text entry without `multiline` does not inherit its row's breaks.
+  expect(screen.getByText("One Two", { normalizer: (t) => t.replace(/\s+/g, " ") }).closest(".whitespace-pre-wrap")).toBeNull();
+  expect(screen.getByText(/A\s+B/).closest(".whitespace-pre-wrap")).not.toBeNull();
+  // A boolean entry over a value that is not one: indented JSON, breaks kept.
+  expect(container.querySelector("pre, .whitespace-pre-wrap")?.textContent).toBeTruthy();
+  expect(screen.getByText(/"odd": 1/).closest(".whitespace-pre-wrap")).not.toBeNull();
+});
+
+it("marks badge dates with <time>", () => {
+  const { container } = draw(list(entry("day", { valueType: "date", badge: true })), { day: "2026-11-16" });
+  expect(container.querySelector("time")?.getAttribute("dateTime")).toBe("2026-11-16");
+});
+
+it("reads fields only the form has with their kind, and as null when the form hides them", () => {
+  const input = (name: string, more: object = {}) =>
+    ({ type: "hidden", name, label: name, valueType: "string", nullable: true, disabled: true, rules: [], columnSpan: 1, ...more }) as unknown as ComponentSchema;
+  const form = [
+    input("rate", { valueType: "decimal" }),
+    input("on", { type: "toggle", valueType: "bool" }),
+    input("flag", { shownWhen: { op: "is_true", name: "on" } }),
+  ];
+  const shownBy = (shownWhen: object) => entry("note", { shownWhen } as Partial<EntrySchema>);
+  const shows = (when: object, data: Record<string, unknown>, withForm = true) => {
+    const queryClient = new QueryClient();
+    const session = createSession({ basePath: "", apiPath: "http://localhost/admin/api" }, queryClient, () => {});
+    const { unmount } = render(
+      <SessionContext.Provider value={session}><QueryClientProvider client={queryClient}>
+        <InfolistRenderer infolist={list(shownBy(when))} form={withForm ? form : undefined} data={{ note: "Shown", ...data }} />
+      </QueryClientProvider></SessionContext.Provider>,
+    );
+    const found = screen.queryByText("Shown") !== null;
+    unmount();
+    return found;
+  };
+  // A decimal compares by value ("10.50" is 10.5), as the form does; without the form, as written.
+  expect(shows({ op: "eq", name: "rate", value: "10.5" }, { rate: "10.50" })).toBe(true);
+  expect(shows({ op: "eq", name: "rate", value: "10.5" }, { rate: "10.50" }, false)).toBe(false);
+  // A field the form hides reads as null, though the record holds a value.
+  expect(shows({ op: "filled", name: "flag" }, { on: false, flag: "x" })).toBe(false);
+  expect(shows({ op: "filled", name: "flag" }, { on: true, flag: "x" })).toBe(true);
+  // The same when the infolist shows the field itself, without a condition.
+  const queryClient = new QueryClient();
+  const session = createSession({ basePath: "", apiPath: "http://localhost/admin/api" }, queryClient, () => {});
+  render(
+    <SessionContext.Provider value={session}><QueryClientProvider client={queryClient}>
+      <InfolistRenderer infolist={list(entry("flag"), shownBy({ op: "filled", name: "flag" }))} form={form} data={{ note: "Shown", on: false, flag: "x" }} />
+    </QueryClientProvider></SessionContext.Provider>,
+  );
+  expect(screen.queryByText("Shown")).toBeNull();
+});
+
+it("shows records in a list as indented JSON", () => {
+  draw(list(entry("items", { valueType: "json", multiline: true })), { items: [{ a: 1 }, { b: 2 }] });
+  const shown = screen.getByText(/"a": 1/);
+  expect(shown.textContent).toBe(JSON.stringify([{ a: 1 }, { b: 2 }], null, 2));
+  expect(shown.closest(".whitespace-pre-wrap")).not.toBeNull();
 });

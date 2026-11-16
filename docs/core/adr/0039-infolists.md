@@ -206,3 +206,25 @@ its timeout exceeds 30 seconds.
 - The new route needs a case in `fixtures/authz/admin.toml`.
 - Making infolists the default view page, and entries for repeaters, are
   later branches (plan branches 3 and 4).
+
+## Later: the default view page (plan branch 4)
+
+A resource without `infolist()` now gets one made from its form at boot
+(`from_form`, not public: decision 10 holds). Each input becomes the entry
+that draws its value as the read-only form did (the guide's table), so the
+panel has one read-only renderer; `ReadOnlyComponents` is gone. An entry that
+would not fit its field falls back to `TextEntry`, and the made infolist is
+not put through the boot checks above: the form's checks hold (a field may
+appear twice, a condition may name a hidden input), so no application fails
+at boot.
+
+- The view schema carries `infolist` only with a key (a record's view page);
+  lists, imports and relation sections ask without one. The form is still
+  sent: the dashboard reads it.
+- Entries of repeater rows made from inputs carry their row value's kind, so
+  dates in rows show as dates.
+- One visible change: a `belongs_to` select shows a `RelationEntry`, whose
+  title comes with the record (no request per value) and links when the user
+  may list the related resource.
+- Vocabulary unchanged (15): nothing new on the wire but where `infolist`
+  appears.

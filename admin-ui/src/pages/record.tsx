@@ -16,7 +16,7 @@ import { Page, PageHeader } from "@/components/layout";
 import { Card, CardContent } from "@/components/ui/card";
 import { Dialog } from "@/components/ui/dialog";
 import { cn } from "@/lib/utils";
-import { Components, ReadOnlyComponents, formWidthClass, gridCols } from "@/renderers/form";
+import { Components, formWidthClass, gridCols } from "@/renderers/form";
 import { MEDIA_SLUG, MediaPreview } from "@/renderers/media-library";
 import { InfolistRenderer, hasComputed } from "@/renderers/infolist";
 import { ActionNoticeView, RecordActions, useActionRunner } from "@/components/actions";
@@ -409,13 +409,12 @@ export function ViewPage({ slug, recordKey }: { slug: string; recordKey: string 
       {slug === MEDIA_SLUG && <MediaPreview record={record.data} />}
       <Card>
         <CardContent className={cn("grid grid-cols-1 gap-x-6 gap-y-6 p-5 sm:p-6", gridCols(s.infolist ? s.infolist.columns : s.form.columns))}>
-          {s.infolist ? (
-            <InfolistRenderer infolist={s.infolist} data={record.data.data} labels={record.data.labels} slug={slug} recordKey={recordKey}
+          {/* The server always sends a record's infolist: declared, or made from the form. */}
+          {s.infolist && (
+            <InfolistRenderer infolist={s.infolist} form={s.form.components} data={record.data.data} labels={record.data.labels} slug={slug} recordKey={recordKey}
               computed={!computedEntries ? undefined
                 : computed.data ? { status: "ready", data: computed.data.data, failed: computed.data.failed }
                 : computed.isError ? { status: "error" } : { status: "loading" }} />
-          ) : (
-            <ReadOnlyComponents components={s.form.components} data={record.data.data} slug={slug} record={recordKey} />
           )}
         </CardContent>
       </Card>

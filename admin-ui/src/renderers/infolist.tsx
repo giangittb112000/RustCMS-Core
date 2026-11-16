@@ -12,7 +12,8 @@ import { cn } from "@/lib/utils";
 import { asDocument } from "@/lib/rich-text";
 import type { DocNode } from "@/lib/rich-text";
 import { formatWireDate, useLocale, useT } from "@/i18n";
-import { formConditions, hasConditions } from "@/schema/conditions";
+import { isDateKind } from "@/lib/wire";
+import { formConditions, hasConditions, hiddenFields } from "@/schema/conditions";
 import { isEntry, isLayout, isTextObject } from "@/schema/form";
 import { SchemaLayout, SplitLayout, TabsLayout, always, gridCols, readOnlyText, shownWith, span, withShownChildren } from "./form";
 import { MediaThumb } from "./media";
@@ -39,6 +40,11 @@ export type ComputedState = { status: "loading" } | { status: "error" } | { stat
 
 interface Context {
   data: Data;
+  /**
+   * The record's form (view pages): the kinds and conditions of fields the
+   * infolist does not show, which its conditions may name (a hidden input).
+   */
+  form?: ComponentSchema[];
   /** Titles of related records (`Envelope.labels`). */
   labels?: Record<string, string>;
   computed?: ComputedState;
@@ -64,10 +70,18 @@ export function hasComputed(components: ComponentSchema[]): boolean {
 /** An infolist's components, its conditions evaluated on `data` (the stored values). */
 export function InfolistRenderer({ infolist, ...ctx }: { infolist: InfolistSchema } & Context) {
   const { components } = infolist;
-  const shown = useMemo(
-    () => (hasConditions(components) ? shownWith(formConditions(components), ctx.data as Record<string, unknown>) : always),
-    [components, ctx.data],
-  );
+  const { form, data } = ctx;
+  const shown = useMemo(() => {
+    if (!hasConditions(components)) return always;
+    const own = formConditions(components);
+    if (!form) return shownWith(own, data as Record<string, unknown>);
+    // As the edit form reads them: each field with its kind (the form's for fields the
+    // infolist does not show), and as null when the form hides it.
+    const edit = formConditions(form);
+    const values: Record<string, unknown> = { ...data };
+    for (const name of hiddenFields(edit, values)) values[name] = null;
+    return shownWith({ fields: own.fields, kinds: new Map([...edit.kinds, ...own.kinds]) }, values);
+  }, [components, form, data]);
   return <Body components={components} ctx={ctx} shown={shown} />;
 }
 
@@ -99,6 +113,11 @@ function Body({ components, ctx, shown }: {
       </dl>
     );
   })}</>;
+}
+
+/** A value an entry cannot draw its way, as text (JSON indented, line breaks kept). */
+function Raw({ value }: { value: JsonValue }) {
+  return <span className="whitespace-pre-wrap">{readOnlyText(value)}</span>;
 }
 
 function Muted({ children }: { children: React.ReactNode }) {
@@ -139,14 +158,14 @@ function Shown({ entry, value, ctx }: { entry: EntrySchema; value: JsonValue; ct
     case "boolean_entry":
       return <BooleanValue entry={entry} value={value} />;
     case "key_value_entry":
-      return isTextObject(value) ? <KeyValues value={value} /> : <>{readOnlyText(value)}</>;
+      return isTextObject(value) ? <KeyValues value={value} /> : <Raw value={value} />;
     case "media_entry": {
       const ids = (Array.isArray(value) ? value : [value]).filter((v): v is string => typeof v === "string");
       return <div className="flex flex-wrap gap-3">{ids.map((id) => <MediaThumb key={id} id={id} size={entry.size} link={entry.gallery} />)}</div>;
     }
     case "repeatable_entry": {
       // Each row shown by the entry's own entries, over the row's values.
-      if (!Array.isArray(value)) return <>{readOnlyText(value)}</>;
+      if (!Array.isArray(value)) return <Raw value={value} />;
       if (value.length === 0) return <Muted>{t("repeater.empty")}</Muted>;
       const rows = { columns: 2, components: entry.components ?? [] };
       return (
@@ -154,7 +173,8 @@ function Shown({ entry, value, ctx }: { entry: EntrySchema; value: JsonValue; ct
           {value.map((row, i) => (
             <li key={i} className="rounded-lg border border-border p-3">
               <div className="grid grid-cols-1 gap-x-6 gap-y-4 md:grid-cols-2">
-                <InfolistRenderer infolist={rows} data={(row && typeof row === "object" && !Array.isArray(row) ? row : {}) as Data} />
+                <InfolistRenderer infolist={rows} data={(row && typeof row === "object" && !Array.isArray(row) ? row : {}) as Data}
+                  slug={ctx.slug} recordKey={ctx.recordKey} />
               </div>
             </li>
           ))}
@@ -163,7 +183,7 @@ function Shown({ entry, value, ctx }: { entry: EntrySchema; value: JsonValue; ct
     }
     case "rich_text_entry": {
       const doc = asDocument(value);
-      if (!doc) return <>{readOnlyText(value)}</>;
+      if (!doc) return <Raw value={value} />;
       return <>{entry.outline && <Outline nodes={doc.content} />}<RichTextView doc={doc} /></>;
     }
     default:
@@ -174,7 +194,7 @@ function Shown({ entry, value, ctx }: { entry: EntrySchema; value: JsonValue; ct
 
 function RelationValue({ entry, value, ctx }: { entry: EntrySchema; value: JsonValue; ctx: Context }) {
   const key = typeof value === "string" || typeof value === "number" ? String(value) : null;
-  if (key === null) return <>{readOnlyText(value)}</>;
+  if (key === null) return <Raw value={value} />;
   const label = ctx.labels?.[entry.name] ?? `#${key}`;
   // `#key`: the user may not view the related record.
   if (!entry.link || !entry.relationship || label === `#${key}`) return <span>{label}</span>;
@@ -187,7 +207,7 @@ function RelationValue({ entry, value, ctx }: { entry: EntrySchema; value: JsonV
 
 function BooleanValue({ entry, value }: { entry: EntrySchema; value: JsonValue }) {
   const t = useT();
-  if (typeof value !== "boolean") return <>{readOnlyText(value)}</>;
+  if (typeof value !== "boolean") return <Raw value={value} />;
   const label = entry.labels ? entry.labels[value ? 0 : 1] : value ? t("value.yes") : t("value.no");
   const color = entry.colors?.find((c) => same(c.value, value))?.color;
   if (!color) return <>{label}</>;
@@ -234,7 +254,7 @@ function TextValue({ entry, value }: { entry: EntrySchema; value: JsonValue }) {
     const option = entry.options?.find((o) => same(o.value, item));
     if (option) return option.label;
     if (typeof item === "boolean") return item ? t("value.yes") : t("value.no");
-    if (typeof item === "string" && ["instant", "local_datetime", "date"].includes(entry.valueType)) {
+    if (typeof item === "string" && isDateKind(entry.valueType)) {
       return formatWireDate(entry.valueType, item) ?? item;
     }
     if (entry.decimals !== undefined && (typeof item === "number" || typeof item === "string")) {
@@ -254,16 +274,20 @@ function TextValue({ entry, value }: { entry: EntrySchema; value: JsonValue }) {
       ? <div className="flex flex-wrap gap-1.5">{items.map((item, i) => one(item, i))}</div>
       : <ul className="space-y-1">{items.map((item, i) => <li key={i}>{one(item)}</li>)}</ul>;
   }
+  // Records in a list: one JSON value, indented (joined, they would read as one line).
+  if (Array.isArray(value) && value.some((item) => item !== null && typeof item === "object")) return one(value);
   if (Array.isArray(value)) return <>{items.map(label).join(", ")}</>;
   return one(value);
 }
 
 function Item({ entry, item, text }: { entry: EntrySchema; item: JsonValue; text: string }) {
   const limited = entry.limit !== undefined && [...text].length > entry.limit ? `${[...text].slice(0, entry.limit).join("")}…` : text;
-  let content: React.ReactNode = limited;
+  // Dates and times as the user reads them, the wire value for machines.
+  const shown = typeof item === "string" && isDateKind(entry.valueType) ? <time dateTime={item}>{limited}</time> : limited;
+  let content: React.ReactNode = shown;
   if (entry.badge) {
     const color = entry.colors?.find((c) => same(c.value, item))?.color ?? "gray";
-    content = <Badge color={BADGE_COLORS.has(color) ? color : "gray"}>{limited}</Badge>;
+    content = <Badge color={BADGE_COLORS.has(color) ? color : "gray"}>{shown}</Badge>;
   } else if (entry.url && typeof item === "string" && /^https?:\/\//i.test(item)) {
     content = <a href={item} target="_blank" rel="noopener noreferrer" className="text-primary underline-offset-4 hover:underline">{limited}</a>;
   }
