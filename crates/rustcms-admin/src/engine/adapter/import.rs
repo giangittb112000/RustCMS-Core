@@ -86,7 +86,7 @@ impl<R: Resource> ResourceAdapter<R> {
         // Conditions (ADR 0037) as the create will apply them; an update's
         // depend on the stored record, read only when the import runs.
         if op == Operation::Create {
-            self.apply_conditions(ctx, op, &mut data, None)?;
+            self.apply_conditions(ctx, op, &mut data, None, None)?;
         }
         Ok(data)
     }

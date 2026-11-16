@@ -224,7 +224,7 @@ function Layout({ layout, ctx }: { layout: LayoutSchema; ctx: FormContext }) {
   const shown = useContext(ShownContext) ?? always;
   // Tabs and panes are children of their layout: hidden ones are left out.
   if (layout.type === "tabs") {
-    return <TabsLayout layout={withShownChildren(layout, shown)} errors={ctx.errors} attempt={ctx.submitCount} render={(tab) => <ComponentList components={tab.components} ctx={ctx} />} />;
+    return <TabsLayout layout={layout} shown={shown} errors={ctx.errors} attempt={ctx.submitCount} render={(tab) => <ComponentList components={tab.components} ctx={ctx} />} />;
   }
   if (layout.type === "split") {
     return <SplitLayout layout={withShownChildren(layout, shown)} render={(pane) => <ComponentList components={pane.components} ctx={ctx} />} />;
@@ -242,28 +242,37 @@ function Layout({ layout, ctx }: { layout: LayoutSchema; ctx: FormContext }) {
  * error is shown; nested tabs do the same, so every enclosing tab opens. The
  * form then focuses that input.
  */
-function TabsLayout({ layout, errors, attempt, render }: {
+function TabsLayout({ layout, shown = always, errors, attempt, render }: {
   layout: LayoutSchema;
+  /** Which tabs the form's conditions show (ADR 0037); the others are left out. */
+  shown?: (condition: Condition | undefined) => boolean;
   errors?: FieldErrors<FormValues>;
   attempt?: number;
   render: (tab: LayoutSchema) => React.ReactNode;
 }) {
   const t = useT();
   const base = useId();
-  const tabs = layout.components.filter((c): c is LayoutSchema => !isInput(c));
-  const [active, setActive] = useState(0);
+  // The open tab is remembered by its place among the declared tabs: a tab
+  // hidden or shown before it does not move the user to another one, and it
+  // is open again when it is shown again.
+  const shownTabs = layout.components
+    .map((c, declared) => ({ c, declared }))
+    .filter((e): e is { c: LayoutSchema; declared: number } => !isInput(e.c) && shown(e.c.shownWhen));
+  const tabs = shownTabs.map((e) => e.c);
+  const [active, setActive] = useState(() => shownTabs[0]?.declared ?? 0);
   const refs = useRef<(HTMLButtonElement | null)[]>([]);
-  const current = Math.min(active, Math.max(tabs.length - 1, 0));
+  const current = Math.max(shownTabs.findIndex((e) => e.declared === active), 0);
   const failing = tabs.map((tab) => inputsOf(tab.components).filter((i) => errors?.[i.name]).map((i) => i.name));
   const signature = failing.map((names) => names.join(",")).join("|");
   useEffect(() => {
     const index = failing.findIndex((names) => names.length > 0);
-    if (index >= 0) setActive(index);
+    if (index >= 0) setActive(shownTabs[index]!.declared);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [signature, attempt]);
+  const open = (i: number) => setActive(shownTabs[i]!.declared);
   const select = (index: number) => {
     const next = (index + tabs.length) % tabs.length;
-    setActive(next);
+    open(next);
     refs.current[next]?.focus();
   };
   const onKey = (e: React.KeyboardEvent) => {
@@ -278,7 +287,7 @@ function TabsLayout({ layout, errors, attempt, render }: {
     <div className="col-span-full min-w-0">
       <div role="tablist" aria-label={layout.label ?? t("form.sections")} className="flex flex-wrap gap-1 border-b border-border" onKeyDown={onKey}>
         {tabs.map((tab, i) => {
-          const id = tab.id ?? String(i);
+          const id = tab.id ?? String(shownTabs[i]!.declared);
           const count = failing[i]?.length ?? 0;
           return (
             <button
@@ -292,7 +301,7 @@ function TabsLayout({ layout, errors, attempt, render }: {
               aria-selected={i === current}
               aria-controls={`${base}-panel-${id}`}
               tabIndex={i === current ? 0 : -1}
-              onClick={() => setActive(i)}
+              onClick={() => open(i)}
               className={cn(
                 "-mb-px inline-flex min-h-9 items-center gap-2 border-b-2 px-3 text-sm font-medium focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
                 i === current ? "border-foreground text-foreground" : "border-transparent text-muted-foreground hover:text-foreground",
@@ -310,7 +319,7 @@ function TabsLayout({ layout, errors, attempt, render }: {
         })}
       </div>
       {tabs.map((tab, i) => {
-        const id = tab.id ?? String(i);
+        const id = tab.id ?? String(shownTabs[i]!.declared);
         return (
           <div key={id} role="tabpanel" id={`${base}-panel-${id}`} aria-labelledby={`${base}-tab-${id}`} hidden={i !== current} className="pt-5">
             <div className={cn("grid grid-cols-1 gap-x-6 gap-y-6", gridCols(tab.columns))}>{render(tab)}</div>
@@ -344,7 +353,7 @@ function ReadOnlyBody({ components, data, slug, record, shown }: {
   return <>{components.map((component, index) => {
     if (!shown(component.shownWhen)) return null;
     if (!isInput(component) && component.type === "tabs") {
-      return <TabsLayout key={`layout-${index}`} layout={withShownChildren(component, shown)} render={(tab) =>
+      return <TabsLayout key={`layout-${index}`} layout={component} shown={shown} render={(tab) =>
         <ReadOnlyBody components={tab.components} data={data} slug={slug} record={record} shown={shown} />} />;
     }
     if (!isInput(component) && component.type === "split") {

@@ -29,6 +29,22 @@
    To upgrade to another version than the command's, install that command
    first (`rustcms self-update --version vX.Y.Z`).
 
+## From 0.12.1 to 0.13.0
+
+No migration. To roll back, install 0.12.1 again; no data changes shape.
+
+- **New schema vocabulary.** The panel and the server move together (the
+  admin panel is embedded): nothing to do, unless an application builds
+  `InputSchema` or `LayoutSchema` by hand (new members `number`,
+  `shownWhen`, `clearWhenHidden`).
+- **Relationship select search.** Each word of a search must match one of the
+  title's fields: with `title("name")`, a search of several words no longer
+  matches only that exact phrase. Titles with an empty value are left out of
+  `titles()`.
+- **Name clash.** `rustcms_admin::Condition` (form conditions) can clash with
+  `sea_orm::Condition` when an application glob-imports both
+  (`use rustcms_admin::*; use sea_orm::*;`): import the one you use by name.
+
 ## From 0.12.0 to 0.12.1
 
 No migration. To roll back, install 0.12.0 again.

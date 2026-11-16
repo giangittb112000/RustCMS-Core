@@ -5,6 +5,7 @@ import { Components, ReadOnlyComponents } from "@/renderers/form";
 import { formConditions, hiddenFields } from "@/schema/conditions";
 import { type FormValues, defaultValues, hiddenNames, inputsOf, payloadOf } from "@/schema/form";
 import { editResolver } from "@/schema/resolver";
+import { boundInput, boundValue } from "@/pages/relations";
 import cases from "../../fixtures/conditions/cases.json";
 
 // The cases the Rust engine runs too (engine/conditions.rs): both sides hide the same fields.
@@ -109,4 +110,49 @@ it("shows the view page by the stored values", () => {
   expect(screen.queryByText("URL")).toBeNull();
   expect(screen.getByText("Discount")).toBeInTheDocument();
   expect(screen.getByText("3")).toBeInTheDocument();
+});
+
+it("keeps the open tab when a tab before it is shown or hidden", () => {
+  const tabs: ComponentSchema[] = [
+    input("on_sale", { label: "On sale", type: "toggle", valueType: "bool", nullable: false }),
+    {
+      type: "tabs", columns: 1, components: [
+        {
+          type: "tab", id: "sale", label: "Sale", columns: 1, shownWhen: { op: "is_true", name: "on_sale" },
+          components: [input("discount", { label: "Discount", type: "number_input", valueType: "i32" })],
+        },
+        { type: "tab", id: "main", label: "Main", columns: 1, components: [input("title", { label: "Title" })] },
+        { type: "tab", id: "more", label: "More", columns: 1, components: [input("note", { label: "Note" })] },
+      ],
+    } as LayoutSchema,
+  ];
+  function Tabs() {
+    form = useForm<FormValues>({ defaultValues: defaultValues(inputsOf(tabs), { on_sale: false }) });
+    return <Components components={tabs} ctx={{ slug: "offers", control: form.control, errors: {} }} />;
+  }
+  render(<Tabs />);
+  fireEvent.click(screen.getByRole("tab", { name: "More" }));
+  expect(screen.getByRole("tab", { name: "More" })).toHaveAttribute("aria-selected", "true");
+  // "Sale" appears before it: "More" stays open.
+  fireEvent.click(screen.getByRole("switch", { name: /^On sale/ }));
+  expect(screen.getByRole("tab", { name: "More" })).toHaveAttribute("aria-selected", "true");
+  // The open tab hidden: the first shown one opens; shown again, it is open again.
+  fireEvent.click(screen.getByRole("tab", { name: "Sale" }));
+  fireEvent.click(screen.getByRole("switch", { name: /^On sale/ }));
+  expect(screen.getByRole("tab", { name: "Main" })).toHaveAttribute("aria-selected", "true");
+  fireEvent.click(screen.getByRole("switch", { name: /^On sale/ }));
+  expect(screen.getByRole("tab", { name: "Sale" })).toHaveAttribute("aria-selected", "true");
+});
+
+it("reads a key bound by a relation in the conditions, without sending it", () => {
+  const components: ComponentSchema[] = [
+    input("team_id", { type: "select", valueType: "i32" }),
+    input("seat", { shownWhen: { op: "filled", name: "team_id" } }),
+  ];
+  const bound = boundInput(components, "team_id", boundValue("i32", "7"));
+  const values = defaultValues(inputsOf(bound));
+  expect(hiddenNames(bound, values).has("seat")).toBe(false);
+  expect(hiddenNames(components, defaultValues(inputsOf(components))).has("seat")).toBe(true);
+  const payload = payloadOf(inputsOf(bound), { ...values, seat: "A1" }, undefined, hiddenNames(bound, values));
+  expect(payload).toEqual({ seat: "A1" });
 });

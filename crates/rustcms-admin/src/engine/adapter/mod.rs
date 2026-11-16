@@ -292,6 +292,12 @@ impl<R: Resource> ResourceAdapter<R> {
         let static_options = input::static_options(slug, &mut form, &fields, &columns);
         let number_bounds = input::number_bounds(slug, &form, &columns);
         let conditions = input::form_conditions(slug, &form, &columns, &secrets, &fields);
+        // Schemas send the conditions as the server compares them (UUIDs, decimals).
+        let kind_of = |name: &str| {
+            let column = columns.get(name).filter(|_| !secrets.contains_key(name))?;
+            Some((column.kind, crate::wire::decimal_scale(column.column.def().get_column_type())))
+        };
+        crate::engine::conditions::canonicalize(&mut form.components, &kind_of);
         for input in form.inputs().into_iter().filter(|i| i.kind == InputType::Custom) {
             let widget = input.widget.as_deref().unwrap_or_default();
             assert!(crate::ui::valid_widget(widget), "resource `{slug}`: invalid widget name `{widget}`");
@@ -370,7 +376,7 @@ impl<R: Resource> ResourceAdapter<R> {
                 "resource `{slug}`: default sort `{name}` needs a `.sortable()` field"
             );
         }
-        let actions = R::actions();
+        let mut actions = R::actions();
         let mut action_names = HashSet::new();
         let mut action_conditions = HashMap::new();
         for action in &actions {
@@ -394,6 +400,9 @@ impl<R: Resource> ResourceAdapter<R> {
             );
             action_form::check_action_form(slug, action.name, &action.form);
             action_conditions.insert(action.name, action_form::form_conditions(slug, action.name, &action.form));
+        }
+        for action in &mut actions {
+            action_form::canonicalize_conditions(&mut action.form);
         }
 
         Self {

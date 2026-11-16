@@ -12,9 +12,12 @@ All notable changes are documented here. The format follows
   `Condition::all/any`) on inputs, layouts, settings forms and
   `ActionField`s, and `.clear_when_hidden()`. The panel evaluates them on
   every change, without a request; the server again on every write (create,
-  update, settings, actions, CSV imports): values sent for hidden inputs are
-  dropped, hidden `clear_when_hidden` fields take their column's default (else
-  `null`, else empty), required fields are required only when shown. Boot
+  update, settings, actions, CSV imports), on what the user's form holds
+  (never on values the user may not read or view, so a write's outcome tells
+  nothing about them): values sent for hidden inputs are dropped (never the
+  key a relation binds), `clear_when_hidden` fields a write hides take their
+  column's default (else `null`, else empty), required fields are required
+  only when shown. Schemas send condition values in canonical form. Boot
   checks names, kinds, values, cycles, and refuses a conditional input whose
   column is not nullable and has no default.
 - Record titles from several fields (ADR 0038; contributed by @giangittb112000):
@@ -35,6 +38,12 @@ All notable changes are documented here. The format follows
   stay text.
 
 ### Changed
+- Relationship selects (`lookup`) search each word of the search over the
+  title's fields, every word required (repeated words once): with
+  `title("name")`, "big red" no longer matches only the exact phrase. Titles
+  with an empty value are left out of `titles()`. `rustcms_admin::Condition`
+  (exported for conditions) can clash with `sea_orm::Condition` when both
+  are glob-imported: import one by name.
 - Validation issues: `{min}`, `{max}` and `{bytes}` placeholders only match
   numbers, so an application's message such as "must be at least 18 years
   old" stays `custom`.

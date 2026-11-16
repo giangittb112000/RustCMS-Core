@@ -245,20 +245,25 @@ Section::make("Sale").shown_when(when("on_sale").is_true()).schema(components![
   (each keystroke, selection or toggle), without a request: the inputs a
   condition reads need no extra declaration. A hidden input keeps what the
   user typed until the form is saved, so showing it again brings it back.
-- **The server decides.** On every write it evaluates the conditions on the
-  values the record will have (the stored record merged with the request; on
-  create, the request and the columns' defaults). A value sent for a hidden
-  input is never stored; a hidden field keeps its stored value, or, with
-  `.clear_when_hidden()`, takes its column's default, else `null`, else an
-  empty text or list.
+- **The server decides.** On every write it evaluates the conditions again,
+  on what the user's form holds (the record's values the user may read, or
+  the declared defaults on create) with the request over it. A value sent
+  for a hidden input is never stored; a hidden field keeps its stored value.
+  With `.clear_when_hidden()`, a field that a write hides takes its column's
+  default, else `null`, else an empty text or list.
 - **Required when shown.** A `.required()` field under a condition is only
-  required while it is shown.
+  required while it is shown: when it is sent empty, on create, or when the
+  write shows it.
 - A layout's condition applies to everything in it; a hidden input counts as
   empty for the conditions of other inputs. A field shown by another input
   without a condition is always shown.
 - Conditions compare values; logic that needs the database belongs in hooks.
-  Condition only on fields every user of the form may read: the panel treats
-  a field it does not receive as empty.
+- Condition only on fields every user of the form may read. For a user who
+  may not read a field (or view the record), the panel and the server treat
+  it as empty, so the inputs it shows stay hidden for that user; nothing
+  about its value can be learned from what is saved.
+- On a form opened from a [relation](relationships.md), the key the relation sets
+  is read by the conditions with the parent's key.
 
 The same works on [settings pages](settings.md) and in
 [action forms](actions.md) (`ActionField::shown_when`; a hidden field reaches

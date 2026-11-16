@@ -20,13 +20,27 @@ import { ActionNoticeView, RecordActions, useActionRunner } from "@/components/a
 import { useUncertain } from "@/api/context";
 import { cn } from "@/lib/utils";
 import { isInput } from "@/schema/form";
+import type { JsonValue } from "@/api/types";
 import { useT } from "@/i18n";
 
-/** The components without the input of `name` (set by the server through a relation). */
-export function withoutInput(components: ComponentSchema[], name: string): ComponentSchema[] {
-  return components
-    .filter((c) => !(isInput(c) && c.name === name))
-    .map((c) => (isInput(c) ? c : { ...c, components: withoutInput(c.components, name) }));
+/**
+ * The components with the input of `name` (set by the server through a
+ * relation) kept as a disabled hidden input holding `value`: not shown, never
+ * sent, but read by the conditions (ADR 0037) as the server reads the bound key.
+ */
+export function boundInput(components: ComponentSchema[], name: string, value: JsonValue): ComponentSchema[] {
+  return components.map((c) =>
+    isInput(c)
+      ? c.name === name
+        ? { ...c, type: "hidden" as const, disabled: true, default: value }
+        : c
+      : { ...c, components: boundInput(c.components, name, value) },
+  );
+}
+
+/** The wire value of a parent's key for a field of kind `valueType` (keys travel as text). */
+export function boundValue(valueType: string, key: string): JsonValue {
+  return (valueType === "i32" || valueType === "f64") && /^-?\d+$/.test(key) ? Number(key) : key;
 }
 
 type SectionProps = { parent: string; record: string; relation: RelationSchema };

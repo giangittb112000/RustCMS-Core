@@ -107,7 +107,11 @@ impl Resource for GadgetResource {
                             .help("Shown in lists")
                             .prefix("/gadgets/")
                             .suffix(".html"),
-                        Textarea::make("notes").column_span(2),
+                        // A condition (vocabulary 13) that always holds for the contract's data.
+                        Textarea::make("notes")
+                            .column_span(2)
+                            .shown_when(Condition::any([when("status").filled(), when("status").ne("archived")]))
+                            .clear_when_hidden(),
                     ]),
                     Grid::make(3).schema(components![
                         NumberInput::make("count"),

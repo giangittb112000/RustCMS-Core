@@ -345,9 +345,11 @@ async fn update(
         }
         let options = field.options();
         let options = (!options.is_empty()).then_some(Options::One { values: &options, scale: None });
-        // Under a condition, `required` is checked once the shown fields are known.
-        let required = field.required && !page.conditions().is_conditional(name);
-        let rule = InputRule { options, required, ..field.rule() };
+        // Under a condition, `required` (and a value that may not be null) is
+        // checked once the shown fields are known.
+        let conditional = page.conditions().is_conditional(name);
+        let mut rule = InputRule { options, required: field.required && !conditional, ..field.rule() };
+        rule.nullable |= conditional;
         if check_input(name, &rule, value, &mut errors)
             && let Some(media) = &field.media
         {
@@ -393,48 +395,55 @@ async fn update(
     let mut values = Map::new();
     let mut secrets = BTreeMap::new();
     let mut errors = ValidationErrors::new();
+    // The values written, hidden fields' resets included: what decides below
+    // whether a field changed (secrets bound to it, media it references).
+    for field in page.fields().iter().filter(|f| !f.is_secret()) {
+        let value = if cleared.contains(field.name.as_str()) {
+            page.defaults()[&field.name].clone()
+        } else {
+            data.get(&field.name)
+                .or_else(|| stored.values.get(&field.name))
+                .unwrap_or(&page.defaults()[&field.name])
+                .clone()
+        };
+        let conditional = page.conditions().is_conditional(&field.name);
+        if value.is_null()
+            && !hidden.contains(&field.name)
+            && (field.required || (conditional && !field.rule().nullable))
+        {
+            errors.add(field.name.as_str(), "is required");
+        }
+        values.insert(field.name.clone(), value);
+    }
     // A secret bound to other fields is not kept when one of them changes.
     let changed = |name: &String| {
-        data.get(name).is_some_and(|value| Some(value) != stored.values.get(name).or_else(|| page.defaults().get(name)))
+        values
+            .get(name)
+            .is_some_and(|value| Some(value) != stored.values.get(name).or_else(|| page.defaults().get(name)))
     };
-    for field in page.fields() {
-        if field.is_secret() {
-            let mut write = writes.remove(&field.name).unwrap_or(SecretWrite::Keep);
-            if matches!(write, SecretWrite::Keep) && field.kept_while.iter().any(changed) {
-                write = SecretWrite::Clear;
+    for field in page.fields().iter().filter(|f| f.is_secret()) {
+        let mut write = writes.remove(&field.name).unwrap_or(SecretWrite::Keep);
+        if matches!(write, SecretWrite::Keep) && field.kept_while.iter().any(changed) {
+            write = SecretWrite::Clear;
+        }
+        let after = match (write, stored.secret(&field.name)) {
+            (SecretWrite::Replace(plain), _) => Some(plain),
+            (SecretWrite::Clear, _) | (SecretWrite::Keep, SecretState::Unset) => None,
+            (SecretWrite::Keep, SecretState::Set(plain)) => Some(plain.clone()),
+            // Never dropped silently: the user replaces or clears it.
+            (SecretWrite::Keep, SecretState::Unreadable) => {
+                errors.add(field.name.as_str(), "cannot be decrypted; replace or clear it");
+                None
             }
-            let after = match (write, stored.secret(&field.name)) {
-                (SecretWrite::Replace(plain), _) => Some(plain),
-                (SecretWrite::Clear, _) | (SecretWrite::Keep, SecretState::Unset) => None,
-                (SecretWrite::Keep, SecretState::Set(plain)) => Some(plain.clone()),
-                // Never dropped silently: the user replaces or clears it.
-                (SecretWrite::Keep, SecretState::Unreadable) => {
-                    errors.add(field.name.as_str(), "cannot be decrypted; replace or clear it");
-                    None
-                }
-            };
-            match after {
-                Some(plain) => {
-                    secrets.insert(field.name.clone(), plain);
-                }
-                None if field.required && !hidden.contains(&field.name) => {
-                    errors.add(field.name.as_str(), "is required");
-                }
-                None => {}
+        };
+        match after {
+            Some(plain) => {
+                secrets.insert(field.name.clone(), plain);
             }
-        } else {
-            let value = if cleared.contains(field.name.as_str()) {
-                page.defaults()[&field.name].clone()
-            } else {
-                data.get(&field.name)
-                    .or_else(|| stored.values.get(&field.name))
-                    .unwrap_or(&page.defaults()[&field.name])
-                    .clone()
-            };
-            if value.is_null() && field.required && !hidden.contains(&field.name) {
+            None if field.required && !hidden.contains(&field.name) => {
                 errors.add(field.name.as_str(), "is required");
             }
-            values.insert(field.name.clone(), value);
+            None => {}
         }
     }
     errors.into_result()?;

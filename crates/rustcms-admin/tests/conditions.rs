@@ -139,6 +139,51 @@ impl SettingsPage for ShippingSettings {
     }
 }
 
+/// A relay whose host is shown only when custom, reset when hidden, and
+/// whose password is kept only while the host keeps its value.
+#[derive(Clone, Serialize, Deserialize)]
+pub struct RelaySettings {
+    pub custom: bool,
+    pub host: String,
+    pub port: i32,
+    pub password: settings::Secret,
+}
+
+impl Default for RelaySettings {
+    fn default() -> Self {
+        Self { custom: false, host: "relay.example".into(), port: 25, password: settings::Secret::default() }
+    }
+}
+
+impl Settings for RelaySettings {
+    const GROUP: &'static str = "relay";
+}
+
+#[async_trait::async_trait]
+impl SettingsPage for RelaySettings {
+    fn meta() -> SettingsMeta {
+        SettingsMeta::new("Relay")
+    }
+
+    fn fields() -> Vec<SettingField> {
+        vec![
+            SettingField::boolean("custom"),
+            SettingField::text("host"),
+            SettingField::integer("port"),
+            SettingField::secret("password").kept_while(&["host"]),
+        ]
+    }
+
+    fn form() -> Form {
+        Form::new().schema(components![
+            Toggle::make("custom"),
+            TextInput::make("host").shown_when(when("custom").is_true()).clear_when_hidden(),
+            NumberInput::make("port").shown_when(when("custom").is_true()),
+            SecretInput::make("password"),
+        ])
+    }
+}
+
 fn build(config: Config) -> AppBuilder {
     // Imports keep their file on a disk: each app its own temporary directory.
     let root = std::env::temp_dir().join(format!("rustcms-conditions-{}", uuid::Uuid::now_v7()));
@@ -146,7 +191,9 @@ fn build(config: Config) -> AppBuilder {
     let mut app = AppBuilder::new(config);
     app.provider(rustcms_core::storage::StorageProvider);
     app.provider(AuthProvider::new());
-    app.provider(AdminProvider::new().resource::<OfferResource>().settings::<ShippingSettings>());
+    app.provider(
+        AdminProvider::new().resource::<OfferResource>().settings::<ShippingSettings>().settings::<RelaySettings>(),
+    );
     app
 }
 
@@ -386,3 +433,31 @@ impl Resource for SecretCondition {
 fn an_encrypted_field_cannot_have_a_condition() {
     Registry::new().register::<SecretCondition>();
 }
+
+db_test!(a_secret_bound_to_a_field_a_condition_resets_is_cleared, |db: TestDb| async move {
+    let (app, admin) = setup(db).await;
+    let client = app.acting_as(&admin).await;
+    let put = |version: String, data: Value| {
+        let client = &client;
+        let url = app.admin_api("settings/relay");
+        async move {
+            client.fetch_csrf().await;
+            client.send(Method::PUT, &url, Some(&json!({"version": version, "data": data}))).await
+        }
+    };
+    let version = |response: &TestResponse| response.json()["version"].as_str().unwrap().to_owned();
+    let saved = put("0".into(), json!({"custom": true, "host": "mail.example", "password": "pw"})).await;
+    saved.assert_status(StatusCode::OK);
+    // Hiding the host resets it to its default: the password, given for the
+    // custom host, is not kept for the default one.
+    let saved = put(version(&saved), json!({"custom": false})).await;
+    saved.assert_status(StatusCode::OK);
+    assert_eq!(saved.json()["secrets"]["password"], json!("unset"));
+    let stored: RelaySettings = settings::get(app.state()).await.unwrap();
+    assert_eq!(stored.host, "relay.example");
+
+    // A port sent as null while hidden: dropped, no error; shown and null: required.
+    let saved = put(version(&saved), json!({"port": null})).await;
+    saved.assert_status(StatusCode::OK);
+    put(version(&saved), json!({"custom": true, "port": null})).await.assert_validation_error("port");
+});

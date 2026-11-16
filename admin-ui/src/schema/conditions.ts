@@ -145,7 +145,7 @@ function canonical(kind: string, value: unknown): unknown {
     case "f64":
       return typeof value === "string" && value.trim() !== "" && Number.isFinite(Number(value)) ? Number(value) : value;
     case "uuid":
-      return typeof value === "string" ? value.toLowerCase() : value;
+      return typeof value === "string" ? canonicalUuid(value) : value;
     default:
       return value;
   }
@@ -158,4 +158,16 @@ function decimal(text: string): string {
   const f = fraction.replace(/0+$/, "");
   const out = f ? `${w}.${f}` : w;
   return negative && out !== "0" ? `-${out}` : out;
+}
+
+/**
+ * A UUID as the server writes it (lower case, hyphenated): it also reads 32
+ * hex digits without hyphens, in braces, or as a `urn:uuid:`. Anything else
+ * stays as written, lower case.
+ */
+export function canonicalUuid(text: string): string {
+  const lower = text.toLowerCase();
+  const bare = lower.replace(/^urn:uuid:/, "").replace(/^\{(.*)\}$/, "$1").replace(/-/g, "");
+  if (!/^[0-9a-f]{32}$/.test(bare)) return lower;
+  return `${bare.slice(0, 8)}-${bare.slice(8, 12)}-${bare.slice(12, 16)}-${bare.slice(16, 20)}-${bare.slice(20)}`;
 }

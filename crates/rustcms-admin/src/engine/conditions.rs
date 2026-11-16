@@ -146,6 +146,52 @@ fn filled(value: &Value) -> bool {
     }
 }
 
+/// Rewrites every condition of `components` with its values in canonical
+/// form (UUIDs hyphenated in lower case, decimals without trailing zeros),
+/// so that schemas send the panel what the server compares. Run after
+/// [`FormConditions::new`] checked them: a value that does not read as its
+/// field's kind is left as written.
+pub(crate) fn canonicalize(components: &mut [Component], kind_of: KindOf<'_>) {
+    for component in components {
+        match component {
+            Component::Input(input) => {
+                if let Some(condition) = input.shown_when.as_deref_mut() {
+                    *condition = canonical_condition(condition, kind_of);
+                }
+            }
+            Component::Layout(layout) => {
+                if let Some(condition) = layout.shown_when.as_deref_mut() {
+                    *condition = canonical_condition(condition, kind_of);
+                }
+                canonicalize(&mut layout.children, kind_of);
+            }
+        }
+    }
+}
+
+fn canonical_condition(condition: &Condition, kind_of: KindOf<'_>) -> Condition {
+    let value_of = |name: &str, value: &Value| -> Value {
+        match kind_of(name) {
+            Some((kind, _)) if !value.is_null() => comparable(kind, value).unwrap_or_else(|_| value.clone()),
+            _ => value.clone(),
+        }
+    };
+    match condition {
+        Condition::Eq { name, value } => Condition::Eq { name: name.clone(), value: value_of(name, value) },
+        Condition::Ne { name, value } => Condition::Ne { name: name.clone(), value: value_of(name, value) },
+        Condition::IsIn { name, values } => {
+            Condition::IsIn { name: name.clone(), values: values.iter().map(|v| value_of(name, v)).collect() }
+        }
+        Condition::All { conditions } => {
+            Condition::All { conditions: conditions.iter().map(|c| canonical_condition(c, kind_of)).collect() }
+        }
+        Condition::Any { conditions } => {
+            Condition::Any { conditions: conditions.iter().map(|c| canonical_condition(c, kind_of)).collect() }
+        }
+        other => other.clone(),
+    }
+}
+
 fn walk(
     components: &[Component],
     inherited: Option<&Condition>,
@@ -296,6 +342,31 @@ mod tests {
     use super::*;
     use crate::ui::{Section, TextInput, Toggle, when};
 
+    #[test]
+    fn schemas_get_canonical_condition_values() {
+        let kind_of = |name: &str| match name {
+            "owner" => Some((FieldKind::Uuid, None)),
+            "price" => Some((FieldKind::Decimal, Some(2))),
+            _ => None,
+        };
+        let upper = "{0C7E1D2A-5B3F-4E6A-9D8C-1A2B3C4D5E6F}";
+        let mut components = vec![
+            Component::Input(TextInput::make("a").shown_when(when("owner").eq(upper))),
+            Component::Layout(Section::make("S").shown_when(Condition::any([
+                when("owner").is_in(["0C7E1D2A5B3F4E6A9D8C1A2B3C4D5E6F"]),
+                when("price").ne("10.50"),
+            ]))),
+        ];
+        canonicalize(&mut components, &kind_of);
+        let canonical = json!("0c7e1d2a-5b3f-4e6a-9d8c-1a2b3c4d5e6f");
+        let Component::Input(input) = &components[0] else { panic!() };
+        assert_eq!(serde_json::to_value(input.shown_when.as_deref().unwrap()).unwrap()["value"], canonical);
+        let Component::Layout(layout) = &components[1] else { panic!() };
+        let section = serde_json::to_value(layout.shown_when.as_deref().unwrap()).unwrap();
+        assert_eq!(section["conditions"][0]["values"], json!([canonical]));
+        assert_eq!(section["conditions"][1]["value"], json!("10.5"));
+    }
+
     fn kinds(name: &str) -> Option<(FieldKind, Option<u32>)> {
         match name {
             "on_sale" | "featured" => Some((FieldKind::Bool, None)),
@@ -395,6 +466,7 @@ mod tests {
                     "i32" => (FieldKind::I32, None),
                     "i64" => (FieldKind::I64, None),
                     "decimal" => (FieldKind::Decimal, Some(2)),
+                    "uuid" => (FieldKind::Uuid, None),
                     _ => (FieldKind::String, None),
                 })
             };

@@ -175,6 +175,19 @@ pub(super) fn form_conditions(
     )
 }
 
+/// Rewrites the conditions of an action's form with canonical values (sent
+/// by schemas as the server compares them).
+pub(super) fn canonicalize_conditions(form: &mut [ActionField]) {
+    let kinds: Vec<(String, crate::wire::FieldKind)> = form.iter().map(|f| (f.name.clone(), f.kind)).collect();
+    let kind_of = |name: &str| kinds.iter().find(|(n, _)| n == name).map(|(_, kind)| (*kind, None));
+    for field in form {
+        let mut components = [crate::ui::Component::Input(field.input.clone())];
+        crate::engine::conditions::canonicalize(&mut components, &kind_of);
+        let [crate::ui::Component::Input(input)] = components else { unreachable!() };
+        field.input = input;
+    }
+}
+
 /// `value` of `field` in canonical form, or `None` after adding its problem.
 fn canonical(
     field: &ActionField,

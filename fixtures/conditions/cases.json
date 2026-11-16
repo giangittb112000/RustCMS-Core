@@ -80,6 +80,26 @@
         { "type": "section", "components": [{ "name": "code", "valueType": "string" }] }
       ],
       "cases": [{ "values": { "on": false }, "hidden": [] }]
+    },
+    {
+      "name": "UUIDs compared in canonical form, literals and values as written",
+      "components": [
+        { "name": "owner", "valueType": "uuid" },
+        { "name": "mine", "valueType": "string", "shownWhen": { "op": "eq", "name": "owner", "value": "0C7E1D2A5B3F4E6A9D8C1A2B3C4D5E6F" } },
+        { "name": "listed", "valueType": "string", "shownWhen": { "op": "is_in", "name": "owner", "values": ["{0c7e1d2a-5b3f-4e6a-9d8c-1a2b3c4d5e6f}"] } },
+        {
+          "name": "other",
+          "valueType": "string",
+          "shownWhen": { "op": "any", "conditions": [{ "op": "ne", "name": "owner", "value": "urn:uuid:0c7e1d2a-5b3f-4e6a-9d8c-1a2b3c4d5e6f" }] }
+        }
+      ],
+      "cases": [
+        { "values": { "owner": "0c7e1d2a-5b3f-4e6a-9d8c-1a2b3c4d5e6f" }, "hidden": ["other"] },
+        { "values": { "owner": "0C7E1D2A-5B3F-4E6A-9D8C-1A2B3C4D5E6F" }, "hidden": ["other"] },
+        { "values": { "owner": "0c7e1d2a5b3f4e6a9d8c1a2b3c4d5e6f" }, "hidden": ["other"] },
+        { "values": { "owner": "11111111-1111-1111-1111-111111111111" }, "hidden": ["listed", "mine"] },
+        { "values": {}, "hidden": ["listed", "mine"] }
+      ]
     }
   ]
 }

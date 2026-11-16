@@ -32,8 +32,11 @@ Audit entries store the subject's key, not a title; they are not affected.
   the template's literal text would be left dangling (`Math (grade )`), and
   marking which text belongs to which field needs more syntax. Applications
   should build titles from fields every user of the panel may read.
-- **Search and order** (`lookup`): the search matches any field of the
-  template (each cast to text as today, OR-ed); options are ordered by the
+- **Search and order** (`lookup`): the search is split into words (repeated
+  words count once); each word must match one field of the template (fields
+  OR-ed per word, cast to text as today; words AND-ed): "Math 10" finds
+  "Math (grade 10)". A single-field title behaves the same, so a search of
+  several words no longer matches only the exact phrase. Options are ordered by the
   template's fields in order, then the key.
 - **Boot checks:** placeholders name fields of the resource; braces are
   balanced; no encrypted field (as for `title` today); at least one

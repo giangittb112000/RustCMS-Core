@@ -5,10 +5,10 @@ import { useForm } from "react-hook-form";
 import { ApiError } from "@/api/client";
 import { useUncertain } from "@/api/context";
 import { type Via, useDeleteRecord, useRecord, useSaveRecord, useSchema } from "@/api/queries";
-import { RelationSection, withoutInput } from "./relations";
+import { RelationSection, boundInput, boundValue } from "./relations";
 import { RecordHistory } from "./audit";
 import { RecordSlots } from "@/components/slots";
-import type { Envelope, InputSchema, ResourceSchema } from "@/api/types";
+import type { ComponentSchema, Envelope, InputSchema, ResourceSchema } from "@/api/types";
 import { ErrorState, Loading, PausedBanner, VersionBanner, compatibility } from "@/components/states";
 import { Alert } from "@/components/ui/alert";
 import { Button, buttonVariants } from "@/components/ui/button";
@@ -105,7 +105,7 @@ function RecordForm({
   const editing = recordKey !== undefined;
   // Fixed at mount, like the defaults: JSON values that lost precision on the way here stay read-only.
   const [components] = useState(() =>
-    protectLossyJson(via ? withoutInput(schema.form.components, via.field) : schema.form.components, record?.data),
+    protectLossyJson(via ? bindVia(schema.form.components, via) : schema.form.components, record?.data),
   );
   const inputs = useMemo(() => inputsOf(components), [components]);
   const { readOnly } = compatibility(schema);
@@ -434,4 +434,10 @@ export function ViewPage({ slug, recordKey }: { slug: string; recordKey: string 
       </Dialog>
     </Page>
   );
+}
+
+/** The form through a relation: the bound key's input kept hidden with the parent's key (ADR 0037). */
+function bindVia(components: ComponentSchema[], via: Via & { field: string }): ComponentSchema[] {
+  const input = inputsOf(components).find((i) => i.name === via.field);
+  return input ? boundInput(components, via.field, boundValue(input.valueType, via.record)) : components;
 }

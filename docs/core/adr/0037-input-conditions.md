@@ -52,10 +52,8 @@ Constraints from the existing design:
 - An input is **shown** when its own condition and the conditions of every
   enclosing layout hold. A field with several inputs is shown when one of
   them is.
-- A condition reads the **resulting values**: on update the stored record
-  merged with the input, on create the input merged with the inputs'
-  declared defaults (`null` when none), on settings the stored group merged
-  with the input, on action forms the submitted data (every field present).
+- A condition reads **what the user's form holds** (revised in 0.13, see
+  "Values the conditions read" below), never values the user may not see.
 - A **hidden** input's value counts as `null` for other conditions, so chains
   resolve in dependency order: if `b` is hidden, a condition `when("b").eq(x)`
   is false.
@@ -71,13 +69,17 @@ Constraints from the existing design:
    longer reports missing required fields of inputs under a condition.
 2. After the row is locked (update) or before the insert (create), in the
    write transaction and before `mutate_before_*` hooks: evaluate the
-   conditions on the resulting values; **drop** values sent for hidden
-   inputs (old SPAs send them; they are never stored); on **create** a
-   hidden input's column takes its database default, or `null`; for hidden
-   inputs with
-   `clear_when_hidden`, write the cleared value; for **shown** inputs whose
-   field is required, report "is required" when the resulting value is
-   missing or `null`.
+   conditions twice on what the user's form holds, **before** the user's
+   changes and **after** them (the input laid over it); **drop** values
+   sent for inputs hidden after (old SPAs send them; they are never stored),
+   except the key a relation binds (below); on **create** a hidden input's
+   column takes its database default, or `null`; an input with
+   `clear_when_hidden` that **this write hides** (shown before, hidden
+   after) takes its cleared value; a **shown** input whose field is required
+   (or whose column is not nullable) is "is required" when its value is
+   `null` and: it was sent as `null`; or on create; or (required) this write
+   shows it. An already shown field left out of a PATCH is not checked (as
+   for any field).
 3. Hooks write what they decide; conditions are not evaluated again after
    them.
 4. Same evaluation in the settings save (under its version lock) and in
@@ -85,7 +87,46 @@ Constraints from the existing design:
 5. CSV imports go through the same create and update paths; the import
    preview applies the conditions to rows it would create (an update's
    depend on the stored record, read only when the import runs).
-6. `clear_when_hidden` writes only for a user who may write the field.
+6. `clear_when_hidden` writes only for a user who may write the field, and
+   whatever the field holds (comparing with the stored value would tell
+   what an unreadable field holds).
+
+### Values the conditions read (0.13)
+
+The panel evaluates conditions on its form values: the inputs of the user's
+schema for the operation, filled from the record (edit) or the declared
+defaults (create), with the user's draft over them (`admin-ui/src/schema/form.ts`,
+`wireValues`). The server evaluates them on the same thing:
+
+- only fields with an input in that schema (create: writable; edit: readable
+  or writable, a readable key included);
+- on create, the column's declared default when the schema sends it (the user
+  may read the field); on update, the stored value when the user may read
+  the field **and** view the record (blind writes, write-only and encrypted
+  fields hold nothing);
+- an input without a value holds the form's empty value: `false` for a
+  non-nullable toggle, `""` for non-nullable text, `[]` for lists, else
+  `null`;
+- the accepted input laid over it.
+
+So whether a value is dropped, required or cleared depends only on what the
+user already has: a condition on a field the user may not read (field rule,
+guarded field, record not viewable) behaves as if that field were `null`, and
+tells nothing about it.
+
+**Key bound by a relation** (creating from a relation manager): the server
+inserts the parent's key before the conditions; a condition never drops it
+(write rules, kinds and the "hooks may not change it" check still apply).
+Other conditions read it as any field (`null` when its own condition hides
+it). The panel keeps the bound input as a disabled hidden input holding the
+parent's key: never sent, but read by the conditions as the server reads it.
+
+Settings pages and action forms keep their own evaluation: their users read
+every value of the page (settings) or send every field (actions).
+
+Literals are sent in schemas as the server compares them (UUIDs hyphenated in
+lower case, decimals without trailing zeros), and the panel canonicalizes
+UUIDs it reads the same way (`{…}`, `urn:uuid:`, 32 digits).
 
 ### Boot checks
 
@@ -144,12 +185,13 @@ Rust test and a Vitest test both run them.
   database default) for its input to be conditional (checked at boot).
   Applications that fill such a field in a hook still declare one; the
   hook's value replaces it. No new input API is needed.
-- A condition on a field the user may not read is evaluated by the server on
-  the stored value, while the SPA, which does not receive that value, treats
-  it as `null`: the two can disagree (the SPA shows an input whose value the
-  server then drops). Field rules depend on the user, so boot cannot rule
-  this out; the guide tells applications to condition only on fields every
-  user of the form may read.
+- A condition on a field the user may not read behaves for that user as if
+  the field were `null` (server and panel alike): it tells nothing about
+  the field, but the input it shows may stay hidden for that user. The
+  guide recommends conditions on fields every user of the form may read.
+- `clear_when_hidden` clears a field when a write hides it, not on every
+  write while it is hidden: a user who cannot see what shows a field never
+  clears it by editing something else.
 - Tables, lists and exports are unaffected (conditions belong to forms).
 - `InputSchema`, `LayoutSchema` gain members: struct literals in
   applications need them.

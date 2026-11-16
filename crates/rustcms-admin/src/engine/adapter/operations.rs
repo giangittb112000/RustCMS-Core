@@ -206,7 +206,11 @@ impl<R: Resource> DynResource for ResourceAdapter<R> {
             // finds "Math (grade 10)". One word: as before.
             let backend = ctx.db.get_database_backend();
             let mut matches = sea_orm::Condition::all();
-            for word in search.split_whitespace() {
+            // A word repeated adds nothing ("a a a …" would only add work).
+            let mut words: Vec<&str> = search.split_whitespace().collect();
+            words.sort_unstable();
+            words.dedup();
+            for word in words {
                 let pattern = format!("%{}%", escape_like(word));
                 let mut any = sea_orm::Condition::any();
                 for field in title.fields() {
@@ -428,7 +432,8 @@ impl<R: Resource> DynResource for ResourceAdapter<R> {
         // The usual rules apply to the bound key too (writable, typed, required).
         let mut input = self.accept_input(&wctx, Operation::Create, input)?;
         // Conditions (ADR 0037) on the input and the columns' defaults.
-        self.apply_conditions(&wctx, Operation::Create, &mut input, None)?;
+        let bound_field = bound.as_ref().map(|(field, _)| field.as_str());
+        self.apply_conditions(&wctx, Operation::Create, &mut input, None, bound_field)?;
         let parents = self.lock_parents(&wctx, &txn, self.parent_of_data(&input).flatten()).await?;
         let data = R::mutate_before_create(&wctx, &txn, input).await?;
         self.check_parent_written(&wctx, &data, &parents)?;
@@ -507,7 +512,9 @@ impl<R: Resource> DynResource for ResourceAdapter<R> {
         let before = self.audit_snapshot(&model);
         // Conditions (ADR 0037) on the locked record merged with the input.
         let mut input = input;
-        self.apply_conditions(&wctx, Operation::Update, &mut input, Some(&self.record(&model)))?;
+        let record = self.record(&model);
+        let viewable = self.policy.allows(&wctx, ability::VIEW, Some(&record)).await;
+        self.apply_conditions(&wctx, Operation::Update, &mut input, Some((&record, viewable)), None)?;
         let data = R::mutate_before_update(&wctx, &txn, &model, input).await?;
         self.check_parent_written(&wctx, &data, &parents)?;
         self.check_written(&wctx, &txn, &data).await?;

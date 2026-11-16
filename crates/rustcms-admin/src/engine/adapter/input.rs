@@ -77,10 +77,11 @@ impl<R: Resource> ResourceAdapter<R> {
             // Static options and number bounds bound client input only: hooks may write any value.
             let options = self.input_options(name);
             let bounds = self.number_bounds.get(name).copied();
-            // Under a condition, `required` means "required when shown": checked once
-            // the resulting values are known (`apply_conditions`).
-            let required = field.required && !self.conditions.is_conditional(name);
-            let rule = InputRule { options, bounds, ..self.rule(name, required) };
+            // Under a condition, `required` (and a non-nullable column) means
+            // "when shown": checked once visibility is known (`apply_conditions`).
+            let conditional = self.conditions.is_conditional(name);
+            let mut rule = InputRule { options, bounds, ..self.rule(name, field.required && !conditional) };
+            rule.nullable |= conditional;
             if check_input(name, &rule, value, &mut errors)
                 && !value.is_null()
                 && let Some(Options::One { scale, .. }) = options
@@ -106,50 +107,102 @@ impl<R: Resource> ResourceAdapter<R> {
         Ok(input)
     }
 
-    /// Applies the form's conditions (ADR 0037) to accepted `input`, on the
-    /// resulting values: `stored` (the locked record of an update) or, on
-    /// create, the columns' declared defaults, merged with the input. Values
-    /// sent for hidden inputs are dropped (never stored); a hidden
-    /// `clear_when_hidden` input's field takes its cleared value (update);
-    /// a shown required field without a value is "required". Runs before
-    /// the hooks, which write what they decide.
+    /// Applies the form's conditions (ADR 0037) to accepted `input`. They are
+    /// evaluated on what the user's form holds ([`Self::condition_values`]),
+    /// never on values the user may not see, so the outcome tells nothing
+    /// about them. Values sent for hidden inputs are dropped (never stored),
+    /// except the key bound by a relation (`bound`); a `clear_when_hidden`
+    /// field this write hides takes its cleared value (update, users who may
+    /// write it); a shown field is "required" when it is required (or not
+    /// nullable) and holds `null`: sent as `null`, on create, or when the
+    /// write shows it. Runs before the hooks, which write what they decide.
     pub(super) fn apply_conditions(
         &self,
         ctx: &Ctx,
         op: Operation,
         input: &mut Data,
-        stored: Option<&Data>,
+        stored: Option<(&Data, bool)>,
+        bound: Option<&str>,
     ) -> AppResult<()> {
         let mut conditional = self.conditions.conditional().peekable();
         if conditional.peek().is_none() {
             return Ok(());
         }
-        let mut resulting = match stored {
-            Some(record) => record.clone(),
-            None => self.columns.iter().filter_map(|(name, c)| Some((name.clone(), c.default.clone()?))).collect(),
-        };
-        resulting.extend(input.iter().map(|(k, v)| (k.clone(), v.clone())));
-        let hidden = self.conditions.hidden(&resulting);
+        let before = self.condition_values(ctx, op, stored);
+        let mut after = before.clone();
+        after.extend(input.iter().map(|(k, v)| (k.clone(), v.clone())));
+        let hidden_before = self.conditions.hidden(&before);
+        let hidden = self.conditions.hidden(&after);
         let mut errors = ValidationErrors::new();
         for (name, clear) in conditional {
+            let Some(field) = self.field(name) else { continue };
+            let writable = field.can_write(op, ctx);
             if hidden.contains(name) {
-                input.remove(name);
-                // Cleared only for a user who may write the field (the field rules hold).
+                if Some(name) != bound {
+                    input.remove(name);
+                }
+                // Cleared when this write hides it, for a user who may write the
+                // field, whatever it holds (comparing would tell what an
+                // unreadable field holds). A field hidden before stays as it is:
+                // for a user who cannot see what shows it, every edit would clear it.
                 if clear
                     && op == Operation::Update
-                    && self.field(name).is_some_and(|f| f.can_write(op, ctx))
+                    && writable
+                    && !hidden_before.contains(name)
                     && let Some(value) = self.columns.get(name).and_then(cleared_value)
-                    && resulting.get(name) != Some(&value)
                 {
                     input.insert(name.to_owned(), value);
                 }
-            } else if self.field(name).is_some_and(|f| f.required && f.can_write(op, ctx))
-                && resulting.get(name).is_none_or(serde_json::Value::is_null)
-            {
+                continue;
+            }
+            let needed = field.required || !self.column(name).nullable;
+            let missing = after.get(name).is_none_or(serde_json::Value::is_null);
+            let checked = input.get(name).is_some_and(serde_json::Value::is_null)
+                || (field.required
+                    && (op == Operation::Create || (hidden_before.contains(name) && !hidden.contains(name))));
+            if writable && needed && missing && checked {
                 errors.add(name, "is required");
             }
         }
         errors.into_result()
+    }
+
+    /// The values conditions read (ADR 0037): what the user's form for `op`
+    /// holds before their changes, as the panel builds it. Only fields with an
+    /// input of that form; on create, the declared defaults of fields the user
+    /// may read; on update, the stored values of readable fields when the user
+    /// may view the record (`stored`: the locked record and that decision);
+    /// anything else is the form's empty value (`false` for a toggle, `""` for
+    /// required text, `[]` for lists, else `null`).
+    pub(super) fn condition_values(&self, ctx: &Ctx, op: Operation, stored: Option<(&Data, bool)>) -> Data {
+        let mut out = Data::new();
+        for input in self.form.inputs() {
+            let name = &input.name;
+            let Some(field) = self.field(name).filter(|_| !out.contains_key(name)) else { continue };
+            let is_key = *name == self.pk_name;
+            let included = match op {
+                Operation::Create => {
+                    field.can_write(op, ctx) && (!is_key || matches!(self.meta.key, KeyStrategy::Natural))
+                }
+                Operation::Update => field.can_read(ctx) || (!is_key && field.can_write(op, ctx)),
+            };
+            if !included {
+                continue;
+            }
+            let column = self.column(name);
+            let readable = field.can_read(ctx) && field.secret.is_none();
+            let value = match (op, stored) {
+                (Operation::Create, _) if readable => column.default.clone(),
+                (Operation::Update, Some((record, true))) if readable => record.get(name).cloned(),
+                _ => None,
+            };
+            let value = match value {
+                Some(value) if !value.is_null() => value,
+                _ => form_empty(input.kind, column.kind, column.nullable),
+            };
+            out.insert(name.clone(), value);
+        }
+        out
     }
 
     /// Writes trusted data (validated input, possibly changed by hooks) into
@@ -423,6 +476,27 @@ pub(super) fn form_conditions<C: ColumnTrait>(
 
 /// What `clear_when_hidden` writes: the declared default, else `null`, else
 /// an empty text or list.
+/// What the panel's form holds for an input without a value, on the wire
+/// (`admin-ui/src/schema/form.ts`, `toFormValue` then `fromFormValue`).
+pub(crate) fn form_empty(input: InputType, kind: FieldKind, nullable: bool) -> serde_json::Value {
+    match input {
+        InputType::Toggle | InputType::Checkbox if !nullable => serde_json::Value::Bool(false),
+        InputType::CheckboxList => serde_json::Value::Array(Vec::new()),
+        InputType::FileUpload if kind == FieldKind::Json => serde_json::Value::Array(Vec::new()),
+        InputType::TextInput
+        | InputType::Textarea
+        | InputType::NumberInput
+        | InputType::DatePicker
+        | InputType::DateTimePicker
+        | InputType::Hidden
+            if !nullable && kind == FieldKind::String =>
+        {
+            serde_json::Value::String(String::new())
+        }
+        _ => serde_json::Value::Null,
+    }
+}
+
 pub(super) fn cleared_value<C>(column: &ColumnInfo<C>) -> Option<serde_json::Value> {
     if let Some(default) = &column.default {
         Some(default.clone())

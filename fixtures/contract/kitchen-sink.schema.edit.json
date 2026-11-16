@@ -45,12 +45,27 @@
                     "valueType": "string"
                   },
                   {
+                    "clearWhenHidden": true,
                     "columnSpan": 2,
                     "disabled": false,
                     "label": "Notes",
                     "name": "notes",
                     "nullable": true,
                     "rules": [],
+                    "shownWhen": {
+                      "conditions": [
+                        {
+                          "name": "status",
+                          "op": "filled"
+                        },
+                        {
+                          "name": "status",
+                          "op": "ne",
+                          "value": "archived"
+                        }
+                      ],
+                      "op": "any"
+                    },
                     "type": "textarea",
                     "valueType": "string"
                   }

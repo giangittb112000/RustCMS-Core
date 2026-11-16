@@ -519,7 +519,7 @@ impl<T: SettingsPage> SettingsAdapter<T> {
                 );
             }
         }
-        let form = T::form();
+        let mut form = T::form();
         crate::engine::adapter::check_form_layout(&format!("settings `{group}`"), &form);
         let mut used = BTreeSet::new();
         for input in form.inputs() {
@@ -556,6 +556,7 @@ impl<T: SettingsPage> SettingsAdapter<T> {
             |name: &str| fields.iter().find(|f| f.name == name && !f.is_secret()).map(|f| (f.kind.value_kind(), None));
         let conditions =
             crate::engine::conditions::FormConditions::new(&format!("settings `{group}`"), &form.components, &kind_of);
+        crate::engine::conditions::canonicalize(&mut form.components, &kind_of);
         for (name, clear) in conditions.conditional() {
             assert!(
                 !clear || fields.iter().any(|f| f.name == name && !f.is_secret()),
