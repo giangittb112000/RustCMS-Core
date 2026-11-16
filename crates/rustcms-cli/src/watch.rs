@@ -44,10 +44,18 @@ const WORKSPACE_ENTRIES: &[&str] = &["Cargo.toml", "Cargo.lock", ".cargo", "rust
 /// templates that reload themselves.
 const SKIPPED_DIRS: &[&str] = &["target", "node_modules", ".git", "storage"];
 const SKIPPED_PATHS: &[&str] = &["resources/views"];
-/// Built extension files: what the application embeds (changes rebuild).
-const EXTENSION_BUILDS: &[&str] = &["resources/admin/js", "resources/admin/css"];
-/// An extension's own directory: its sources build with `npm run build`.
-const EXTENSION_ROOT: &str = "resources/admin";
+/// An extension's sources: `npm run build` turns them into the `js`/`css`
+/// the application embeds (other files there, such as a logo, are embedded
+/// as they are).
+const EXTENSION_SOURCES: &[&str] = &[
+    "resources/admin/src",
+    "resources/admin/sdk",
+    "resources/admin/package.json",
+    "resources/admin/package-lock.json",
+    "resources/admin/tsconfig.json",
+    "resources/admin/vite.config.ts",
+    "resources/admin/vite.config.js",
+];
 
 /// Modification time and size of each watched file.
 pub(crate) type Snapshot = BTreeMap<PathBuf, (SystemTime, u64)>;
@@ -226,12 +234,11 @@ pub(crate) fn describe(app: &Path, changes: &[&PathBuf]) -> String {
     }
 }
 
-/// Whether `path` is an extension's source (under `resources/admin`, not its
-/// built `js`/`css`): `npm run build` turns it into what the application
-/// embeds, so it never rebuilds the application itself.
+/// Whether `path` is an extension's source: `npm run build` turns it into
+/// what the application embeds, so it never rebuilds the application itself.
 pub(crate) fn extension_source(app: &Path, path: &Path) -> bool {
     let Ok(relative) = path.strip_prefix(app) else { return false };
-    relative.starts_with(EXTENSION_ROOT) && !EXTENSION_BUILDS.iter().any(|b| relative.starts_with(b))
+    EXTENSION_SOURCES.iter().any(|s| relative.starts_with(s))
 }
 
 /// Whether a manifest changed (the package or binary served may have changed).
@@ -362,6 +369,7 @@ mod unix {
                 tokio::select! {
                     () = self.signals.received() => {
                         self.stopping = true;
+                        groups.extend(self.server.take());
                         stop_groups(&mut groups).await;
                         return None;
                     }
@@ -409,7 +417,7 @@ mod unix {
                     // A build script may have left processes in its group.
                     let mut rest = vec![build];
                     if rest[0].alive() {
-                        stop_groups(&mut rest).await;
+                        self.stop_watching(rest).await;
                     } else {
                         let _ = rest[0].child.wait();
                     }
@@ -428,18 +436,24 @@ mod unix {
             }
         }
 
+        /// Stops `groups`; a stop asked meanwhile is kept (and the server goes too).
+        async fn stop_watching(&mut self, mut groups: Vec<Group>) {
+            let asked = tokio::select! {
+                () = stop_groups(&mut groups) => false,
+                () = self.signals.received() => true,
+            };
+            if asked {
+                self.stopping = true;
+                groups.extend(self.server.take());
+                stop_groups(&mut groups).await;
+            }
+        }
+
         /// Stops the running server (as on a deploy); a stop asked meanwhile is kept.
         async fn stop_server(&mut self) {
-            let mut groups: Vec<Group> = self.server.take().into_iter().collect();
-            if groups.is_empty() {
-                return;
-            }
-            tokio::select! {
-                () = stop_groups(&mut groups) => {}
-                () = self.signals.received() => {
-                    self.stopping = true;
-                    stop_groups(&mut groups).await;
-                }
+            let groups: Vec<Group> = self.server.take().into_iter().collect();
+            if !groups.is_empty() {
+                self.stop_watching(groups).await;
             }
         }
 
@@ -521,8 +535,18 @@ mod unix {
                         // Changed while building: build again before replacing.
                         let now = self.scan(&before_build);
                         if now != before_build {
+                            let manifest = manifest_changed(&changed(&before_build, &now));
                             seen = now;
+                            if manifest && !self.reresolve(&app).await {
+                                if self.stopping {
+                                    return Ok(());
+                                }
+                                (seen, changes) = self.wait_for_build(&app, seen).await?;
+                            }
                             continue;
+                        }
+                        if self.stopping {
+                            return Ok(());
                         }
                         self.stop_server().await;
                         if self.stopping {
@@ -534,30 +558,59 @@ mod unix {
                         println!("watch: built in {:.1}s, {what}", took.as_secs_f64());
                     }
                 }
-                // Changes to an extension's sources alone: `npm run build`, not a build here.
-                let now = loop {
-                    let Some(now) = self.changes(&seen).await else { return Ok(()) };
-                    let found = changed(&seen, &now);
-                    if !found.is_empty() && found.iter().all(|p| extension_source(&app, p)) {
-                        println!("watch: extension sources changed; run `npm run build` in resources/admin");
-                        seen = now;
-                        continue;
-                    }
-                    break now;
-                };
-                let found: Vec<&PathBuf> = changed(&seen, &now);
-                if migrations_changed(&app, &found) {
+                (seen, changes) = self.wait_for_build(&app, seen).await?;
+                if self.stopping {
+                    return Ok(());
+                }
+            }
+        }
+
+        /// The package and binary served, read again after a manifest changed;
+        /// `false` when it cannot be (an invalid manifest: reported, the server
+        /// keeps running) or a stop was asked.
+        async fn reresolve(&mut self, app: &Path) -> bool {
+            match self.resolve().await {
+                Ok(Some(target)) => {
+                    self.roots = roots(app, &target.workspace_root);
+                    self.target = target;
+                    true
+                }
+                Ok(None) => false,
+                Err(err) => {
+                    eprintln!("watch: {err:#}");
+                    let kept = if self.server.is_some() { "the server keeps running" } else { "no server is running" };
+                    println!("watch: cannot read the manifest, {kept}; waiting for a change");
+                    false
+                }
+            }
+        }
+
+        /// Waits for changes that need a build (extension sources alone only
+        /// get a reminder); the snapshot to build from and what changed. A
+        /// stop: `stopping`.
+        async fn wait_for_build(&mut self, app: &Path, mut seen: Snapshot) -> anyhow::Result<(Snapshot, Vec<PathBuf>)> {
+            loop {
+                let Some(now) = self.changes(&seen).await else { return Ok((seen, Vec::new())) };
+                let found = changed(&seen, &now);
+                if !found.is_empty() && found.iter().all(|p| extension_source(app, p)) {
+                    println!("watch: extension sources changed; run `npm run build` in resources/admin");
+                    seen = now;
+                    continue;
+                }
+                if migrations_changed(app, &found) {
                     println!("watch: a migration changed; run `rustcms migrate`");
                 }
-                if manifest_changed(&found) {
-                    // The package or binary may have changed: what to serve, again.
-                    let Some(target) = self.resolve().await? else { return Ok(()) };
-                    self.roots = roots(&app, &target.workspace_root);
-                    self.target = target;
+                let manifest = manifest_changed(&found);
+                let found: Vec<PathBuf> = found.into_iter().cloned().collect();
+                println!("watch: {} changed, building", describe(app, &found.iter().collect::<Vec<_>>()));
+                if manifest && !self.reresolve(app).await {
+                    if self.stopping {
+                        return Ok((now, found));
+                    }
+                    seen = now;
+                    continue;
                 }
-                changes = found.into_iter().cloned().collect();
-                println!("watch: {} changed, building", describe(&app, &changes.iter().collect::<Vec<_>>()));
-                seen = self.scan(&now);
+                return Ok((self.scan(&now), found));
             }
         }
     }
@@ -661,6 +714,8 @@ mod tests {
         assert!(extension_source(app, &app.join("resources/admin/package.json")));
         assert!(!extension_source(app, &app.join("resources/admin/js/acme/widget.js")));
         assert!(!extension_source(app, &app.join("resources/admin/css/acme/widget.css")));
+        // Other files there are embedded as they are (a logo): they rebuild.
+        assert!(!extension_source(app, &app.join("resources/admin/logo.png")));
         assert!(!extension_source(app, &app.join("src/main.rs")));
         let manifest = app.join("Cargo.toml");
         let main = app.join("src/main.rs");

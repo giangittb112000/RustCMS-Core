@@ -187,8 +187,13 @@ once the build succeeds:
 - Ctrl-C stops the watcher, the server and a running build. Run it in the
   foreground: a watcher killed with `kill -9` leaves its server running.
 - An application with several binaries needs `default-run` in its
-  `Cargo.toml`. Path dependencies outside the application are not watched,
-  nor are files named by `*_FILE` settings.
+  `Cargo.toml`; a manifest that cannot be read is reported and the server
+  keeps running until it is fixed. Path dependencies outside the application
+  are not watched, nor are files named by `*_FILE` settings: after changing
+  one, save any watched file (or restart).
+- Templates in `resources/views/` are not watched: one that does not reload
+  itself (embedded with `include_str!`, or a release build) shows a change
+  after you save a file in `src/` (or restart).
 - Each change costs a build: a Rust server cannot swap code while it runs.
   `[profile.dev] debug = "line-tables-only"` in the application's
   `Cargo.toml` makes builds faster.
