@@ -13,6 +13,8 @@ use std::time::{Duration, Instant};
 const FAKE_CARGO: &str = r#"#!/bin/sh
 case "$1" in
   metadata)
+    # As large as a real workspace's (more than a pipe holds): 200 KB of spaces first.
+    head -c 200000 /dev/zero | tr '\0' ' '
     printf '{"workspace_root":"%s","packages":[{"name":"app","manifest_path":"%s/Cargo.toml","default_run":null,"targets":[{"name":"app","kind":["bin"]}]}]}' "$PWD" "$PWD"
     ;;
   build)

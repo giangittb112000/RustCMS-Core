@@ -372,18 +372,29 @@ mod unix {
 
         /// The package and binary to serve, from `cargo metadata` (a stop meanwhile: `None`).
         async fn resolve(&mut self) -> anyhow::Result<Option<Target>> {
+            // Output into files, not pipes: a workspace's metadata outgrows a
+            // pipe's buffer, and cargo would wait for a reader while we wait for it.
+            let mut stdout = tempfile::tempfile().context("a temporary file")?;
+            let mut stderr = tempfile::tempfile().context("a temporary file")?;
             let mut command = self.cargo();
             command
                 .args(["metadata", "--no-deps", "--format-version", "1"])
-                .stdout(Stdio::piped())
-                .stderr(Stdio::piped());
+                .stdout(stdout.try_clone()?)
+                .stderr(stderr.try_clone()?);
             let group = Group::spawn(command).context("cannot run cargo")?;
             let Some(output) = self.finish(group).await else { return Ok(None) };
+            let read = |file: &mut std::fs::File| -> std::io::Result<Vec<u8>> {
+                use std::io::{Read, Seek};
+                let mut out = Vec::new();
+                file.rewind()?;
+                file.read_to_end(&mut out)?;
+                Ok(out)
+            };
             if !output.status.success() {
-                bail!("cargo metadata failed:\n{}", String::from_utf8_lossy(&output.stderr));
+                bail!("cargo metadata failed:\n{}", String::from_utf8_lossy(&read(&mut stderr)?));
             }
             let metadata: serde_json::Value =
-                serde_json::from_slice(&output.stdout).context("cargo metadata output")?;
+                serde_json::from_slice(&read(&mut stdout)?).context("cargo metadata output")?;
             Target::from_metadata(&metadata, &self.project.root.join("Cargo.toml")).map(Some)
         }
 
