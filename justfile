@@ -118,6 +118,12 @@ generated:
     test -z "$(git status --porcelain -- examples/demo/resources/admin)"
     test -z "$(git status --porcelain -- docs/guide/src/reference/cli.md admin-ui/src/api/types.gen.ts crates/rustcms-admin/assets fixtures)"
 
+# Shrinks the build directory: above 15 GB removes test executables and
+# incremental caches (dependencies stay compiled), above 30 GB `cargo clean`
+# (PRUNE_SOFT_GB, PRUNE_HARD_GB). Honors CARGO_TARGET_DIR.
+prune:
+    sh scripts/prune-target.sh
+
 # Admin SPA: install dependencies (Node 20+).
 admin-install:
     cd admin-ui && npm ci

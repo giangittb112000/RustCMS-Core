@@ -7,7 +7,8 @@
   `just generated` (CLI docs, TS types, admin build, SDK copies: must leave git clean), `just e2e`.
 - Keep the machine usable: `CARGO_BUILD_JOBS=4 CARGO_INCREMENTAL=0 CARGO_PROFILE_DEV_DEBUG=0
   CARGO_PROFILE_TEST_DEBUG=0`, 4 test threads, long runs in the background; check `df -h` before big builds and
-  `cargo clean` when space is low.
+  `cargo clean` when space is low (`just prune` removes test executables above 15 GB, cleans above 30 GB; it and
+  `admin-ui/e2e/serve.sh` honor `CARGO_TARGET_DIR`).
 - E2E (`admin-ui/e2e`) runs on Chrome only (`PLAYWRIGHT_CHANNEL=chrome`), one worker as configured (specs share the
   demo's users); every spec uses the `watch` fixture (CSP violations and console errors fail it). Leave nothing
   behind (a failed spec's records break count-based specs). In editors, reach a paragraph next to a block node
