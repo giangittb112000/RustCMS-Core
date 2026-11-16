@@ -106,7 +106,14 @@ impl Resource for GadgetResource {
                             .placeholder("Name")
                             .help("Shown in lists")
                             .prefix("/gadgets/")
-                            .suffix(".html"),
+                            .suffix(".html")
+                            // A reaction (vocabulary 16, ADR 0041).
+                            .reacts(|_, state| {
+                                let notes = format!("About {}", state.text("name"));
+                                Box::pin(async move {
+                                    Ok(vec![FormPatch::set_if_empty("notes", notes), FormPatch::notice("Notes filled")])
+                                })
+                            }),
                         Textarea::make("notes").column_span(2),
                     ]),
                     Grid::make(3).schema(components![
@@ -302,7 +309,17 @@ db_test!(kitchen_sink_contract, |db: TestDb| async move {
     ] {
         assert!(text.contains(&format!("\"type\":\"{kind}\"")), "{kind} missing");
     }
+    // A form reaction's answer (ADR 0041).
+    let request: rustcms_admin::schema::FormReactRequest = serde_json::from_value(json!({
+        "operation": "create",
+        "changed": "name",
+        "state": {"name": "Widget", "notes": ""},
+        "seq": 4,
+    }))
+    .unwrap();
+    let reacted = gadgets.react(&ctx, request).await.unwrap();
     if db.backend() == rustcms_testing::Backend::Sqlite {
+        support::contract("kitchen-sink.react.json", &serde_json::to_value(&reacted).unwrap());
         // One copy is enough (the backends render the same contract; checked below).
         support::contract("kitchen-sink.schema.create.json", &serde_json::to_value(&create).unwrap());
         support::contract("kitchen-sink.schema.edit.json", &serde_json::to_value(&edit).unwrap());

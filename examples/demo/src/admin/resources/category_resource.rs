@@ -38,7 +38,13 @@ impl Resource for CategoryResource {
         Form::new().width(FormWidth::Full).schema(components![
             Split::make()
                 .main(components![
-                    TextInput::make("name"),
+                    // #region reacts
+                    // A form reaction: typing a name fills an empty slug.
+                    TextInput::make("name").reacts(|_ctx, state| {
+                        let slug = slugify(state.text("name"));
+                        Box::pin(async move { Ok(vec![FormPatch::set_if_empty("slug", slug)]) })
+                    }),
+                    // #endregion reacts
                     TextInput::make("slug").prefix("/categories/"),
                     // #region posts-repeater
                     // The category's posts, edited in its form: each row is a post
@@ -118,3 +124,18 @@ impl Resource for CategoryResource {
     }
     // #endregion relations
 }
+
+// #region slugify
+/// `Hello, World!` → `hello-world`: ASCII letters and digits, the rest a dash.
+fn slugify(text: &str) -> String {
+    let mut slug = String::new();
+    for c in text.chars() {
+        if c.is_ascii_alphanumeric() {
+            slug.push(c.to_ascii_lowercase());
+        } else if !slug.is_empty() && !slug.ends_with('-') {
+            slug.push('-');
+        }
+    }
+    slug.trim_end_matches('-').chars().take(120).collect()
+}
+// #endregion slugify

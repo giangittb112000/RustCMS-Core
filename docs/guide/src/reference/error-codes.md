@@ -50,6 +50,8 @@ keeps it complete.
 | `min_items` | `must have at least {min} items` |
 | `not_a_row` | `is not one of the rows` |
 | `row_order` | `must list every row once` |
+| `not_up_to_date` | `is not up to date` |
+| `not_checked` | `could not be checked` |
 | `list_size` | `must be a list of 1 to {max} items` |
 | `max_kib` | `may not be larger than {max} KiB` |
 | `max_elements` | `may not have more than {max} elements` |

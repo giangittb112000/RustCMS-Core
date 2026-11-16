@@ -232,6 +232,9 @@
   "not_allowed": [
     "is not allowed"
   ],
+  "not_checked": [
+    "could not be checked"
+  ],
   "not_found": [
     "was not found"
   ],
@@ -243,6 +246,9 @@
   ],
   "not_option": [
     "is not one of the options"
+  ],
+  "not_up_to_date": [
+    "is not up to date"
   ],
   "number": [
     "must be a number"

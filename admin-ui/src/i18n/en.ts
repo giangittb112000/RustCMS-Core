@@ -26,6 +26,8 @@ export const en = {
   "issue.min_items": "must have at least {min} items",
   "issue.not_a_row": "is not one of the rows",
   "issue.row_order": "must list every row once",
+  "issue.not_up_to_date": "is not up to date",
+  "issue.not_checked": "could not be checked",
   "issue.list_size": "must be a list of 1 to {max} items",
   "issue.max_kib": "may not be larger than {max} KiB",
   "issue.max_elements": "may not have more than {max} elements",

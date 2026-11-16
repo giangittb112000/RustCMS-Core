@@ -339,8 +339,11 @@ impl Resource for PostResource {
 
     fn form() -> Form {
         Form::new().columns(2).schema(components![
-            Section::make("Content")
-                .schema(components![TextInput::make("title").placeholder("Title"), NumberInput::make("price")]),
+            Section::make("Content").schema(components![
+                // A reaction (ADR 0041), for the authorization oracle: no changes.
+                TextInput::make("title").placeholder("Title").reacts(|_, _| Box::pin(async { Ok(Vec::new()) })),
+                NumberInput::make("price")
+            ]),
             SelectInput::make("category_id"),
             Toggle::make("published"),
             DateTimePicker::make("published_at"),

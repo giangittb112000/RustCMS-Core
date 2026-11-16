@@ -13,7 +13,7 @@ use crate::ui::{
 /// Version of the schema structure.
 pub const SCHEMA_VERSION: u32 = 2;
 /// Version of the component, column and filter vocabulary.
-pub const VOCABULARY_VERSION: u32 = 15;
+pub const VOCABULARY_VERSION: u32 = 16;
 
 /// Navigation entry and identity of a resource.
 #[derive(Debug, Clone, PartialEq, Serialize)]
@@ -204,6 +204,11 @@ pub struct InputSchema {
     #[cfg_attr(feature = "ts", ts(as = "Option<RepeaterSchema>", optional))]
     #[serde(skip_serializing_if = "Option::is_none")]
     pub repeater: Option<Box<RepeaterSchema>>,
+    /// A change asks the server's reaction (`POST form/react`) for changes to
+    /// the form (vocabulary 16, ADR 0041). Create and edit forms only.
+    #[cfg_attr(feature = "ts", ts(as = "Option<bool>", optional))]
+    #[serde(skip_serializing_if = "std::ops::Not::not")]
+    pub reacts: bool,
 }
 
 /// The rows of a repeater (vocabulary 15, ADR 0040). Options absent when unset.
@@ -500,6 +505,41 @@ pub struct ComputedValues {
     pub data: crate::Data,
     /// Names that failed (error, timeout, too large): shown as not available.
     pub failed: Vec<String>,
+}
+
+/// `POST form/react`: the form's state when an input with a reaction changed
+/// (vocabulary 16, ADR 0041).
+#[derive(Debug, Clone, PartialEq, serde::Deserialize)]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
+#[serde(deny_unknown_fields)]
+pub struct FormReactRequest {
+    /// `create` or `edit` (`view` is refused).
+    pub operation: SchemaOperation,
+    /// The record's key (`edit` only).
+    #[cfg_attr(feature = "ts", ts(optional))]
+    #[serde(default)]
+    pub key: Option<String>,
+    /// The input that changed (one with `reacts`).
+    pub changed: String,
+    /// The form's values, in wire format (as a save sends them).
+    #[cfg_attr(feature = "ts", ts(type = "Record<string, JsonValue>"))]
+    pub state: crate::Data,
+    /// Sent back unchanged: the panel applies only its latest request's answer.
+    pub seq: u32,
+}
+
+/// The answer to a [`FormReactRequest`].
+#[derive(Debug, Clone, PartialEq, Serialize)]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
+pub struct FormReactResponse {
+    /// The request's `seq`.
+    pub seq: u32,
+    /// The changes to apply, in order (messages translated).
+    pub patches: Vec<crate::ui::FormPatch>,
+    /// The reaction failed (error, timeout): nothing to apply.
+    #[cfg_attr(feature = "ts", ts(as = "Option<bool>", optional))]
+    #[serde(skip_serializing_if = "std::ops::Not::not")]
+    pub failed: bool,
 }
 
 /// A form.

@@ -7,6 +7,17 @@ All notable changes are documented here. The format follows
 ## [Unreleased]
 
 ### Added
+- Form reactions (vocabulary 16, ADR 0041): `Input::reacts(|ctx, state| …)`
+  runs on the server when the user changes the input (after a pause in
+  typing, `POST form/react`) and answers with `FormPatch`es (`set`,
+  `set_if_empty`, `add_row`, `remove_row`, `move_row`, `flag_row`, `notice`)
+  that the panel applies while the form is unchanged. The reaction sees the
+  fields the user may read; patches the user could not make are dropped and
+  logged. `.strict()` refuses saves (form, API, CSV imports) while the
+  reaction still has changes (`not_up_to_date`) or fails (`not_checked`);
+  `.reaction_timeout(d)` (5 seconds, at most 30). 120 requests per user per
+  minute. Resource forms only (not settings, actions or repeater rows).
+  Demo: a category's name fills its slug.
 - Inputs and layouts shown under conditions (vocabulary 13, ADR 0037):
   `.shown_when(when("x").eq(v))` (`ne`, `is_in`, `filled`, `is_true`,
   `Condition::all/any`) on inputs, layouts, settings forms and

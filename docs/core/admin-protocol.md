@@ -30,6 +30,7 @@ in runtime mode the page is rendered per request (static mode renders it once); 
 | GET | `/resources/{slug}/records?…` | `{data: [Envelope], meta}` |
 | POST | `/resources/{slug}/records` | 201 `{data: Envelope}` |
 | GET / PATCH / DELETE | `/resources/{slug}/records/{key}` | `{data: Envelope}` / `{data: Envelope}` / 204 |
+| POST | `/resources/{slug}/form/react` | `FormReactRequest` `{operation: "create" \| "edit", key?, changed, state, seq}` → `FormReactResponse` `{seq, patches, failed?}`: the changes the reaction of input `changed` asks for (ADR 0041), for a user who may write that form (create: `create`; edit: `update` on the record, in scope); `view` is 422, as is an input without a reaction; 120 requests per user per minute and 8 reactions at once (429 beyond) |
 | GET | `/resources/{slug}/records/{key}/computed` | `ComputedValues` `{data: {name: value}, failed: [name]}`: the computed values the view page's infolist shows, for a user who may view the record (ADR 0039); 60 requests per user per minute and 8 pages computing at once (429 beyond) |
 | POST | `/resources/{slug}/records/{key}/restore` | `{data: Envelope}` (soft deletes; trashed records only) |
 | DELETE | `/resources/{slug}/records/{key}/force` | 204 (soft deletes; trashed records only) |
@@ -178,6 +179,24 @@ and `name.ref.input`; `name.key` for a row; `name` for the change. Issue
 codes `not_a_row` (a key that is not a visible child of this record) and
 `row_order`. The parent's history has `rows_changed` entries whose `meta`
 lists `relation`, `created`, `updated`, `deleted`, `reordered`.
+
+Vocabulary 16 adds form reactions (ADR 0041): inputs of create and edit
+forms may carry `reacts: true` (never on view schemas). After such an input
+changes and typing pauses (about 400 ms), clients post `form/react` with the
+form's values in wire format (as a save sends them, without secrets, links or
+relationship rows) and an increasing `seq`, and apply the answer only if its
+`seq` is the latest and the form has not changed since. Patches, tagged by
+`op`, apply in order (a row index refers to the rows as the previous patches
+left them): `set` and `set_if_empty` (`field`, `value`; the latter only when
+the field is `null`, `""` or `[]`), `add_row` (`field`, `row`, `index?`: the
+end when absent), `remove_row` (`field`, `index`), `move_row` (`field`,
+`from`, `to`), `flag_row` (`field`, `index`, `message`: a warning under the
+row until the next answer), `notice` (`message`). Row patches name JSON
+repeaters only. Patches do not trigger further reactions; network errors,
+429 and `failed` are ignored. Inputs declared `.strict()` refuse a save while
+their reaction still has changes (issue `not_up_to_date`) or fails
+(`not_checked`), on every write path. Older clients never call reactions;
+strict ones still hold when they save.
 
 Vocabulary 14 adds infolists (ADR 0039): the view schema of a record
 (`operation=view&key=…`) carries `infolist`, declared or, for a resource

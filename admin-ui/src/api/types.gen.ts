@@ -360,7 +360,12 @@ integer?: boolean,
 /**
  * Repeaters: their rows (vocabulary 15, ADR 0040).
  */
-repeater?: RepeaterSchema, };
+repeater?: RepeaterSchema, 
+/**
+ * A change asks the server's reaction (`POST form/react`) for changes to
+ * the form (vocabulary 16, ADR 0041). Create and edit forms only.
+ */
+reacts?: boolean, };
 
 export type LayoutSchema = { 
 /**
@@ -621,6 +626,108 @@ data: Record<string, JsonValue>,
  * Names that failed (error, timeout, too large): shown as not available.
  */
 failed: Array<string>, };
+
+export type FormPatch = { "op": "set", 
+/**
+ * The field.
+ */
+field: string, 
+/**
+ * Its new value, in wire format.
+ */
+value: JsonValue, } | { "op": "set_if_empty", 
+/**
+ * The field.
+ */
+field: string, 
+/**
+ * Its new value, in wire format.
+ */
+value: JsonValue, } | { "op": "add_row", 
+/**
+ * The repeater.
+ */
+field: string, 
+/**
+ * Where the row goes.
+ */
+index?: number, 
+/**
+ * The row's values.
+ */
+row: JsonValue, } | { "op": "remove_row", 
+/**
+ * The repeater.
+ */
+field: string, 
+/**
+ * The row.
+ */
+index: number, } | { "op": "move_row", 
+/**
+ * The repeater.
+ */
+field: string, 
+/**
+ * The row.
+ */
+from: number, 
+/**
+ * Its new place.
+ */
+to: number, } | { "op": "flag_row", 
+/**
+ * The repeater.
+ */
+field: string, 
+/**
+ * The row.
+ */
+index: number, 
+/**
+ * The warning (translated).
+ */
+message: string, } | { "op": "notice", 
+/**
+ * The message (translated).
+ */
+message: string, };
+
+export type FormReactRequest = { 
+/**
+ * `create` or `edit` (`view` is refused).
+ */
+operation: SchemaOperation, 
+/**
+ * The record's key (`edit` only).
+ */
+key?: string, 
+/**
+ * The input that changed (one with `reacts`).
+ */
+changed: string, 
+/**
+ * The form's values, in wire format (as a save sends them).
+ */
+state: Record<string, JsonValue>, 
+/**
+ * Sent back unchanged: the panel applies only its latest request's answer.
+ */
+seq: number, };
+
+export type FormReactResponse = { 
+/**
+ * The request's `seq`.
+ */
+seq: number, 
+/**
+ * The changes to apply, in order (messages translated).
+ */
+patches: Array<FormPatch>, 
+/**
+ * The reaction failed (error, timeout): nothing to apply.
+ */
+failed?: boolean, };
 
 export type ComponentSchema = InputSchema | LayoutSchema | EntrySchema;
 
