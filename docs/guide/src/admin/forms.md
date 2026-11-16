@@ -337,8 +337,9 @@ Repeater::make("faq")
   [reference checks](media.md)), secrets, belongs-to-many inputs, tabs and
   splits.
 
-On view pages the rows are shown read-only; an [infolist](infolists.md)
-shows them with a `RepeatableEntry`. [Settings pages](settings.md#kinds) take
+On view pages each row is shown with the entries of its inputs (a
+`RepeatableEntry`, see [the default view page](infolists.md#the-default-view-page));
+an [infolist](infolists.md) can choose them. [Settings pages](settings.md#kinds) take
 repeaters too.
 
 ### Child records

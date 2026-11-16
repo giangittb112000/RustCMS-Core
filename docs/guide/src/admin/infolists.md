@@ -6,10 +6,11 @@ value is shown by an **entry**: a status as a colored badge, a code with a
 copy button, a related record as a link, a number computed on the server, or
 a component of your own.
 
-Without `infolist()`, the view page shows the [form](forms.md) read-only, as
-it always has. Declared, the infolist **replaces** the form on the view page;
-everything around it stays: the header and its actions, slots, relation
-managers and the history.
+Without `infolist()`, the view page shows the [form](forms.md) read-only:
+the panel makes an infolist from it (see [The default view
+page](#the-default-view-page)). Declared, the infolist **replaces** the form
+on the view page; everything around it stays: the header and its actions,
+slots, relation managers and the history.
 
 | Builder | Answers | Example |
 |---|---|---|
@@ -99,6 +100,30 @@ KeyValueEntry::make("attributes").shown_when(when("published").is_true())
 On a view page, hiding is presentation, not protection: every value the user
 may read comes with the record anyway. Protect data with
 [field rules](authorization.md), not conditions.
+
+## The default view page
+
+A resource without `infolist()` gets one made from its form, once at boot,
+in the form's sections, grids, tabs and splits. Each input becomes the entry
+that shows its value:
+
+| Input | Entry |
+|---|---|
+| `TextInput`, `Textarea`, `NumberInput` | `TextEntry` (line breaks kept; a password input masked; prefix and suffix kept) |
+| `SelectInput` with options, `CheckboxList` | `TextEntry` with the option labels (a list for `CheckboxList`) |
+| `SelectInput` of a `belongs_to` field | `RelationEntry`: the related record's title, a link when the user may list that resource |
+| `Toggle`, `Checkbox` on a boolean column | `BooleanEntry` (yes or no) |
+| `DatePicker`, `DateTimePicker` | `TextEntry`: the date in the user's language |
+| `KeyValue`, `FileUpload` (media), `RichEditor` | `KeyValueEntry`, `MediaEntry`, `RichTextEntry` |
+| `Repeater` (JSON) | `RepeatableEntry`, each row's inputs as entries |
+| `CustomInput` | `TextEntry` (a form widget draws no view; declare a `CustomEntry` for one) |
+| `Hidden`, `BelongsToManySelect`, secrets, relationship repeaters | nothing (links and child records show in their relation sections) |
+
+An input whose entry does not fit its field (a `Toggle` on a number column)
+is shown as text. Labels, column spans and conditions come from the inputs;
+help texts do not. Fields the user may not read are left out, as everywhere.
+To show a value differently, declare an `infolist()`: it replaces this one
+as a whole.
 
 ## Computed values
 
