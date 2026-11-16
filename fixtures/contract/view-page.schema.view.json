@@ -201,6 +201,32 @@
                             "rules": [],
                             "type": "text_input",
                             "valueType": "string"
+                          },
+                          {
+                            "columnSpan": 1,
+                            "disabled": true,
+                            "label": "Checks",
+                            "name": "checks",
+                            "nullable": true,
+                            "repeater": {
+                              "addable": true,
+                              "components": [
+                                {
+                                  "columnSpan": 1,
+                                  "disabled": true,
+                                  "label": "At",
+                                  "name": "at",
+                                  "nullable": true,
+                                  "rules": [],
+                                  "type": "date_time_picker",
+                                  "valueType": "instant"
+                                }
+                              ],
+                              "deletable": true
+                            },
+                            "rules": [],
+                            "type": "repeater",
+                            "valueType": "json"
                           }
                         ],
                         "deletable": true
@@ -276,6 +302,21 @@
         },
         "type": "text_input",
         "valueType": "string"
+      },
+      {
+        "columnSpan": 1,
+        "disabled": true,
+        "label": "Photos",
+        "media": {
+          "accept": [],
+          "maxItems": 3,
+          "multiple": true
+        },
+        "name": "photos",
+        "nullable": true,
+        "rules": [],
+        "type": "file_upload",
+        "valueType": "json"
       },
       {
         "columnSpan": 1,
@@ -434,6 +475,23 @@
                         "name": "href",
                         "type": "text_entry",
                         "valueType": "string"
+                      },
+                      {
+                        "columnSpan": 1,
+                        "components": [
+                          {
+                            "columnSpan": 1,
+                            "label": "At",
+                            "multiline": true,
+                            "name": "at",
+                            "type": "text_entry",
+                            "valueType": "instant"
+                          }
+                        ],
+                        "label": "Checks",
+                        "name": "checks",
+                        "type": "repeatable_entry",
+                        "valueType": "json"
                       }
                     ],
                     "label": "Links",
@@ -482,6 +540,13 @@
         },
         "type": "text_entry",
         "valueType": "string"
+      },
+      {
+        "columnSpan": 1,
+        "label": "Photos",
+        "name": "photos",
+        "type": "media_entry",
+        "valueType": "json"
       },
       {
         "columnSpan": 1,
