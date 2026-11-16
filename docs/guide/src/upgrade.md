@@ -41,6 +41,14 @@ No migration. To roll back, install 0.12.1 again; no data changes shape.
   title's fields: with `title("name")`, a search of several words no longer
   matches only that exact phrase. Titles with an empty value are left out of
   `titles()`.
+- **Extensions: SDK `ui` 3.** Bundles built with `ui: 2` keep working. To use
+  `registerEntry` or the SDK's `Infolist`, copy the new SDK
+  (`rustcms make:sdk`, which points at the registrations to move), set
+  `Requires { ui: 3 }` and rebuild (`npm run build`).
+- **Rust API.** New variants: `Component::Entry` (forms hold entries in
+  infolists), `ComponentSchema::Entry`, `PageView::Infolist`. An exhaustive
+  `match` on one of these enums needs an arm for it (or `_`). Code
+  implementing `DynResource` itself (not through `Resource`) adds `computed`.
 - **Name clash.** `rustcms_admin::Condition` (form conditions) can clash with
   `sea_orm::Condition` when an application glob-imports both
   (`use rustcms_admin::*; use sea_orm::*;`): import the one you use by name.

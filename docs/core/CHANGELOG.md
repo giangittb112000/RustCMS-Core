@@ -53,6 +53,12 @@ All notable changes are documented here. The format follows
   stay text.
 
 ### Changed
+- **Breaking (Rust API):** new enum variants `Component::Entry`,
+  `ComponentSchema::Entry` and `PageView::Infolist` (exhaustive matches need
+  an arm); `DynResource` gains `computed` (only for code implementing it by
+  hand). Extension host `ui` 3 (bundles built for `ui` 2 keep working).
+- Computed values (infolists): at most 2 view pages computing at once per
+  user, besides the 8 across users, so one user cannot hold every turn.
 - Relationship selects (`lookup`) search each word of the search over the
   title's fields, every word required (repeated words once): with
   `title("name")`, "big red" no longer matches only the exact phrase. Titles

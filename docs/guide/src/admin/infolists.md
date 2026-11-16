@@ -124,9 +124,14 @@ fn computed() -> Vec<Computed<order::Entity>> {
   the user sees them, go through `ctx.records(…)`: their scope and policy
   apply (the demo counts a category's posts that way).
 - Keep them light: one query, not one per related row. Each user may open
-  60 view pages with computed values a minute, and 8 pages compute at once
-  across users; beyond that the values show "Not available" until the next
-  load.
+  60 view pages with computed values a minute and compute 2 at once, and 8
+  pages compute at once across users; beyond that the values show "Not
+  available" until the next load.
+- The time limit stops a value at its next `.await`. Work that blocks a
+  thread (CPU loops, blocking I/O, even inside `spawn_blocking`) keeps
+  running after the limit and holds its turn until it ends: split it or
+  check the time yourself, or compute it in a [job](../digging-deeper/queues.md)
+  and read the stored result.
 
 ## Custom entries
 

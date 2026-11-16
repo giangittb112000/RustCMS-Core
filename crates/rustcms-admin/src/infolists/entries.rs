@@ -187,13 +187,13 @@ impl Entry {
         self
     }
 
-    /// Thumbnail size in pixels (media entries; default 96).
+    /// Thumbnail size in pixels (media entries; default 80).
     pub fn size(mut self, pixels: u16) -> Self {
         self.display.size = Some(pixels.clamp(16, 512));
         self
     }
 
-    /// Opens the images in a viewer (media entries).
+    /// Links each image to its file, opened in a new tab (media entries).
     pub fn gallery(mut self) -> Self {
         self.display.gallery = true;
         self

@@ -165,7 +165,10 @@ registerPage("demo/react", ReactDemo);
 // #region swatch-entry
 /** A category's color on its view page (`CustomEntry::make("color", "demo/swatch")`). */
 function Swatch(props: EntryProps<string | null>) {
-  if (!props.value) return <span className="demo-swatch-none">{props.t("No color")}</span>;
+  // A stored value reaches CSS only once checked: a hex color, nothing else.
+  if (!props.value || !/^#[0-9a-f]{6}$/i.test(props.value)) {
+    return <span className="demo-swatch-none">{props.t("No color")}</span>;
+  }
   return (
     <span className="demo-swatch">
       <span className="demo-swatch-chip" style={{ backgroundColor: props.value }} aria-hidden="true" />

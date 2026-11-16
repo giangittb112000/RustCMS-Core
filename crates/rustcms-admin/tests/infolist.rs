@@ -5,7 +5,8 @@
 //! entries; infolists that cannot hold refuse to boot. SQLite, PostgreSQL,
 //! MySQL.
 
-use std::sync::atomic::{AtomicUsize, Ordering};
+use std::collections::HashMap;
+use std::sync::Mutex;
 use std::time::Duration;
 
 use axum::http::StatusCode;
@@ -62,7 +63,14 @@ pub mod teacher {
 const FEES: &str = "courses.fees";
 
 /// Runs of the `learners` computed value.
-static LEARNERS_RUNS: AtomicUsize = AtomicUsize::new(0);
+/// Runs of the `learners` computed value, by course code: each test's course
+/// has its own code, so tests running at the same time (each backend) do not
+/// count each other's runs.
+static LEARNERS_RUNS: Mutex<Option<HashMap<String, usize>>> = Mutex::new(None);
+
+fn learners_runs(code: &str) -> usize {
+    LEARNERS_RUNS.lock().unwrap().as_ref().and_then(|runs| runs.get(code).copied()).unwrap_or(0)
+}
 
 fn course_fields() -> Vec<Field> {
     use course::Column as C;
@@ -98,9 +106,10 @@ fn course_infolist() -> Infolist {
 
 fn course_computed() -> Vec<Computed<course::Entity>> {
     vec![
-        Computed::make("learners", |_, _| {
+        Computed::make("learners", |_, course: &course::Model| {
+            let code = course.code.clone();
             Box::pin(async move {
-                LEARNERS_RUNS.fetch_add(1, Ordering::SeqCst);
+                *LEARNERS_RUNS.lock().unwrap().get_or_insert_with(HashMap::new).entry(code).or_default() += 1;
                 Ok(json!(42))
             })
         }),
@@ -370,9 +379,19 @@ db_test!(computed_values_fail_alone, |db: TestDb| async move {
 });
 
 db_test!(computed_values_run_only_for_viewers_of_the_view_page, |db: TestDb| async move {
-    let (app, users, course) = setup(db).await;
+    let (app, users, _) = setup(db).await;
+    // A course of this test's own (its code counts its runs alone).
+    let course = {
+        let admin = app.acting_as(&users.admin).await;
+        let teachers = admin.get(&app.admin_api("resources/teachers/records")).await.json();
+        let teacher = teachers["data"][0]["key"].as_str().unwrap().parse::<i64>().unwrap();
+        let code = format!("RUN-{}", uuid::Uuid::now_v7().simple());
+        let body = json!({"title": "Runs", "code": code, "status": "open", "published": true, "meta": {}, "teacher_id": teacher, "fee": 1});
+        create(&admin, &app, "courses", body).await
+    };
     let url = app.admin_api(&format!("resources/courses/records/{course}/computed"));
-    let runs = LEARNERS_RUNS.load(Ordering::SeqCst);
+    let code = admin_code(&app, &users, &course).await;
+    let runs = learners_runs(&code);
 
     // Not for a user who may not view the record.
     let outsider = app.acting_as(&users.outsider).await;
@@ -384,10 +403,10 @@ db_test!(computed_values_run_only_for_viewers_of_the_view_page, |db: TestDb| asy
     admin.get(&app.admin_api("resources/courses/records")).await.assert_status(StatusCode::OK);
     admin.get(&app.admin_api(&format!("resources/courses/records/{course}"))).await.assert_status(StatusCode::OK);
     view_schema(&admin, &app, "courses", &course).await;
-    assert_eq!(LEARNERS_RUNS.load(Ordering::SeqCst), runs);
+    assert_eq!(learners_runs(&code), runs);
 
     admin.get(&url).await.assert_status(StatusCode::OK);
-    assert_eq!(LEARNERS_RUNS.load(Ordering::SeqCst), runs + 1);
+    assert_eq!(learners_runs(&code), runs + 1);
 
     // A resource without computed values answers with none.
     let teachers = admin.get(&app.admin_api("resources/teachers/records")).await.json();
@@ -556,3 +575,26 @@ async fn a_page_infolist_with_a_relation_entry() {
     )
     .await;
 }
+
+/// The code of course `key` (unique per test).
+async fn admin_code(app: &TestApp, users: &Users, key: &str) -> String {
+    let admin = app.acting_as(&users.admin).await;
+    let record = admin.get(&app.admin_api(&format!("resources/courses/records/{key}"))).await.json();
+    record["data"]["data"]["code"].as_str().unwrap().to_owned()
+}
+
+db_test!(one_user_cannot_hold_every_computing_turn, |db: TestDb| async move {
+    let (app, users, course) = setup(db).await;
+    let url = app.admin_api(&format!("resources/courses/records/{course}/computed"));
+    let admin = app.acting_as(&users.admin).await;
+    let reader = app.acting_as(&users.reader).await;
+    // Each request waits for the slow value (200 ms): a user's third page at
+    // once is refused at once; another user is still served.
+    let (a, b, c, other) = tokio::join!(admin.get(&url), admin.get(&url), admin.get(&url), reader.get(&url));
+    let mut statuses = [a.status, b.status, c.status];
+    statuses.sort();
+    assert_eq!(statuses, [StatusCode::OK, StatusCode::OK, StatusCode::TOO_MANY_REQUESTS]);
+    other.assert_status(StatusCode::OK);
+    // Turns are given back: the next request is served.
+    admin.get(&url).await.assert_status(StatusCode::OK);
+});

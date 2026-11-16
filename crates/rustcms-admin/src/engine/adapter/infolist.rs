@@ -10,6 +10,44 @@ use crate::ui::{Computed, Entry, EntryType, Infolist};
 static COMPUTING: tokio::sync::Semaphore = tokio::sync::Semaphore::const_new(8);
 /// Longest wait for a turn before answering 429.
 const COMPUTING_WAIT: std::time::Duration = std::time::Duration::from_secs(10);
+/// View pages one user may compute at once (across resources): one user
+/// cannot hold every turn of [`COMPUTING`].
+const COMPUTING_PER_USER: usize = 2;
+
+/// Pages computing per user; an entry lives while one of its turns is held.
+static COMPUTING_USERS: std::sync::Mutex<Option<HashMap<String, usize>>> = std::sync::Mutex::new(None);
+
+/// One of a user's [`COMPUTING_PER_USER`] turns, given back when dropped
+/// (also when the request is cancelled).
+struct UserTurn(String);
+
+impl UserTurn {
+    /// A turn for `user`, or `None` when the user already computes as many
+    /// pages as allowed.
+    fn take(user: &str) -> Option<Self> {
+        let mut users = COMPUTING_USERS.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
+        let count = users.get_or_insert_with(HashMap::new).entry(user.to_owned()).or_default();
+        if *count >= COMPUTING_PER_USER {
+            return None;
+        }
+        *count += 1;
+        Some(Self(user.to_owned()))
+    }
+}
+
+impl Drop for UserTurn {
+    fn drop(&mut self) {
+        let mut users = COMPUTING_USERS.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
+        if let Some(users) = users.as_mut()
+            && let Some(count) = users.get_mut(&self.0)
+        {
+            *count -= 1;
+            if *count == 0 {
+                users.remove(&self.0);
+            }
+        }
+    }
+}
 
 /// Largest computed value sent, serialized.
 const COMPUTED_MAX_BYTES: usize = 64 * 1024;
@@ -214,8 +252,11 @@ impl<R: Resource> ResourceAdapter<R> {
         if !self.policy.allows(ctx, ability::VIEW, Some(&self.record(&model))).await {
             return Err(AppError::Forbidden);
         }
-        // A bounded wait for a turn, after authorization and before running
-        // anything (the route is also limited per user, see `http::computed`).
+        // A turn of the user's first (never waiting: a user beyond theirs gets
+        // 429 at once, holding nothing), then a bounded wait for a shared
+        // turn, after authorization and before running anything (the route
+        // is also limited per user and minute, see `http::computed`).
+        let _user = UserTurn::take(&ctx.principal.id).ok_or(AppError::TooManyRequests { retry_after: 5 })?;
         let _turn = tokio::time::timeout(COMPUTING_WAIT, COMPUTING.acquire())
             .await
             .map_err(|_| AppError::TooManyRequests { retry_after: 5 })?
