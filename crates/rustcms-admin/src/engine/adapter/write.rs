@@ -29,6 +29,7 @@ impl<R: Resource> ResourceAdapter<R> {
             data: Data::new(),
             labels: BTreeMap::new(),
             trashed: false,
+            counts: BTreeMap::new(),
         };
         // Re-read in scope: a write may move the record out of the user's scope
         // (e.g. a new owner), and then the response shows nothing of it.

@@ -36,6 +36,15 @@ All notable changes are documented here. The format follows
   position), soft-deleted children go to the trash, any refusal rolls back
   everything. Errors at `lines.8.quantity` / `lines.n1.quantity`; issue codes
   `not_a_row`, `row_order`; the parent's history shows "Rows changed".
+- Count columns and row history (ADR 0040, part 3): `TextColumn::make("faq")
+  .count()` shows how many items a JSON field holds;
+  `TextColumn::make("posts_count").counts("posts")` how many records of a
+  has-many relation each record has, among those the user may list (list
+  envelopes carry `counts`; the column is left out for users who may not list
+  the relation). The history shows a repeater's change line by row and input
+  (`faq › 2 › question`) and a relationship repeater's rows by key. CSV
+  exports write rows as JSON text and imports check them as forms do. Demo:
+  categories edit their posts in the form and count them in the list.
 - Infolists for record view pages (vocabulary 14, ADR 0039):
   `Resource::infolist()` replaces the read-only form on the view page with
   entries in the form's layouts: `TextEntry` (`badge`/`color`, `copyable`,

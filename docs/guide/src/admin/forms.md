@@ -384,12 +384,27 @@ Repeater::make("lines")
 - **Errors** name the row by key or, for a new row, its reference:
   `lines.8.quantity`, `lines.n1.quantity`.
 - **History:** the parent's history shows "Rows changed" (which rows were
-  added, changed, removed, reordered); each row has its own entries.
+  added, changed, removed, reordered, by key); each row has its own entries.
 - The form edits up to `max_items` rows (at most 100); with more, the
   repeater is read-only and the relation section edits them. View pages show
   the rows in the relation section, not in the form.
 - **Not yet:** conditions in relationship rows, repeaters inside them, and
   conditions on the repeater itself.
+
+The demo's categories edit their posts this way (each row is a post):
+
+<<< @/../../../examples/demo/src/admin/resources/category_resource.rs#posts-repeater [src/admin/resources/category_resource.rs]
+
+### Repeaters in lists, history and CSV
+
+- A [count column](tables.md#counts) shows the number of rows:
+  `TextColumn::make("faq").count()` for a JSON repeater,
+  `TextColumn::make("lines_count").counts("lines")` for a relationship.
+- The history shows a JSON repeater's change by row and input
+  (`faq › 2 › question`), rows matched by position.
+- [CSV exports](import-export.md) write a JSON repeater as its JSON text;
+  imports read that text and check each row as a save does (errors at
+  `faq.0.question`). Relationship repeaters are not part of CSV files.
 
 ## Encrypted fields
 

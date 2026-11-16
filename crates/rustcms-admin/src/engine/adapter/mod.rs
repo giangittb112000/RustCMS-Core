@@ -365,7 +365,36 @@ impl<R: Resource> ResourceAdapter<R> {
         }
         let field = |name: &str| fields.iter().find(|f| f.name == name);
         for column in &table_ui.columns {
+            if let Some(relation) = column.counts {
+                // A count of a relation: the column is named by itself, never a field.
+                assert!(
+                    field(&column.name).is_none(),
+                    "resource `{slug}`: count column `{}` has a field's name",
+                    column.name
+                );
+                assert!(
+                    relations.iter().any(|r| r.name == relation && !r.is_many()),
+                    "resource `{slug}`: column `{}` counts `{relation}`, which is not a has-many relation",
+                    column.name
+                );
+                assert!(
+                    !column.count && column.cell.is_none(),
+                    "resource `{slug}`: count column `{}` takes neither count() nor a custom cell",
+                    column.name
+                );
+                continue;
+            }
             assert!(field(&column.name).is_some(), "resource `{slug}`: table column `{}` is not a field", column.name);
+            assert!(
+                !column.count || columns[&column.name].kind == FieldKind::Json,
+                "resource `{slug}`: column `{}` counts list items and needs a JSON field",
+                column.name
+            );
+            assert!(
+                !column.count || column.cell.is_none(),
+                "resource `{slug}`: count column `{}` takes no custom cell",
+                column.name
+            );
             assert!(
                 !secrets.contains_key(&column.name),
                 "resource `{slug}`: encrypted field `{}` cannot be a table column",

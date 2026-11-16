@@ -169,6 +169,66 @@ impl<R: Resource> ResourceAdapter<R> {
     }
 }
 
+impl<R: Resource> ResourceAdapter<R> {
+    /// How many records the user may list (scope, policy, trash) hold each of
+    /// `parents` in `field` (count columns, `TextColumn::counts`). When the
+    /// policy decides once, one count per parent; otherwise one bounded scan
+    /// for all of them, each candidate checked: beyond [`MAX_LIST_SCAN`]
+    /// candidates, no counts at all.
+    pub(super) async fn counted_by(
+        &self,
+        ctx: &Ctx,
+        field: &str,
+        parents: &[String],
+    ) -> AppResult<BTreeMap<String, u64>> {
+        // As the relation's list: admitted before any parent is looked at.
+        let mut query = ListQuery { parent: Some((field.to_owned(), String::new())), ..Default::default() };
+        self.admit_list(ctx, &query).await?;
+        let zeros = || parents.iter().map(|k| (k.clone(), 0)).collect::<BTreeMap<_, _>>();
+        if !self.policy.view_depends_on_record() {
+            if !self.policy.allows(ctx, ability::VIEW, None).await {
+                return Ok(zeros());
+            }
+            let mut out = BTreeMap::new();
+            for key in parents {
+                query.parent = Some((field.to_owned(), key.clone()));
+                out.insert(key.clone(), self.list_select(ctx, &query)?.count(&ctx.db).await?);
+            }
+            return Ok(out);
+        }
+        let column = self.column(field);
+        let values: Vec<sea_orm::Value> = parents
+            .iter()
+            .filter_map(|key| column.kind.decode(&column.kind.from_query(&serde_json::json!(key))).ok())
+            .filter_map(|mut v| (!v.is_empty()).then(|| v.swap_remove(0)))
+            .collect();
+        let select = self.list_select(ctx, &ListQuery::default())?.filter(column.column.is_in(values));
+        let (keys, complete) =
+            self.read_candidate_keys(&ctx.db, &select, LIST_SCAN_BATCH, MAX_LIST_SCAN / LIST_SCAN_BATCH).await?;
+        if !complete {
+            return Ok(BTreeMap::new());
+        }
+        let mut out = zeros();
+        for chunk in keys.chunks(LOAD_CHUNK) {
+            for (_, record) in self.load_ordered(ctx, &select, chunk).await? {
+                if !self.listable(ctx, &record).await {
+                    continue;
+                }
+                // The wire value of the parent key, as the parent's envelope key.
+                let parent = match record.get(field) {
+                    Some(serde_json::Value::String(s)) => s.clone(),
+                    Some(other) => other.to_string(),
+                    None => continue,
+                };
+                if let Some(count) = out.get_mut(&parent) {
+                    *count += 1;
+                }
+            }
+        }
+        Ok(out)
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

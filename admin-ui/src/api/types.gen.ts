@@ -683,7 +683,17 @@ props?: JsonValue,
  * Hidden on screens narrower than this breakpoint (`sm`: 640 px, `md`:
  * 768 px, `lg`: 1024 px); presentation only (vocabulary 10).
  */
-hideBelow?: Breakpoint, };
+hideBelow?: Breakpoint, 
+/**
+ * Shows the number of items of the field's JSON list (vocabulary 15).
+ */
+count?: boolean, 
+/**
+ * Shows `counts[relation]` of each record: how many records of this
+ * has-many relation it has that the user may list (vocabulary 15). The
+ * column's `name` is not a field.
+ */
+counts?: string, };
 
 export type BadgeColor = { 
 /**
@@ -855,7 +865,13 @@ trashed?: boolean,
 /**
  * Titles of related records for `belongs_to` fields (`#key` when not visible).
  */
-labels?: { [key in string]: string }, };
+labels?: { [key in string]: string }, 
+/**
+ * In the list route's pages: how many records of each has-many relation a count column
+ * shows the record has, among those the user may list (vocabulary 15).
+ * Absent for a relation the user may not list or too many to check.
+ */
+counts?: { [key in string]: number }, };
 
 export type PageMeta = { 
 /**

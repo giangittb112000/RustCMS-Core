@@ -804,6 +804,14 @@ impl<R: Resource> DynResource for ResourceAdapter<R> {
         ResourceAdapter::import_value(self, name, text, quoted)
     }
 
+    async fn add_counts(&self, ctx: &Ctx, envelopes: &mut [Envelope]) {
+        ResourceAdapter::add_counts(self, ctx, envelopes).await
+    }
+
+    async fn counted_by(&self, ctx: &Ctx, field: &str, parents: &[String]) -> AppResult<BTreeMap<String, u64>> {
+        ResourceAdapter::counted_by(self, ctx, field, parents).await
+    }
+
     fn check_import_row(&self, ctx: &Ctx, op: Operation, data: Data) -> AppResult<Data> {
         ResourceAdapter::check_import_row(self, ctx, op, data)
     }

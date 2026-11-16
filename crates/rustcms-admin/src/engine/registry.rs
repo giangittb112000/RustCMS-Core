@@ -146,6 +146,14 @@ pub trait DynResource: Send + Sync {
         date: Option<&str>,
         ranges: &[(chrono::DateTime<chrono::Utc>, chrono::DateTime<chrono::Utc>)],
     ) -> AppResult<Counted>;
+    /// How many records the user may list hold each of `parents` in `field`
+    /// (count columns); empty when too many must be checked one by one.
+    #[doc(hidden)]
+    async fn counted_by(&self, ctx: &Ctx, field: &str, parents: &[String]) -> AppResult<BTreeMap<String, u64>>;
+    /// Adds the counts of the table's count columns to a page of the list
+    /// route (the table only: relation lists and Rust callers go without).
+    #[doc(hidden)]
+    async fn add_counts(&self, ctx: &Ctx, envelopes: &mut [Envelope]);
     /// Fields the user may set by import.
     fn import_fields(&self, ctx: &Ctx) -> Vec<crate::ImportField>;
     /// Columns of `Field::encrypted*` fields (for `key:reencrypt`).

@@ -66,7 +66,7 @@ impl Resource for ProductResource {
     const SLUG: &'static str = "products";
 
     fn meta() -> ResourceMeta {
-        ResourceMeta::new("Product").title("name")
+        ResourceMeta::new("Product").title("name").exportable().importable()
     }
 
     fn fields() -> Vec<Field> {
@@ -75,6 +75,10 @@ impl Resource for ProductResource {
 
     fn form() -> Form {
         Form::new().schema(components![TextInput::make("name"), faq(), NumberInput::make("price")])
+    }
+
+    fn table() -> Table {
+        Table::new().columns(vec![ui::TextColumn::make("name"), ui::TextColumn::make("faq").label("Questions").count()])
     }
 
     fn infolist() -> Infolist {
@@ -123,7 +127,11 @@ impl SettingsPage for SocialSettings {
 }
 
 fn build(config: Config) -> AppBuilder {
+    // Uploaded CSV files (imports) go to a temporary directory of this app.
+    let root = std::env::temp_dir().join(format!("rustcms-repeater-{}", uuid::Uuid::now_v7()));
+    let config = config.with("storage.root", root.to_string_lossy()).expect("storage config");
     let mut app = AppBuilder::new(config);
+    app.provider(rustcms_core::storage::StorageProvider);
     app.provider(AuthProvider::new());
     app.provider(AdminProvider::new().resource::<ProductResource>().settings::<SocialSettings>());
     app
@@ -248,6 +256,40 @@ db_test!(the_schema_describes_the_rows, |db: TestDb| async move {
     assert_eq!((rows[4]["valueType"].clone(), rows[4]["integer"].clone()), (json!("f64"), json!(true)));
     assert_eq!(rows[5]["valueType"], json!("bool"));
     assert_eq!(rows[6]["repeater"]["maxItems"], json!(2));
+    // A count column: the panel shows the number of rows.
+    let column = schema["table"]["columns"].as_array().unwrap().iter().find(|c| c["name"] == "faq").unwrap().clone();
+    assert_eq!((column["count"].clone(), column["label"].clone()), (json!(true), json!("Questions")));
+});
+
+db_test!(csv_files_carry_rows_as_json_text, |db: TestDb| async move {
+    let (app, admin) = setup(db).await;
+    let client = app.acting_as(&admin).await;
+    create(&client, &app, json!([{"question": "Size?", "kind": "text"}])).await.assert_status(StatusCode::CREATED);
+    // Exports write the rows as their JSON text (one cell).
+    let export = client.get(&app.admin_api("resources/products/export")).await;
+    export.assert_status(StatusCode::OK);
+    let text = export.text();
+    let lines: Vec<&str> = text.split("\r\n").filter(|l| !l.is_empty()).collect();
+    assert_eq!(lines[0], "name,faq,price");
+    assert!(lines[1].starts_with("Lamp,\"[{") && lines[1].contains("\"\"question\"\":\"\"Size?\"\""), "{lines:?}");
+
+    // Imports read that text back, and check each row as a form would.
+    let csv = format!("{}\r\n{}\r\nBad,\"[{{\"\"answer\"\":\"\"x\"\"}}]\",\r\n", lines[0], lines[1]);
+    let request = axum::http::Request::builder()
+        .method(Method::POST)
+        .uri(app.admin_api("resources/products/imports"))
+        .header(axum::http::header::CONTENT_TYPE, "text/csv")
+        .body(axum::body::Body::from(csv))
+        .unwrap();
+    let uploaded = client.request(request).await;
+    uploaded.assert_status(StatusCode::CREATED);
+    let id = uploaded.json()["id"].as_str().unwrap().to_owned();
+    let mapping = json!({"mapping": {"name": "name", "faq": "faq"}});
+    let preview = client.post_json(&app.admin_api(&format!("imports/{id}/preview")), &mapping).await.json();
+    assert_eq!((preview["rows"].clone(), preview["valid"].clone()), (json!(2), json!(1)), "{preview}");
+    assert_eq!(preview["report"][0]["row"], json!(3));
+    assert_eq!(preview["report"][0]["field"], json!("faq.0.question"));
+    assert_eq!(preview["report"][0]["code"], json!("required"));
 });
 
 db_test!(repeatable_entries_show_the_rows, |db: TestDb| async move {

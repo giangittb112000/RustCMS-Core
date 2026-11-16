@@ -57,6 +57,25 @@ application ([custom cells](customizing.md#custom-cells)).
 BadgeColumn::make("status").color("published", "success").color("draft", "gray")
 ```
 
+### Counts
+
+Two columns show a number instead of the value, as Filament's `counts()`:
+
+- `.count()` on the column of a JSON field (a [repeater](forms.md#repeaters),
+  a list) shows how many items it holds: `TextColumn::make("faq").count()`.
+- `TextColumn::make("posts_count").counts("posts")` shows how many records
+  of the has-many relation `posts` each record has. The column is named by
+  itself (not a field) and is not sortable. Only records the user may list
+  are counted (the related resource's scope, policy and trash), and the
+  column is shown only to users who may list the relation. When the related
+  resource's policy decides record by record, the page's related records are
+  checked one by one, at most 10,000 of them: beyond, the column shows no
+  numbers.
+
+The demo's categories count their posts:
+
+<<< @/../../../examples/demo/src/admin/resources/category_resource.rs#table [src/admin/resources/category_resource.rs]
+
 ## Filters
 
 | Filter | Field must be `.filterable()` | Sends |
