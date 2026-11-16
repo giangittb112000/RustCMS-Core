@@ -4,6 +4,7 @@ import { render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import type { AuditEntryView, ColumnSchema, Envelope } from "@/api/types";
 import { AuditEntries, rowChanges } from "@/components/audit";
+import { followRows } from "@/renderers/repeater";
 import { Cell } from "@/renderers/table";
 
 const record = (data: object, counts?: object) => ({ key: "1", abilities: {}, data, counts }) as unknown as Envelope;
@@ -57,4 +58,10 @@ it("shows the history of rows in place of raw values", async () => {
   expect(screen.getByText("Moved")).toBeInTheDocument();
   expect(screen.queryByText("Changed")).toBeNull();
   expect(screen.queryByText(/"relation"/)).toBeNull();
+});
+
+it("keeps the server's problems on the rows they named after rows move", () => {
+  const problems = { "": "too many", "0.question": "is required", "2.links.0.href": "is required" };
+  // Row a (0) removed, c (2) moved first: its problem follows it; a's is gone.
+  expect(followRows(problems, ["a", "b", "c"], ["c", "b"])).toEqual({ "": "too many", "0.links.0.href": "is required" });
 });

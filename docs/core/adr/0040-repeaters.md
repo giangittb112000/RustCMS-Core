@@ -140,6 +140,10 @@ Repeater::make("lines")
   `update` and `delete`; `delete` and `update` on create are a 422. Rows not
   named are never touched, so a save never deletes a row another user added
   or a row the user cannot see.
+- `data` holds the repeater's row inputs only: any other field of the child
+  is a 422 at `lines.<key or ref>.<field>`, even one the child's own form
+  writes (deny by default). On create, the rows created must reach
+  `min_items` (the repeater left out creates none).
 - **`order`** (with `order_column`) lists every row the user sees after the
   change (kept, updated and created), each once; one missing or extra is a
   422 (`lines`). Visible rows take, in that order, the positions visible rows
@@ -244,7 +248,9 @@ repeater is not JSON; `relationship()` names no has-many relation, a row
 input is not a field of the child, the child's foreign key or order column
 is an input, the order column is not an integer field, a relationship row
 holds a relationship repeater, or a relationship repeater has
-`clear_when_hidden`; a condition in a row names no input of the row. A count
+`clear_when_hidden`; a condition in a row names no input of the row; the
+child locks a parent (`lock_parent`) other than this relation's (its lock
+would come after its own rows). A count
 column is refused when `count()` is on a non-JSON field or has a custom cell,
 or `counts()` names no has-many relation or takes a field's name.
 

@@ -17,6 +17,21 @@ let nextKey = 0;
 const newKey = () => `row-${++nextKey}`;
 
 /** Stable React keys for rows changed only through this widget (reset when the value is replaced). */
+/** `problems` by path with the row index they name moved to where that row is now (gone: dropped). */
+export function followRows(problems: Record<string, unknown>, then: string[], now: string[]): Record<string, unknown> {
+  const out: Record<string, unknown> = {};
+  for (const [path, problem] of Object.entries(problems)) {
+    const [head, ...rest] = path.split(".");
+    if (!/^\d+$/.test(head!)) {
+      out[path] = problem;
+      continue;
+    }
+    const at = now.indexOf(then[Number(head)] ?? "");
+    if (at >= 0) out[[String(at), ...rest].join(".")] = problem;
+  }
+  return out;
+}
+
 function useRowKeys(count: number) {
   const keys = useRef<string[]>([]);
   if (keys.current.length !== count) keys.current = Array.from({ length: count }, newKey);
@@ -30,10 +45,15 @@ export function RepeaterWidget({ id, input, ctx, value, onChange, onBlur, disabl
   const keys = useRowKeys(rows?.length ?? 0);
   const [folded, setFolded] = useState<Set<string>>(() => (repeater?.collapsed ? new Set(keys.current) : new Set()));
   const dragged = useRef<number | null>(null);
+  // The server names rows by their index at the refused save: remember which
+  // rows those were, so its problems follow them when rows move or go away.
+  const answer = ctx.errors[input.name];
+  const answered = useRef<{ answer: unknown; keys: string[] }>({ answer: undefined, keys: [] });
+  if (answered.current.answer !== answer) answered.current = { answer, keys: [...keys.current] };
   if (!repeater || rows === null) return <p className="text-sm text-muted-foreground">{t("form.json")}</p>;
 
   // Problems by path: the server's (after a refused save), else the panel's once the user tried to save.
-  const server = (ctx.errors[input.name] as { types?: Record<string, unknown> } | undefined)?.types ?? {};
+  const server = followRows((answer as { types?: Record<string, unknown> } | undefined)?.types ?? {}, answered.current.keys, keys.current);
   const local = ctx.submitCount ? rowProblems(repeater, rows) : {};
   const problem = (path: string) => {
     const found = server[path] ?? local[path];

@@ -12,3 +12,6 @@ node_modules/
 /admin-ui/test-results/
 # Self-signed certificate of the TLS mail test server (`just test-tls-cert`).
 /.test-tls/
+
+# macOS Finder metadata
+.DS_Store

@@ -372,6 +372,16 @@ impl Registry {
             let slug = resource.slug();
             for (name, target, inputs, order) in resource.row_repeater_fields() {
                 let child = &self.resources[target];
+                // Rows are written under the parent's lock; a child locking another
+                // parent would take that lock after its own rows (ADR 0035 order).
+                if let Some((field, locked)) = &child.meta().parent_lock {
+                    let relation = resource.relations().iter().find(|r| r.name == name).map(|r| r.field);
+                    assert!(
+                        *locked == slug && relation == Some(field.as_str()),
+                        "resource `{slug}`: repeater `{name}`: `{target}` locks its parent `{locked}` through `{field}`, \
+                         not through this relation"
+                    );
+                }
                 for input in &inputs {
                     assert!(
                         child.field_link(input).is_some(),

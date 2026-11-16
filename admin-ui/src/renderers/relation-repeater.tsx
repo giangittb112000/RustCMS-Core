@@ -53,7 +53,7 @@ export function RelationRepeaterWidget({ id, input, ctx, value, onChange, disabl
   const add = () => commit({ ...state, rows: [...state.rows, { ref: newRef(), values: rowOf(repeater, {}), changed: [] }] });
   const remove = (index: number) => {
     const row = state.rows[index]!;
-    commit({ rows: state.rows.filter((_, i) => i !== index), deleted: row.key ? [...state.deleted, row.key] : state.deleted });
+    commit({ ...state, rows: state.rows.filter((_, i) => i !== index), deleted: row.key ? [...state.deleted, row.key] : state.deleted });
   };
   const move = (from: number, to: number) => {
     if (to < 0 || to >= state.rows.length) return;

@@ -28,6 +28,8 @@ pub(crate) struct RowTarget<'a> {
     pub(crate) parent_key: &'a str,
     /// The child's integer field holding each row's position.
     pub(crate) order_column: Option<&'a str>,
+    /// The child fields the repeater's rows edit: anything else sent is refused.
+    pub(crate) inputs: &'a [String],
     /// The repeater's bounds on the parent's rows (checked when rows are added or removed).
     pub(crate) min_items: Option<u32>,
     pub(crate) max_items: Option<u32>,
@@ -81,6 +83,15 @@ impl<R: Resource> ResourceAdapter<R> {
         change: RowChange,
     ) -> AppResult<RowsOutcome> {
         let relation = target.relation;
+        // Rows edit the repeater's inputs only, not every writable field of the child.
+        let mut undeclared = ValidationErrors::new();
+        let sent = change.update.iter().map(|(k, d)| (k, d)).chain(change.create.iter().map(|(r, d)| (r, d)));
+        for (id, data) in sent {
+            for name in data.keys().filter(|n| !target.inputs.contains(n)) {
+                undeclared.add(format!("{relation}.{id}.{name}"), "is not allowed");
+            }
+        }
+        undeclared.into_result()?;
         let parent_value = self.fk_value(target.field, target.parent_key);
         let mut named: Vec<String> =
             change.update.iter().map(|(k, _)| k.clone()).chain(change.delete.clone()).collect();
@@ -525,6 +536,17 @@ impl<R: Resource> ResourceAdapter<R> {
                 None => errors.add(name, "is invalid"),
             }
         }
+        // A new parent has no rows but those it creates: the repeater's minimum
+        // holds on them, sent or not (as a JSON repeater's on create).
+        if op == Operation::Create {
+            for (index, repeater) in self.row_repeaters.iter().enumerate() {
+                let Some(min) = repeater.spec.min_items.filter(|m| *m > 0) else { continue };
+                let created = out.iter().find(|(i, _)| *i == index).map_or(0, |(_, c)| c.create.len());
+                if created < min as usize {
+                    errors.add(repeater.name, format!("must have at least {min} items"));
+                }
+            }
+        }
         errors.into_result()?;
         Ok(out)
     }
@@ -548,6 +570,7 @@ impl<R: Resource> ResourceAdapter<R> {
                 field: repeater.field,
                 parent_key: &key,
                 order_column: repeater.order_column.as_deref(),
+                inputs: &repeater.inputs,
                 min_items: repeater.spec.min_items,
                 max_items: repeater.spec.max_items,
             };
