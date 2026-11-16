@@ -91,7 +91,10 @@ RepeatableEntry::make("faq").schema(components![
 
 `shown_when` works as in forms (see [Showing inputs under conditions](forms.md#showing-inputs-under-conditions)),
 evaluated on the **stored** values. A condition names another entry of the
-infolist; a section's condition applies to everything in it.
+infolist; a section's condition applies to everything in it. Values are
+read as the edit form reads them: a field the form hides under its own
+conditions counts as empty (`null`), and a field only the form has (a
+`Hidden` input on the default view page) is compared with its kind.
 
 ```rust
 KeyValueEntry::make("attributes").shown_when(when("published").is_true())

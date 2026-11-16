@@ -63,7 +63,7 @@ function shown(root: HTMLElement) {
 }
 
 async function draw(schema: ResourceSchema, record: Envelope, slug: string) {
-  const view = await mount(<InfolistRenderer infolist={schema.infolist!} data={record.data as Data} labels={record.labels} slug={slug} recordKey={record.key} />);
+  const view = await mount(<InfolistRenderer infolist={schema.infolist!} form={schema.form.components} data={record.data as Data} labels={record.labels} slug={slug} recordKey={record.key} />);
   return shown(view.container);
 }
 

@@ -13,7 +13,7 @@ import { asDocument } from "@/lib/rich-text";
 import type { DocNode } from "@/lib/rich-text";
 import { formatWireDate, useLocale, useT } from "@/i18n";
 import { isDateKind } from "@/lib/wire";
-import { formConditions, hasConditions } from "@/schema/conditions";
+import { formConditions, hasConditions, hiddenFields } from "@/schema/conditions";
 import { isEntry, isLayout, isTextObject } from "@/schema/form";
 import { SchemaLayout, SplitLayout, TabsLayout, always, gridCols, readOnlyText, shownWith, span, withShownChildren } from "./form";
 import { MediaThumb } from "./media";
@@ -40,6 +40,11 @@ export type ComputedState = { status: "loading" } | { status: "error" } | { stat
 
 interface Context {
   data: Data;
+  /**
+   * The record's form (view pages): the kinds and conditions of fields the
+   * infolist does not show, which its conditions may name (a hidden input).
+   */
+  form?: ComponentSchema[];
   /** Titles of related records (`Envelope.labels`). */
   labels?: Record<string, string>;
   computed?: ComputedState;
@@ -65,10 +70,18 @@ export function hasComputed(components: ComponentSchema[]): boolean {
 /** An infolist's components, its conditions evaluated on `data` (the stored values). */
 export function InfolistRenderer({ infolist, ...ctx }: { infolist: InfolistSchema } & Context) {
   const { components } = infolist;
-  const shown = useMemo(
-    () => (hasConditions(components) ? shownWith(formConditions(components), ctx.data as Record<string, unknown>) : always),
-    [components, ctx.data],
-  );
+  const { form, data } = ctx;
+  const shown = useMemo(() => {
+    if (!hasConditions(components)) return always;
+    const own = formConditions(components);
+    if (!form) return shownWith(own, data as Record<string, unknown>);
+    // As the edit form reads them: each field with its kind (the form's for fields the
+    // infolist does not show), and as null when the form hides it.
+    const edit = formConditions(form);
+    const values: Record<string, unknown> = { ...data };
+    for (const name of hiddenFields(edit, values)) values[name] = null;
+    return shownWith({ fields: own.fields, kinds: new Map([...edit.kinds, ...own.kinds]) }, values);
+  }, [components, form, data]);
   return <Body components={components} ctx={ctx} shown={shown} />;
 }
 
@@ -263,6 +276,8 @@ function TextValue({ entry, value }: { entry: EntrySchema; value: JsonValue }) {
       ? <div className="flex flex-wrap gap-1.5">{items.map((item, i) => one(item, i))}</div>
       : <ul className="space-y-1">{items.map((item, i) => <li key={i}>{one(item)}</li>)}</ul>;
   }
+  // Records in a list: one JSON value, indented (joined, they would read as one line).
+  if (Array.isArray(value) && value.some((item) => item !== null && typeof item === "object")) return one(value);
   if (Array.isArray(value)) return <>{items.map(label).join(", ")}</>;
   return one(value);
 }

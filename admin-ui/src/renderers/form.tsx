@@ -21,7 +21,6 @@ import { Input, Label, NativeSelect, Textarea } from "@/components/ui/input";
 import { cn } from "@/lib/utils";
 import { UNREADABLE_NUMBER, type WireKind } from "@/lib/wire";
 import {
-  KNOWN_INPUT_TYPES,
   encodePair,
   hasUnsafeInteger,
   inputsOf,
@@ -67,7 +66,6 @@ export interface FormContext {
   optionsPath?: (field: string) => string;
 }
 
-export const KNOWN_INPUTS = KNOWN_INPUT_TYPES;
 export const KNOWN_LAYOUTS = new Set(["section", "grid", "tabs", "tab", "split", "pane"]);
 
 const SPAN: Record<number, string> = {
