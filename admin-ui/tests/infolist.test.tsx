@@ -217,3 +217,35 @@ it("draws a repeatable entry's rows from the stored list, not as a layout", () =
   expect(rows[0]).toHaveTextContent("Size?");
   expect(rows[1]).toHaveTextContent("Red");
 });
+
+it("draws a repeatable entry's rows from each row, not as a layout", () => {
+  const faq = entry("faq", {
+    type: "repeatable_entry", valueType: "json",
+    components: [entry("question"), entry("asked_on", { valueType: "date" })],
+  });
+  const { container } = draw(list(faq), { faq: [{ question: "Why?", asked_on: "2026-11-16" }, { question: "How?" }] });
+  const rows = container.querySelectorAll("ol > li");
+  expect(rows).toHaveLength(2);
+  expect(within(rows[0] as HTMLElement).getByText("Why?")).toBeInTheDocument();
+  expect(rows[0]!.querySelector("time")?.getAttribute("dateTime")).toBe("2026-11-16");
+  expect(within(rows[1] as HTMLElement).getByText("How?")).toBeInTheDocument();
+});
+
+it("keeps line breaks only where asked, and in values shown as raw JSON", () => {
+  const faq = entry("faq", { type: "repeatable_entry", valueType: "json", components: [entry("question")] });
+  const { container } = draw(
+    list(faq, entry("note", { multiline: true }), entry("flag", { type: "boolean_entry", valueType: "bool" })),
+    { faq: [{ question: "One\nTwo" }], note: "A\nB", flag: { odd: 1 } },
+  );
+  // A row's text entry without `multiline` does not inherit its row's breaks.
+  expect(screen.getByText("One Two", { normalizer: (t) => t.replace(/\s+/g, " ") }).closest(".whitespace-pre-wrap")).toBeNull();
+  expect(screen.getByText(/A\s+B/).closest(".whitespace-pre-wrap")).not.toBeNull();
+  // A boolean entry over a value that is not one: indented JSON, breaks kept.
+  expect(container.querySelector("pre, .whitespace-pre-wrap")?.textContent).toBeTruthy();
+  expect(screen.getByText(/"odd": 1/).closest(".whitespace-pre-wrap")).not.toBeNull();
+});
+
+it("marks badge dates with <time>", () => {
+  const { container } = draw(list(entry("day", { valueType: "date", badge: true })), { day: "2026-11-16" });
+  expect(container.querySelector("time")?.getAttribute("dateTime")).toBe("2026-11-16");
+});

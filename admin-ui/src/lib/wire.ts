@@ -16,6 +16,9 @@ export type WireKind =
   | "instant"
   | "json";
 
+/** Whether values of `kind` are dates or times (shown in the user's language). */
+export const isDateKind = (kind: string | undefined): kind is "date" | "local_datetime" | "instant" => kind === "date" || kind === "local_datetime" || kind === "instant";
+
 const I64 = /^-?\d{1,19}$/;
 const DECIMAL = /^-?\d+(\.\d+)?$/;
 const DATE = /^\d{4}-\d{2}-\d{2}$/;
