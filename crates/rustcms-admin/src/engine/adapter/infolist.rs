@@ -102,28 +102,11 @@ pub(super) fn from_form<C: ColumnTrait>(
     fields: &[Field],
     columns: &HashMap<String, ColumnInfo<C>>,
 ) -> Infolist {
-    fn walk<C: ColumnTrait>(
-        components: &[Component],
-        fields: &[Field],
-        columns: &HashMap<String, ColumnInfo<C>>,
-    ) -> Vec<Component> {
-        components
-            .iter()
-            .filter_map(|component| match component {
-                Component::Input(input) => {
-                    let field = fields.iter().find(|f| f.name == input.name && f.secret.is_none())?;
-                    let kind = columns.get(&field.name)?.kind;
-                    form_entry(input, Some((field, kind))).map(Component::Entry)
-                }
-                Component::Layout(layout) => {
-                    let children = walk(&layout.children, fields, columns);
-                    (!children.is_empty()).then(|| Component::Layout(Layout { children, ..layout.clone() }))
-                }
-                Component::Entry(_) => None,
-            })
-            .collect()
-    }
-    Infolist { columns: form.columns, components: walk(&form.components, fields, columns), width: None }
+    let components = entries_of(&form.components, &|input| {
+        let field = fields.iter().find(|f| f.name == input.name && f.secret.is_none())?;
+        form_entry(input, Some((field, columns.get(&field.name)?.kind)))
+    });
+    Infolist { columns: form.columns, components, width: None }
 }
 
 /// The entry showing `input` read-only: of a field (`field`, with its column
@@ -165,19 +148,20 @@ fn form_entry(input: &Input, field: Option<(&Field, FieldKind)>) -> Option<Entry
     }
     if kind == EntryType::RepeatableEntry {
         let spec = input.repeater.as_deref()?;
-        entry.components = row_entries(&spec.components);
+        entry.components = entries_of(&spec.components, &|input| form_entry(input, None));
     }
     Some(entry)
 }
 
-/// The entries of a repeater row, in its layouts.
-fn row_entries(components: &[Component]) -> Vec<Component> {
+/// `components` with each input as the entry `entry` makes of it (none:
+/// left out), in their layouts (layouts left empty dropped).
+fn entries_of(components: &[Component], entry: &dyn Fn(&Input) -> Option<Entry>) -> Vec<Component> {
     components
         .iter()
         .filter_map(|component| match component {
-            Component::Input(input) => form_entry(input, None).map(Component::Entry),
+            Component::Input(input) => entry(input).map(Component::Entry),
             Component::Layout(layout) => {
-                let children = row_entries(&layout.children);
+                let children = entries_of(&layout.children, entry);
                 (!children.is_empty()).then(|| Component::Layout(Layout { children, ..layout.clone() }))
             }
             Component::Entry(_) => None,

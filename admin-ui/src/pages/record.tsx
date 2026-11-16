@@ -411,7 +411,7 @@ export function ViewPage({ slug, recordKey }: { slug: string; recordKey: string 
         <CardContent className={cn("grid grid-cols-1 gap-x-6 gap-y-6 p-5 sm:p-6", gridCols(s.infolist ? s.infolist.columns : s.form.columns))}>
           {/* The server always sends a record's infolist: declared, or made from the form. */}
           {s.infolist && (
-            <InfolistRenderer infolist={s.infolist} data={record.data.data} labels={record.data.labels} slug={slug} recordKey={recordKey}
+            <InfolistRenderer infolist={s.infolist} form={s.form.components} data={record.data.data} labels={record.data.labels} slug={slug} recordKey={recordKey}
               computed={!computedEntries ? undefined
                 : computed.data ? { status: "ready", data: computed.data.data, failed: computed.data.failed }
                 : computed.isError ? { status: "error" } : { status: "loading" }} />
