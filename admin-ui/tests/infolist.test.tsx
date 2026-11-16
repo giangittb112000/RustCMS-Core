@@ -4,7 +4,7 @@
 // options; panel pages and the SDK draw entries over plain data.
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { RouterProvider, createMemoryHistory } from "@tanstack/react-router";
-import { render, screen, waitFor, within } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { http, HttpResponse, delay } from "msw";
 import { setupServer } from "msw/node";
 import { SessionContext } from "@/api/context";
@@ -173,4 +173,31 @@ it("draws custom entries with their script, and unknown entries as text", () => 
   expect(valueOf("rating")).toHaveTextContent("★★★");
   expect(valueOf("future")).toHaveTextContent("raw");
   expect(valueOf("future")).toHaveAttribute("data-fallback", "true");
+});
+
+it("keeps the open tab when the stored values show a tab before it", () => {
+  const infolist: InfolistSchema = {
+    columns: 1,
+    components: [
+      {
+        type: "tabs", columns: 1, components: [
+          { type: "tab", id: "sale", label: "Sale", columns: 1, shownWhen: { op: "is_true", name: "on_sale" }, components: [entry("discount")] },
+          { type: "tab", id: "main", label: "Main", columns: 1, components: [entry("title")] },
+          { type: "tab", id: "more", label: "More", columns: 1, components: [entry("note")] },
+        ],
+      },
+    ],
+  } as InfolistSchema;
+  const view = draw(infolist, { on_sale: false, title: "T", note: "N", discount: 5 });
+  fireEvent.click(screen.getByRole("tab", { name: "More" }));
+  const queryClient = new QueryClient();
+  const session = createSession({ basePath: "", apiPath: "http://localhost/admin/api" }, queryClient, () => {});
+  view.rerender(
+    <SessionContext.Provider value={session}>
+      <QueryClientProvider client={queryClient}>
+        <InfolistRenderer infolist={infolist} data={{ on_sale: true, title: "T", note: "N", discount: 5 }} />
+      </QueryClientProvider>
+    </SessionContext.Provider>,
+  );
+  expect(screen.getByRole("tab", { name: "More" })).toHaveAttribute("aria-selected", "true");
 });

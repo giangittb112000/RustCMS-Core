@@ -516,6 +516,8 @@ refused_at_boot!(a_color_without_badge, ColorWithoutBadge, "entry `title`: `colo
     infolist: list(components![TextEntry::make("title").color("a", "success")]), computed: Vec::new());
 refused_at_boot!(a_number_on_text, NumberOnText, "entry `title`: `number` needs a number field",
     infolist: list(components![TextEntry::make("title").number(2)]), computed: Vec::new());
+refused_at_boot!(too_many_decimals, TooManyDecimals, "entry `fee`: `number` shows at most 20 decimals",
+    infolist: list(components![TextEntry::make("fee").number(21)]), computed: Vec::new());
 refused_at_boot!(labels_on_text, LabelsOnText, "entry `title`: `labels` does not fit a TextEntry",
     infolist: list(components![TextEntry::make("title").labels("a", "b")]), computed: Vec::new());
 refused_at_boot!(an_entry_twice, Twice, "entry `title` appears twice",

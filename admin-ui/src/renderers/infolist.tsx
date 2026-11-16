@@ -80,7 +80,7 @@ function Body({ components, ctx, shown }: {
     if (isLayout(component)) {
       const body = (layout: { components: ComponentSchema[] }) => <Body components={layout.components} ctx={ctx} shown={shown} />;
       if (component.type === "tabs") {
-        return <TabsLayout key={`layout-${index}`} layout={withShownChildren(component, shown)} render={body} />;
+        return <TabsLayout key={`layout-${index}`} layout={component} shown={shown} render={body} />;
       }
       if (component.type === "split") {
         return <SplitLayout key={`layout-${index}`} layout={withShownChildren(component, shown)} render={body} />;
@@ -223,7 +223,9 @@ function TextValue({ entry, value }: { entry: EntrySchema; value: JsonValue }) {
       const n = Number(item);
       // Integers beyond what a double holds exactly are shown as written.
       if (Number.isFinite(n) && (typeof item === "number" || Math.abs(n) <= Number.MAX_SAFE_INTEGER)) {
-        return new Intl.NumberFormat(locale, { minimumFractionDigits: entry.decimals, maximumFractionDigits: entry.decimals }).format(n);
+        // The server allows 20 decimals at most; a schema asking more shows the value as written.
+        const decimals = Math.min(Math.max(entry.decimals, 0), 20);
+        return new Intl.NumberFormat(locale, { minimumFractionDigits: decimals, maximumFractionDigits: decimals }).format(n);
       }
     }
     return readOnlyText(item);

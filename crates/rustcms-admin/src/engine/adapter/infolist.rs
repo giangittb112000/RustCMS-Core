@@ -165,6 +165,8 @@ fn check_options(owner: &str, entry: &Entry, kind: Option<FieldKind>) {
         let numeric =
             matches!(kind, None | Some(FieldKind::I32 | FieldKind::I64 | FieldKind::F64 | FieldKind::Decimal));
         assert!(text && numeric, "{owner}: entry `{name}`: `number` needs a number field or a computed value");
+        // Browsers format at most 100 decimals; a value has far fewer worth showing.
+        assert!(d.decimals.is_some_and(|n| n <= 20), "{owner}: entry `{name}`: `number` shows at most 20 decimals");
     }
     if let Some(widget) = &d.widget {
         assert!(crate::ui::valid_widget(widget), "{owner}: invalid entry name `{widget}`");

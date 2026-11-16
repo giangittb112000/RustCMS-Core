@@ -410,9 +410,15 @@ impl<R: Resource> ResourceAdapter<R> {
             action_form::canonicalize_conditions(&mut action.form);
         }
 
-        let infolist = R::infolist();
+        let mut infolist = R::infolist();
         let computed = R::computed();
         infolist::check_infolist(slug, &infolist, &computed, &fields, &columns);
+        // Schemas send the infolist's conditions as the server compares them.
+        let kind_of = |name: &str| {
+            let column = columns.get(name).filter(|_| !secrets.contains_key(name))?;
+            Some((column.kind, crate::wire::decimal_scale(column.column.def().get_column_type())))
+        };
+        crate::engine::conditions::canonicalize(&mut infolist.components, &kind_of);
 
         Self {
             infolist: (!infolist.is_empty()).then_some(infolist),

@@ -371,6 +371,13 @@ mod tests {
         let section = serde_json::to_value(layout.shown_when.as_deref().unwrap()).unwrap();
         assert_eq!(section["conditions"][0]["values"], json!([canonical]));
         assert_eq!(section["conditions"][1]["value"], json!("10.5"));
+
+        // Infolist entries too.
+        let mut entries: Vec<Component> =
+            crate::components![crate::ui::TextEntry::make("a").shown_when(when("owner").eq(upper))];
+        canonicalize(&mut entries, &kind_of);
+        let Component::Entry(entry) = &entries[0] else { panic!() };
+        assert_eq!(serde_json::to_value(entry.shown_when.as_deref().unwrap()).unwrap()["value"], canonical);
     }
 
     fn kinds(name: &str) -> Option<(FieldKind, Option<u32>)> {

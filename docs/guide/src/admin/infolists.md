@@ -128,10 +128,11 @@ fn computed() -> Vec<Computed<order::Entity>> {
   pages compute at once across users; beyond that the values show "Not
   available" until the next load.
 - The time limit stops a value at its next `.await`. Work that blocks a
-  thread (CPU loops, blocking I/O, even inside `spawn_blocking`) keeps
-  running after the limit and holds its turn until it ends: split it or
-  check the time yourself, or compute it in a [job](../digging-deeper/queues.md)
-  and read the stored result.
+  thread (CPU loops, blocking I/O) keeps it busy past the limit, and work
+  moved to `spawn_blocking` keeps running after the page gave up waiting,
+  outside the limits on pages computing at once. Keep computed values to
+  short queries; compute anything heavy in a [job](../digging-deeper/queues.md)
+  and show the stored result.
 
 ## Custom entries
 
