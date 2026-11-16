@@ -10,6 +10,7 @@ import type { ChartBucket, DashboardView, Envelope, RecentColumn, RecentRecord, 
 import { formatWireDate, useLocale, useT } from "@/i18n";
 import { Cell } from "@/renderers/table";
 import { cn } from "@/lib/utils";
+import { isDateKind } from "@/lib/wire";
 
 const enc = encodeURIComponent;
 
@@ -175,7 +176,7 @@ function RecentValue({ column, record }: { column: RecentColumn; record: RecentR
     const envelope = { key: record.key, title: record.title, abilities: {}, data, labels: {} } as Envelope;
     return <span className="inline-flex align-middle [&_.line-clamp-2]:inline"><Cell column={column.column} record={envelope} /></span>;
   }
-  if (typeof value === "string" && column.valueType && ["instant", "local_datetime", "date"].includes(column.valueType)) {
+  if (typeof value === "string" && isDateKind(column.valueType)) {
     return <time dateTime={value}>{formatWireDate(column.valueType, value) ?? value}</time>;
   }
   return <>{text}</>;
