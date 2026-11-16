@@ -58,6 +58,24 @@ pub struct SelectOption {
     pub label: String,
 }
 
+/// Bounds and step of a number input (`NumberInput::make(…).min(…).max(…).step(…)`).
+#[derive(Debug, Clone, Copy, Default, PartialEq, serde::Serialize)]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
+pub struct NumberBounds {
+    /// Smallest value a client may write.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(feature = "ts", ts(optional))]
+    pub min: Option<f64>,
+    /// Largest value a client may write.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(feature = "ts", ts(optional))]
+    pub max: Option<f64>,
+    /// Increment of the input's arrows and keyboard (a hint, not checked).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(feature = "ts", ts(optional))]
+    pub step: Option<f64>,
+}
+
 /// A form input bound to a field of the resource.
 #[derive(Debug, Clone)]
 pub struct Input {
@@ -73,6 +91,8 @@ pub struct Input {
     pub(crate) props: Option<serde_json::Value>,
     pub(crate) prefix: Option<String>,
     pub(crate) suffix: Option<String>,
+    /// Boxed: most inputs have none, and forms hold many inputs.
+    pub(crate) number: Option<Box<NumberBounds>>,
 }
 
 impl Input {
@@ -94,6 +114,7 @@ impl Input {
             props: None,
             prefix: None,
             suffix: None,
+            number: None,
         }
     }
 
@@ -143,6 +164,28 @@ impl Input {
     /// Columns of the surrounding grid this input spans.
     pub fn column_span(mut self, span: u8) -> Self {
         self.column_span = span.max(1);
+        self
+    }
+
+    /// Smallest value of a number input. Like a select's options, it bounds
+    /// what clients write to the field (`must be at least {min}`); hooks may
+    /// write any value.
+    pub fn min(mut self, value: impl Into<f64>) -> Self {
+        self.number.get_or_insert_with(Box::default).min = Some(value.into());
+        self
+    }
+
+    /// Largest value of a number input; bounds client writes like
+    /// [`Input::min`] (`may not be greater than {max}`).
+    pub fn max(mut self, value: impl Into<f64>) -> Self {
+        self.number.get_or_insert_with(Box::default).max = Some(value.into());
+        self
+    }
+
+    /// Step of a number input's arrows and keyboard (`1` by default for
+    /// integers, `any` otherwise). A presentation hint: not checked.
+    pub fn step(mut self, value: impl Into<f64>) -> Self {
+        self.number.get_or_insert_with(Box::default).step = Some(value.into());
         self
     }
 

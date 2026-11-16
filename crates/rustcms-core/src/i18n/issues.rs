@@ -86,6 +86,8 @@ pub const TEMPLATES: &[(&str, &str)] = &[
     ("timestamp", "must be an RFC 3339 timestamp"),
     ("out_of_range", "is out of range"),
     ("between", "must be between 1 and {max}"),
+    ("min_value", "must be at least {min}"),
+    ("max_value", "may not be greater than {max}"),
     ("email", "must be a valid email address"),
     ("control_characters", "may not contain control characters"),
     ("name_format", "must be at most {max} characters, without control characters"),
@@ -224,10 +226,24 @@ impl Compiled {
             if value.contains(['\n', '\r']) {
                 return None;
             }
+            // Counts and bounds are numbers: an application's "must be at least
+            // 18 years old" is its own message, not `min_value`.
+            if NUMERIC.contains(name) && !is_number(value) {
+                return None;
+            }
             params.insert((*name).to_owned(), value.to_owned());
         }
         rest.is_empty().then_some(params)
     }
+}
+
+/// Placeholders whose values are numbers (`-2`, `10`, `0.5`).
+const NUMERIC: &[&str] = &["min", "max", "bytes"];
+
+fn is_number(text: &str) -> bool {
+    let digits = text.strip_prefix('-').unwrap_or(text);
+    let (whole, fraction) = digits.split_once('.').unwrap_or((digits, "0"));
+    [whole, fraction].iter().all(|part| !part.is_empty() && part.bytes().all(|b| b.is_ascii_digit()))
 }
 
 fn compiled() -> &'static [Compiled] {
@@ -260,11 +276,25 @@ mod tests {
         );
         assert_eq!(Issue::of("does not accept image/svg+xml files").code, "file_types");
         assert_eq!(Issue::of("unknown operator ``"), Issue { code: "unknown_operator", params: params(&[("op", "")]) });
+        assert_eq!(Issue::of("must be at least -2.5"), Issue { code: "min_value", params: params(&[("min", "-2.5")]) });
+        assert_eq!(
+            Issue::of("may not be greater than 1000"),
+            Issue { code: "max_value", params: params(&[("max", "1000")]) }
+        );
+        assert_eq!(Issue::of("must be at least 8 characters").code, "min_length");
     }
 
     #[test]
     fn other_text_is_custom() {
-        for message in ["is required!", "Title is required", "may not be longer than 5 bytes or so", "whatever"] {
+        for message in [
+            "is required!",
+            "Title is required",
+            "may not be longer than 5 bytes or so",
+            "whatever",
+            "must be at least 18 years old",
+            "may not be greater than the budget",
+            "may not be longer than many characters",
+        ] {
             let issue = Issue::of(message);
             assert_eq!(issue.code, CUSTOM, "{message}");
             assert_eq!(issue.params["message"], message);

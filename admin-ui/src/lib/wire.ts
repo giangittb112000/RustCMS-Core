@@ -23,6 +23,13 @@ const LOCAL_DATETIME = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}(:\d{2}(\.\d{1,9})?)?$/;
 
 export const isNumericString = (kind: WireKind) => kind === "i64" || kind === "decimal";
 
+/**
+ * What a native number input holds when the browser cannot read what was
+ * typed (`1e`, `1.5.`, `abc`): its value is then "", which would clear the
+ * field. This text is no number of any kind, so the form reports it.
+ */
+export const UNREADABLE_NUMBER = "NaN";
+
 /** Checks a non-empty text entry for `kind`; returns an error message or null. */
 export function checkText(kind: WireKind, text: string): string | null {
   switch (kind) {

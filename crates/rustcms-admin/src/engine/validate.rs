@@ -1,10 +1,14 @@
 //! Checks of one input value against its declaration, shared by resources,
 //! settings and action forms: the same rules and messages everywhere.
 
+use std::cmp::Ordering;
+
+use rust_decimal::{Decimal, RoundingStrategy};
 use rustcms_core::ValidationErrors;
 use serde_json::Value;
 
 use super::wire::FieldKind;
+use crate::ui::NumberBounds;
 
 /// Longest key of a key/value object, in characters.
 pub(crate) const KEY_LENGTH: usize = 255;
@@ -26,6 +30,35 @@ pub(crate) struct InputRule<'a> {
     pub rich_text: bool,
     /// The values allowed (a select or a checkbox list).
     pub options: Option<Options<'a>>,
+    /// The range of a number input (`min`, `max`; the step is not checked).
+    pub bounds: Option<Bounds>,
+}
+
+/// The range a number must be in, and the scale its column rounds it to.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub(crate) struct Bounds {
+    /// `min`, `max` (and the step, not checked).
+    pub range: NumberBounds,
+    /// The column's decimal scale, if any: a decimal is checked as sent and
+    /// as the database may round it.
+    pub scale: Option<u32>,
+    /// `min` and `max` as decimals, read once from the bounds as written.
+    exact: (Option<Decimal>, Option<Decimal>),
+}
+
+impl Bounds {
+    pub(crate) fn new(range: NumberBounds, scale: Option<u32>) -> Self {
+        Self { range, scale, exact: (range.min.and_then(exact), range.max.and_then(exact)) }
+    }
+}
+
+/// `bound` as a decimal, when a decimal holds it as written (the shortest
+/// text that reads back as the `f64`: `0.1` is 0.1); `None` beyond a
+/// decimal's range or precision (`1e30`, `1e-30`).
+fn exact(bound: f64) -> Option<Decimal> {
+    let text = bound.to_string();
+    // `-0` reads as 0.
+    text.parse::<Decimal>().ok().filter(|d| d.is_zero() && bound == 0.0 || d.normalize().to_string() == text)
 }
 
 /// The static options a value is checked against.
@@ -58,6 +91,7 @@ impl InputRule<'_> {
             key_value: None,
             rich_text: false,
             options: None,
+            bounds: None,
         }
     }
 }
@@ -70,7 +104,7 @@ pub(crate) fn check_input(name: &str, rule: &InputRule<'_>, value: &Value, error
     } else if let Err(e) = rule.kind.decode(value) {
         Some(e.0)
     } else {
-        shape_problem(rule, value).or_else(|| option_problem(rule, value))
+        shape_problem(rule, value).or_else(|| option_problem(rule, value)).or_else(|| bounds_problem(rule, value))
     };
     report(name, problem, errors)
 }
@@ -122,6 +156,97 @@ fn option_problem(rule: &InputRule<'_>, value: &Value) -> Option<String> {
             }
         }
     }
+}
+
+/// A number below `min` or above `max`. Integers and decimals are compared
+/// exactly with the bound as written (`0.1` is 0.1, not the nearest `f64`);
+/// a decimal is checked as sent and rounded to its column's scale both ways
+/// databases round (PostgreSQL and MySQL away from zero, the wire to even),
+/// so a value that passes is never stored out of the range.
+fn bounds_problem(rule: &InputRule<'_>, value: &Value) -> Option<String> {
+    let Bounds { range, scale, exact: (min_exact, max_exact) } = rule.bounds?;
+    let decoded = rule.kind.decode(value).ok()?.into_iter().next()?;
+    let candidates: Vec<Number> = match decoded {
+        sea_orm::Value::Int(Some(n)) => vec![Number::Exact(Decimal::from(n))],
+        sea_orm::Value::BigInt(Some(n)) => vec![Number::Exact(Decimal::from(n))],
+        sea_orm::Value::Double(Some(n)) => vec![Number::Float(n)],
+        sea_orm::Value::Decimal(Some(d)) => {
+            let mut out = vec![Number::Exact(d)];
+            if let Some(scale) = scale {
+                out.push(Number::Exact(d.round_dp_with_strategy(scale, RoundingStrategy::MidpointAwayFromZero)));
+                out.push(Number::Exact(d.round_dp_with_strategy(scale, RoundingStrategy::MidpointNearestEven)));
+            }
+            out
+        }
+        _ => return None,
+    };
+    let outside = |bound: f64, exact: Option<Decimal>, side: Ordering| {
+        candidates.iter().any(|n| n.cmp_bound(bound, exact) == side)
+    };
+    if let Some(min) = range.min.filter(|min| outside(*min, min_exact, Ordering::Less)) {
+        Some(format!("must be at least {}", number_text(min)))
+    } else {
+        range
+            .max
+            .filter(|max| outside(*max, max_exact, Ordering::Greater))
+            .map(|max| format!("may not be greater than {}", number_text(max)))
+    }
+}
+
+/// A decoded number: exact (integers, decimals) or a float.
+enum Number {
+    Exact(Decimal),
+    Float(f64),
+}
+
+impl Number {
+    /// Compares with `bound`; an exact number with the bound's decimal
+    /// (`exact`: always there on integer and decimal columns, the boot
+    /// refuses bounds they cannot compare exactly).
+    fn cmp_bound(&self, bound: f64, exact: Option<Decimal>) -> Ordering {
+        match (self, exact) {
+            (Self::Exact(n), Some(bound)) => n.cmp(&bound),
+            (Self::Exact(n), None) => {
+                f64::try_from(*n).ok().and_then(|n| n.partial_cmp(&bound)).unwrap_or(Ordering::Equal)
+            }
+            (Self::Float(n), _) => n.partial_cmp(&bound).unwrap_or(Ordering::Equal),
+        }
+    }
+}
+
+/// Checks a declaration of bounds for a value of `kind`; panics with
+/// `context` on one that cannot hold: a bound or step that is not a finite
+/// number, `min` above `max`, a step that is not positive, a bound or step
+/// that is not whole on an integer, a bound a decimal cannot hold as written
+/// on an integer or decimal (compared exactly).
+pub(crate) fn check_bounds(context: &str, name: &str, bounds: &NumberBounds, kind: FieldKind) {
+    let all = || [bounds.min, bounds.max, bounds.step].into_iter().flatten();
+    assert!(
+        all().all(f64::is_finite),
+        "{context}: number input `{name}` has a bound or step that is not a finite number"
+    );
+    assert!(
+        !matches!((bounds.min, bounds.max), (Some(min), Some(max)) if min > max),
+        "{context}: number input `{name}` has `min` above `max`"
+    );
+    assert!(bounds.step.is_none_or(|step| step > 0.0), "{context}: number input `{name}` needs a positive step");
+    if matches!(kind, FieldKind::I32 | FieldKind::I64) {
+        assert!(
+            all().all(|n| n.fract() == 0.0),
+            "{context}: number input `{name}` holds integers: its bounds and step must be whole numbers"
+        );
+    }
+    if matches!(kind, FieldKind::I32 | FieldKind::I64 | FieldKind::Decimal) {
+        assert!(
+            [bounds.min, bounds.max].into_iter().flatten().all(|n| exact(n).is_some()),
+            "{context}: number input `{name}` has a bound a decimal cannot hold as written"
+        );
+    }
+}
+
+/// A bound as people write it: `5`, not `5.0`.
+pub(crate) fn number_text(value: f64) -> String {
+    if value.fract() == 0.0 && value.abs() < 1e15 { format!("{}", value as i64) } else { value.to_string() }
 }
 
 fn report(name: &str, problem: Option<String>, errors: &mut ValidationErrors) -> bool {
@@ -251,5 +376,90 @@ mod tests {
         // Hooks may leave a required (nullable) column empty.
         let mut errors = ValidationErrors::new();
         assert!(check_written("f", &InputRule { required: true, ..rule }, &Value::Null, &mut errors));
+    }
+    #[test]
+    fn checks_number_bounds_of_client_input() {
+        let bounds = NumberBounds { min: Some(1.0), max: Some(5.0), step: Some(1.0) };
+        let within = |range: NumberBounds, scale: Option<u32>| Some(Bounds::new(range, scale));
+        let int = InputRule { bounds: within(bounds, None), ..InputRule::of(FieldKind::I32) };
+        assert_eq!(first(&int, json!(1)), None);
+        assert_eq!(first(&int, json!(5)), None);
+        assert_eq!(first(&int, json!(0)).as_deref(), Some("must be at least 1"));
+        assert_eq!(first(&int, json!(6)).as_deref(), Some("may not be greater than 5"));
+        assert_eq!(first(&int, Value::Null), None, "null is for nullable and required");
+        assert!(first(&int, json!("3")).is_some(), "the kind first: an i32 is a JSON number");
+
+        // i64 and decimals travel as strings.
+        let big = InputRule {
+            bounds: within(NumberBounds { max: Some(10.0), ..bounds }, None),
+            ..InputRule::of(FieldKind::I64)
+        };
+        assert_eq!(first(&big, json!("10")), None);
+        assert_eq!(first(&big, json!("11")).as_deref(), Some("may not be greater than 10"));
+        let price = InputRule {
+            bounds: within(NumberBounds { min: Some(0.5), max: Some(4.995), step: None }, Some(2)),
+            ..InputRule::of(FieldKind::Decimal)
+        };
+        assert_eq!(first(&price, json!("0.50")), None);
+        assert_eq!(first(&price, json!("0.49")).as_deref(), Some("must be at least 0.5"));
+        // 4.995 is within, but a decimal(…, 2) column stores 5.00: refused.
+        assert_eq!(first(&price, json!("4.995")).as_deref(), Some("may not be greater than 4.995"));
+        assert_eq!(first(&price, json!("4.99")), None);
+
+        // Integers are compared exactly, also beyond what an f64 holds.
+        let huge = InputRule {
+            bounds: within(NumberBounds { max: Some(9_007_199_254_740_992.0), ..Default::default() }, None),
+            ..InputRule::of(FieldKind::I64)
+        };
+        assert_eq!(first(&huge, json!("9007199254740992")), None);
+        assert!(first(&huge, json!("9007199254740993")).is_some());
+        // A bound is compared as written: 0.1 is 0.1.
+        let tenth = InputRule {
+            bounds: within(NumberBounds { min: Some(0.1), ..Default::default() }, None),
+            ..InputRule::of(FieldKind::Decimal)
+        };
+        assert_eq!(first(&tenth, json!("0.1")), None);
+
+        // Trusted writes (hooks) are not bounded.
+        let mut errors = ValidationErrors::new();
+        assert!(check_written("f", &int, &json!(9), &mut errors));
+    }
+
+    #[test]
+    fn bounds_are_read_as_decimals_as_written() {
+        assert_eq!(exact(0.1), Some("0.1".parse().unwrap()));
+        assert_eq!(exact(5.0), Some(Decimal::from(5)));
+        assert_eq!(exact(-2.5), Some("-2.5".parse().unwrap()));
+        assert_eq!(exact(1e-30), None, "beyond a decimal's precision: not rounded to 0");
+        assert_eq!(exact(1e30), None, "beyond a decimal's range");
+    }
+
+    #[test]
+    #[should_panic(expected = "must be whole numbers")]
+    fn integer_bounds_are_whole() {
+        check_bounds("t", "level", &NumberBounds { step: Some(0.5), ..Default::default() }, FieldKind::I32);
+    }
+
+    #[test]
+    #[should_panic(expected = "a decimal cannot hold as written")]
+    fn decimal_bounds_are_exact() {
+        check_bounds("t", "rate", &NumberBounds { min: Some(1e-30), ..Default::default() }, FieldKind::Decimal);
+    }
+
+    #[test]
+    fn float_bounds_are_free() {
+        check_bounds(
+            "t",
+            "ratio",
+            &NumberBounds { min: Some(1e-30), step: Some(0.5), ..Default::default() },
+            FieldKind::F64,
+        );
+    }
+
+    #[test]
+    fn bounds_read_as_written() {
+        assert_eq!(number_text(5.0), "5");
+        assert_eq!(number_text(-2.0), "-2");
+        assert_eq!(number_text(0.25), "0.25");
     }
 }

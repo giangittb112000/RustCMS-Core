@@ -6,6 +6,30 @@ All notable changes are documented here. The format follows
 
 ## [Unreleased]
 
+### Added
+- Number bounds (vocabulary 12; contributed by @giangittb112000): `NumberInput::make(…).min(n).max(n).step(n)`
+  and `SettingField::min/max/step` (integer settings). `min` and `max` bound
+  client writes on every path (issues `min_value`, `max_value`); `step` is a
+  hint. Integers and decimals are compared exactly with the bound as written,
+  decimals also as rounded to the column's scale. The boot refuses bounds on
+  other inputs or settings, `min` above `max`, a step that is not positive, a
+  setting default outside its bounds, and bounds on a settings form input that
+  differ from its field's. `i32` and `f64` values get a native number input
+  (text it cannot read is reported, not saved as empty); `i64` and decimals
+  stay text.
+
+### Changed
+- Validation issues: `{min}`, `{max}` and `{bytes}` placeholders only match
+  numbers, so an application's message such as "must be at least 18 years
+  old" stays `custom`.
+
+### Fixed
+- Admin panel: a record's History card had no space under its "Show history"
+  button when closed (the header has no bottom padding), and its entries were
+  inset less than the header.
+- Admin panel: the arrow of native selects sat against the right border, at a
+  different inset per browser; it is now drawn inset like the text.
+
 ## [0.12.1] — 2026-11-05
 
 ### Fixed

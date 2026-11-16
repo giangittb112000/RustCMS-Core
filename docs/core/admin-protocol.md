@@ -133,6 +133,14 @@ the value); `FormSchema.width` is `wide` or `full` (absent: the default
 width). Older clients show splits and panes as plain groups, sections open,
 inputs without their prefix, at the default width.
 
+Vocabulary 12 adds number bounds: `number_input` inputs may carry `number`,
+`{min?, max?, step?}` (JSON numbers). The server checks `min` and `max` on
+every client write of the field (`min_value`, `max_value` issues); `step` is
+a hint for the input's arrows and keyboard. Clients render `i32` and `f64`
+values as a native number input with these attributes (and `step` 1 for
+`i32` without one); `i64` and decimal values stay text, so they keep their
+digits. Older clients show the input without its bounds.
+
 Vocabulary 9 adds `belongs_to_many` inputs (ADR 0035): `name` is a
 belongs-to-many relation, `relationship.resource` its target, `valueType`
 `links`, and `links: {attach, detach}` what the user may change. Records

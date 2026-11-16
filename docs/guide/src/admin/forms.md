@@ -57,7 +57,7 @@ tags of a belongs-to-many relation and key/value attributes.
 |---|---|
 | `TextInput` (`.email()`, `.password()`, `.url()`) | text |
 | `Textarea` | long text |
-| `NumberInput` | integers and decimals (kept exact) |
+| `NumberInput` | integers and decimals (kept exact); `.min(n)`, `.max(n)`, `.step(n)` ([below](#number-bounds)) |
 | `SelectInput` | static `.options([(value, label)])`, or the records of a `belongs_to` field |
 | `Toggle`, `Checkbox` | booleans (three states when nullable) |
 | `CheckboxList` | a JSON list of option values (`.options(…)`) |
@@ -134,6 +134,31 @@ enroll action and the seeder write enrollments through that service, not
 through the form.
 
 <<< @/../../../examples/lms/src/services/enrollment_service.rs#check [src/services/enrollment_service.rs]
+
+### Number bounds
+
+`.min(n)` and `.max(n)` on a `NumberInput` bound what a client may write to
+the field, like a select's options: on every write path, `must be at least
+{min}` (`min_value`) or `may not be greater than {max}` (`max_value`).
+`.step(n)` sets the step of the input's arrows and keyboard; it is a hint,
+not checked.
+
+```rust
+NumberInput::make("level").min(1).max(5),
+NumberInput::make("price").min(0.5).step(0.01),
+```
+
+- `i32` and `f64` columns get a native number input (step 1 for `i32`
+  without one). `i64` and decimal columns keep a text input, so no digit is
+  lost; their bounds are still checked by the server.
+- As with options, the bounds cover what a **client** sends: hooks and
+  actions write what they decide.
+- Integers and decimals are compared exactly with the bound as written
+  (`0.1` is 0.1). A decimal is also checked as its column rounds it: with
+  `.max(4.995)` on a `decimal(10, 2)` column, `4.995` is refused, since it
+  would be stored as `5.00`.
+- A bound is an `f64`: an `i64` bound above 2^53 is the nearest `f64`.
+- Number inputs of [action forms](actions.md) take no bounds.
 
 ## Layouts
 
@@ -276,7 +301,10 @@ Besides the layout and encrypted-field rules above, the boot stops when:
   name with a field, appears twice, has options or a widget, targets the media
   library, or its relation has `.required()` pivot fields;
 - a `CustomInput` has an invalid widget name, or props over 4 KiB;
-- a key/value field is not a JSON column.
+- a key/value field is not a JSON column;
+- `min`, `max` or `step` is on an input that is not a `NumberInput`, or on a
+  column that does not hold numbers; `min` is above `max`; the step is not
+  positive; or two inputs of one field have different bounds.
 
 [Settings pages](settings.md) follow the same layout rules.
 

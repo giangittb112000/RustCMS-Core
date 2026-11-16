@@ -149,6 +149,7 @@ db_test!(saving_validates_versions_and_audits, |db: TestDb| async move {
         (json!({"site_name": "x".repeat(21)}), "site_name", "max_length"),
         (json!({"class_size": "3"}), "class_size", "integer"),
         (json!({"class_size": 0}), "class_size", "out_of_range"),
+        (json!({"class_size": 201}), "class_size", "max_value"),
         (json!({"level": "expert"}), "level", "not_option"),
         (json!({"links": {"a": "1", "b": "2", "c": "3", "d": "4"}}), "links", "max_items"),
         (json!({"starts": "tomorrow"}), "starts", "date"),
@@ -600,6 +601,14 @@ misdeclared!(secret_defaults_are_unset, PresetSecret, "must be unset",
     { key: Secret = Secret::new("preset") }, vec![SettingField::secret("key")]);
 misdeclared!(selects_have_options, NoOptions, "has no options",
     { level: String = String::new() }, vec![SettingField::select("level", Vec::<(&str, &str)>::new())]);
+misdeclared!(bounds_are_for_integer_settings, TextBounds, "are for integer settings (`code`)",
+    { code: String = String::new() }, vec![SettingField::text("code").min(1)]);
+misdeclared!(bounds_keep_min_below_max, InvertedBounds, "has `min` above `max`",
+    { size: i32 = 3 }, vec![SettingField::integer("size").min(5).max(1)]);
+misdeclared!(bounds_need_a_positive_step, ZeroStep, "needs a positive step",
+    { size: i32 = 3 }, vec![SettingField::integer("size").step(0)]);
+misdeclared!(defaults_are_within_their_bounds, LowDefault, "the default of `size` is outside its `min` and `max`",
+    { size: i32 = 0 }, vec![SettingField::integer("size").min(1)]);
 
 #[derive(Default, Serialize, Deserialize)]
 struct OtherOptions {
@@ -630,6 +639,37 @@ impl SettingsPage for OtherOptions {
 #[should_panic(expected = "offers other values")]
 fn a_form_offers_the_values_its_field_accepts() {
     let _ = rustcms_admin::AdminProvider::new().settings::<OtherOptions>();
+}
+
+#[derive(Default, Serialize, Deserialize)]
+struct OtherBounds {
+    size: i32,
+}
+
+impl Settings for OtherBounds {
+    const GROUP: &'static str = "other_bounds";
+}
+
+#[async_trait::async_trait]
+impl SettingsPage for OtherBounds {
+    fn meta() -> SettingsMeta {
+        SettingsMeta::new("Other bounds")
+    }
+
+    fn fields() -> Vec<SettingField> {
+        vec![SettingField::integer("size").max(10)]
+    }
+
+    fn form() -> rustcms_admin::Form {
+        rustcms_admin::Form::new().schema(rustcms_admin::components![rustcms_admin::NumberInput::make("size").max(100)])
+    }
+}
+
+/// Bounds are declared once, on the field: the form shows and the server checks those.
+#[test]
+#[should_panic(expected = "input `size` has other bounds than its field")]
+fn a_form_input_has_its_field_bounds() {
+    let _ = rustcms_admin::AdminProvider::new().settings::<OtherBounds>();
 }
 
 /// A media row owned by `owner`, inserted directly.

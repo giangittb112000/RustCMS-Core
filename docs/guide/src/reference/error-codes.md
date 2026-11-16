@@ -69,6 +69,8 @@ keeps it complete.
 | `timestamp` | `must be an RFC 3339 timestamp` |
 | `out_of_range` | `is out of range` |
 | `between` | `must be between 1 and {max}` |
+| `min_value` | `must be at least {min}` (the `min` of a number input) |
+| `max_value` | `may not be greater than {max}` (the `max` of a number input) |
 | `email` | `must be a valid email address` |
 | `control_characters` | `may not contain control characters` |
 | `name_format` | `must be at most {max} characters, without control characters` |

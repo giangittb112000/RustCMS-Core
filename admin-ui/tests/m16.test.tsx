@@ -131,7 +131,8 @@ it("edits a link's pivot columns", async () => {
   await userEvent.click(await screen.findByRole("button", { name: "Edit link: RUST" }));
   const dialog = await screen.findByRole("dialog", { name: "Edit link" });
   const position = within(dialog).getByLabelText(/^Position/);
-  expect(position).toHaveValue("3");
+  // An i32 column: a native number input, whose value reads as a number.
+  expect(position).toHaveValue(3);
   await userEvent.clear(position);
   await userEvent.type(position, "5");
   await userEvent.click(within(dialog).getByRole("button", { name: "Save changes" }));

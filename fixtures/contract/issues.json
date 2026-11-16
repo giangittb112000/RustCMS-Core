@@ -199,8 +199,14 @@
   "max_length": [
     "may not be longer than {max} characters"
   ],
+  "max_value": [
+    "may not be greater than {max}"
+  ],
   "min_length": [
     "must be at least {min} characters"
+  ],
+  "min_value": [
+    "must be at least {min}"
   ],
   "missing_reference": [
     "references a missing or protected record"

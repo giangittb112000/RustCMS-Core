@@ -10,6 +10,7 @@ import { Button } from "@/components/ui/button";
 import { Checkbox, Switch } from "@/components/ui/checkbox";
 import { Input, Label, NativeSelect, Textarea } from "@/components/ui/input";
 import { cn } from "@/lib/utils";
+import { UNREADABLE_NUMBER, type WireKind } from "@/lib/wire";
 import {
   KNOWN_INPUT_TYPES,
   encodePair,
@@ -450,9 +451,36 @@ function Widget({ id, input, ctx, value, onChange, onBlur, disabled, invalid, de
     }
     case "textarea":
       return <Textarea {...common} value={text} onChange={onText} rows={4} />;
-    case "number_input":
-      // Text, not type=number: i64/decimal must stay exact strings.
+    case "number_input": {
+      // i32 and f64 fit a JavaScript number: a native number input with the
+      // declared bounds. i64 and decimals stay text, so no digit is lost.
+      const kind = input.valueType as WireKind;
+      if (kind === "i32" || kind === "f64") {
+        const bounds = input.number;
+        // Unreadable text: the input keeps what was typed (its value stays
+        // ""), the form holds a value that fails its check. Read on every
+        // `input` event: React's onChange skips those where the value stays
+        // "" (typing `-` into an empty field, clearing unreadable text).
+        const read = (e: React.FormEvent<HTMLInputElement>) =>
+          onChange(e.currentTarget.validity.badInput ? UNREADABLE_NUMBER : e.currentTarget.value);
+        // Phone keypads for digits have no minus: only when the minimum rules negatives out.
+        const unsigned = bounds?.min !== undefined && bounds.min >= 0;
+        return (
+          <Input
+            {...common}
+            type="number"
+            inputMode={unsigned ? (kind === "i32" ? "numeric" : "decimal") : undefined}
+            min={bounds?.min}
+            max={bounds?.max}
+            step={bounds?.step ?? (kind === "i32" ? 1 : "any")}
+            value={text === UNREADABLE_NUMBER ? "" : text}
+            onInput={read}
+            onChange={read}
+          />
+        );
+      }
       return <Input {...common} inputMode="decimal" value={text} onChange={onText} />;
+    }
     case "date_picker":
       return <Input {...common} type="date" value={text} onChange={onText} />;
     case "date_time_picker":

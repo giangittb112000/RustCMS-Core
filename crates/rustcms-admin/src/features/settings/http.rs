@@ -264,6 +264,8 @@ fn input_schema(ctx: &Ctx, field: &SettingField, input: &crate::ui::Input, disab
         links: None,
         prefix: input.prefix.clone(),
         suffix: input.suffix.clone(),
+        // The setting's own bounds: the ones checked on save.
+        number: field.input.number.as_deref().copied(),
     }
 }
 
