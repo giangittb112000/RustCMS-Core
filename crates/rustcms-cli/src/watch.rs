@@ -19,7 +19,7 @@
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 use std::process::ExitCode;
-use std::time::{Duration, Instant, SystemTime};
+use std::time::{Duration, SystemTime};
 
 use anyhow::{Context, bail};
 
@@ -90,7 +90,9 @@ impl Target {
     /// The binary of the package whose manifest is `manifest`: its only one,
     /// or its `default-run`.
     pub(crate) fn from_metadata(metadata: &serde_json::Value, manifest: &Path) -> anyhow::Result<Self> {
-        let same = |path: &str| Path::new(path) == manifest || std::fs::canonicalize(path).ok() == std::fs::canonicalize(manifest).ok();
+        let same = |path: &str| {
+            Path::new(path) == manifest || std::fs::canonicalize(path).ok() == std::fs::canonicalize(manifest).ok()
+        };
         let package = metadata["packages"]
             .as_array()
             .into_iter()
@@ -109,7 +111,10 @@ impl Target {
             ([only], _) => (*only).to_owned(),
             (_, Some(default)) if bins.contains(&default) => default.to_owned(),
             ([], _) => bail!("package `{name}` has no binary to serve"),
-            _ => bail!("package `{name}` has several binaries ({}): set `default-run` in its Cargo.toml", bins.join(", ")),
+            _ => bail!(
+                "package `{name}` has several binaries ({}): set `default-run` in its Cargo.toml",
+                bins.join(", ")
+            ),
         };
         let workspace_root = metadata["workspace_root"].as_str().map(PathBuf::from).context("no workspace root")?;
         Ok(Self { package: name.to_owned(), bin, workspace_root })
@@ -163,7 +168,8 @@ fn walk(app: &Path, dir: &Path, previous: &Snapshot, out: &mut Snapshot, unreada
         };
         if kind.is_dir() {
             let relative = path.strip_prefix(app).unwrap_or(&path);
-            let skipped = SKIPPED_DIRS.contains(&name.as_ref()) || SKIPPED_PATHS.iter().any(|p| relative == Path::new(p));
+            let skipped =
+                SKIPPED_DIRS.contains(&name.as_ref()) || SKIPPED_PATHS.iter().any(|p| relative == Path::new(p));
             if !skipped {
                 walk(app, &path, previous, out, unreadable);
             }
@@ -367,13 +373,17 @@ mod unix {
         /// The package and binary to serve, from `cargo metadata` (a stop meanwhile: `None`).
         async fn resolve(&mut self) -> anyhow::Result<Option<Target>> {
             let mut command = self.cargo();
-            command.args(["metadata", "--no-deps", "--format-version", "1"]).stdout(Stdio::piped()).stderr(Stdio::piped());
+            command
+                .args(["metadata", "--no-deps", "--format-version", "1"])
+                .stdout(Stdio::piped())
+                .stderr(Stdio::piped());
             let group = Group::spawn(command).context("cannot run cargo")?;
             let Some(output) = self.finish(group).await else { return Ok(None) };
             if !output.status.success() {
                 bail!("cargo metadata failed:\n{}", String::from_utf8_lossy(&output.stderr));
             }
-            let metadata: serde_json::Value = serde_json::from_slice(&output.stdout).context("cargo metadata output")?;
+            let metadata: serde_json::Value =
+                serde_json::from_slice(&output.stdout).context("cargo metadata output")?;
             Target::from_metadata(&metadata, &self.project.root.join("Cargo.toml")).map(Some)
         }
 
@@ -492,7 +502,8 @@ mod unix {
                 match self.build().await? {
                     Built::Stopped => return Ok(()),
                     Built::Failed => {
-                        let kept = if self.server.is_some() { "the server keeps running" } else { "no server is running" };
+                        let kept =
+                            if self.server.is_some() { "the server keeps running" } else { "no server is running" };
                         println!("watch: build failed, {kept}; waiting for a change");
                     }
                     Built::Ok(took) => {
@@ -544,8 +555,11 @@ mod unix {
         // Signals first: every child started afterwards is stopped with the watcher.
         let signals = Stop::new()?;
         let cargo = std::env::var("CARGO").unwrap_or_else(|_| "cargo".into());
-        let placeholder =
-            Target { package: project.package.clone(), bin: project.package.clone(), workspace_root: project.root.clone() };
+        let placeholder = Target {
+            package: project.package.clone(),
+            bin: project.package.clone(),
+            workspace_root: project.root.clone(),
+        };
         let mut state = Watch {
             project,
             roots: roots(&project.root, &project.root),
@@ -583,7 +597,10 @@ mod tests {
         let args = |a: &[&str]| a.iter().map(|s| (*s).to_owned()).collect::<Vec<_>>();
         assert!(requested(&args(&["--watch", "--api-only"])));
         assert!(!requested(&args(&["--", "--watch"])));
-        assert_eq!(without_flag(&args(&["--watch", "--api-only", "--", "--watch"])), args(&["--api-only", "--", "--watch"]));
+        assert_eq!(
+            without_flag(&args(&["--watch", "--api-only", "--", "--watch"])),
+            args(&["--api-only", "--", "--watch"])
+        );
     }
 
     #[test]
@@ -660,12 +677,8 @@ mod tests {
         let at = |s| (SystemTime::UNIX_EPOCH + Duration::from_secs(s), 1);
         let root = Path::new("/app");
         let before: Snapshot = [(root.join("src/a.rs"), at(1)), (root.join("src/b.rs"), at(1))].into_iter().collect();
-        let after: Snapshot = [
-            (root.join("src/a.rs"), at(2)),
-            (root.join("src/database/migrations/m2.rs"), at(1)),
-        ]
-        .into_iter()
-        .collect();
+        let after: Snapshot =
+            [(root.join("src/a.rs"), at(2)), (root.join("src/database/migrations/m2.rs"), at(1))].into_iter().collect();
         let found = changed(&before, &after);
         assert_eq!(found.len(), 3);
         assert!(migrations_changed(root, &found));
