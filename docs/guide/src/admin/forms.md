@@ -158,6 +158,10 @@ NumberInput::make("price").min(0.5).step(0.01),
   `.max(4.995)` on a `decimal(10, 2)` column, `4.995` is refused, since it
   would be stored as `5.00`.
 - A bound is an `f64`: an `i64` bound above 2^53 is the nearest `f64`.
+- An `f32` column stores the nearest `f32`, so a value within the bounds stays
+  within them as an `f32`: with `.max(0.1)`, `0.1` is accepted and reads back
+  as `0.1` from an `f32`, but as `0.10000000149…` if read as an `f64`.
+- Action forms have no bounds yet: check the value in the action's handler.
 - Number inputs of [action forms](actions.md) take no bounds.
 
 ## Layouts

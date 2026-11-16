@@ -420,6 +420,19 @@ mod tests {
         };
         assert_eq!(first(&tenth, json!("0.1")), None);
 
+        // An `f32` column stores the nearest `f32`: rounding keeps the order, so a
+        // value within the bounds is within them as stored (as `f32`s).
+        let ratio = InputRule {
+            bounds: within(NumberBounds { min: Some(1e-30), max: Some(0.1), step: None }, None),
+            ..InputRule::of(FieldKind::F64)
+        };
+        for (sent, accepted) in [(0.1, true), (0.099_999_999, true), (0.100_000_001, false), (1e-31, false)] {
+            assert_eq!(first(&ratio, json!(sent)).is_none(), accepted, "{sent}");
+            if accepted {
+                assert!((sent as f32) <= (0.1_f32) && (sent as f32) >= (1e-30_f32), "{sent} stored within the bounds");
+            }
+        }
+
         // Trusted writes (hooks) are not bounded.
         let mut errors = ValidationErrors::new();
         assert!(check_written("f", &int, &json!(9), &mut errors));
