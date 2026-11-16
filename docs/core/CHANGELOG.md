@@ -6,6 +6,14 @@ All notable changes are documented here. The format follows
 
 ## [Unreleased]
 
+### Changed
+- Admin panel (contributed by @giangittb112000): a record's view page without `infolist()` is drawn by an
+  infolist made from its form, one read-only renderer instead
+  of two; values look as before. A `belongs_to` field's title comes with the
+  record (no request per value) and links to the related record when the user
+  may list it. The view schema carries `infolist` only for a record (with a
+  key).
+
 ## [0.13.0] — 2026-11-17
 
 ### Added
