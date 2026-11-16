@@ -251,8 +251,9 @@ pub trait Resource: Send + Sync + 'static {
         Form::default()
     }
 
-    /// The view page's entries (ADR 0039). Empty (the default): the view page
-    /// shows the form read-only. Declared: it replaces the form there.
+    /// The view page's entries (ADR 0039). Empty (the default): entries made
+    /// from the form, each value shown as the form's read-only view shows it.
+    /// Declared: it replaces the form there.
     fn infolist() -> crate::ui::Infolist {
         crate::ui::Infolist::default()
     }

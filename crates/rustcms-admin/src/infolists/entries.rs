@@ -44,6 +44,9 @@ pub struct Entry {
     pub(crate) display: Box<Display>,
     /// Repeatable entries: the entries of each row (keys of the row).
     pub(crate) components: Vec<crate::ui::Component>,
+    /// Entries of a row generated from a repeater's inputs: the kind of the
+    /// row value (dates shown as dates); declared row entries read JSON.
+    pub(crate) row_kind: Option<crate::wire::FieldKind>,
 }
 
 /// Display options (boxed: most entries have few).
@@ -80,6 +83,7 @@ impl Entry {
             shown_when: None,
             display: Box::default(),
             components: Vec::new(),
+            row_kind: None,
         }
     }
 
