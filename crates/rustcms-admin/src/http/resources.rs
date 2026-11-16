@@ -145,6 +145,23 @@ pub(super) async fn computed(
     Ok(Json(resource(&ctx, &slug)?.computed(&ctx, &key).await?))
 }
 
+/// Form reaction requests per user per minute (each runs application code
+/// while the user types).
+const REACTIONS_PER_MINUTE: u32 = 120;
+
+/// The changes a form's reaction asks for (ADR 0041), limited per user.
+pub(super) async fn react(
+    State(app): State<AppState>,
+    AdminCtx(ctx): AdminCtx,
+    Path(slug): Path<String>,
+    Json(request): Json<crate::schema::FormReactRequest>,
+) -> AppResult<Json<crate::schema::FormReactResponse>> {
+    let auth =
+        app.service::<rustcms_auth::AuthState>().ok_or_else(|| AppError::internal("AuthProvider not registered"))?;
+    auth.limiter.reserve(&[(&format!("form-react:{}", ctx.principal.id), REACTIONS_PER_MINUTE)]).await?;
+    Ok(Json(resource(&ctx, &slug)?.react(&ctx, request).await?))
+}
+
 /// The request's `Idempotency-Key`, validated.
 pub(crate) fn idempotency_key(headers: &axum::http::HeaderMap) -> AppResult<Option<String>> {
     match headers.get(crate::idempotency::HEADER) {

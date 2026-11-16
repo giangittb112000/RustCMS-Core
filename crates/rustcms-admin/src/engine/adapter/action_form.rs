@@ -154,6 +154,7 @@ impl<R: Resource> ResourceAdapter<R> {
                     clear_when_hidden: false,
                     integer: false,
                     repeater: None,
+                    reacts: false,
                 })
             })
             .collect();

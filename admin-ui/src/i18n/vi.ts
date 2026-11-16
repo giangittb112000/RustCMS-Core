@@ -25,6 +25,8 @@ export const vi: Record<keyof typeof en, string> = {
   "issue.min_items": "phải có ít nhất {min} mục",
   "issue.not_a_row": "không phải là một dòng của danh sách",
   "issue.row_order": "phải liệt kê mỗi dòng đúng một lần",
+  "issue.not_up_to_date": "chưa được cập nhật, hãy kiểm tra lại các thay đổi",
+  "issue.not_checked": "không kiểm tra được, hãy thử lại",
   "issue.list_size": "phải là danh sách từ 1 đến {max} mục",
   "issue.max_kib": "không được lớn hơn {max} KiB",
   "issue.max_elements": "không được nhiều hơn {max} phần tử",

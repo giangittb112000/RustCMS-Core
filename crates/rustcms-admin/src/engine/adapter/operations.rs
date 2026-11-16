@@ -219,6 +219,14 @@ impl<R: Resource> DynResource for ResourceAdapter<R> {
         self.computed_values(ctx, key).await
     }
 
+    async fn react(
+        &self,
+        ctx: &Ctx,
+        request: crate::schema::FormReactRequest,
+    ) -> AppResult<crate::schema::FormReactResponse> {
+        ResourceAdapter::react(self, ctx, request).await
+    }
+
     async fn lookup(&self, ctx: &Ctx, search: Option<&str>, keys: &[String]) -> AppResult<Vec<(String, String)>> {
         let Some(title) = self.readable_title(ctx) else { return Ok(Vec::new()) };
         if !self.policy.allows(ctx, ability::VIEW_ANY, None).await {
@@ -460,6 +468,8 @@ impl<R: Resource> DynResource for ResourceAdapter<R> {
         let mut input = self.accept_input(&wctx, Operation::Create, input)?;
         // Conditions (ADR 0037) on the input and the columns' defaults.
         self.apply_conditions(&wctx, Operation::Create, &mut input, None)?;
+        // Strict reactions (ADR 0041) on the resulting values.
+        self.check_strict(&wctx, Operation::Create, None, &input, None).await?;
         let parents = self.lock_parents(&wctx, &txn, self.parent_of_data(&input).flatten()).await?;
         let data = R::mutate_before_create(&wctx, &txn, input).await?;
         self.check_parent_written(&wctx, &data, &parents)?;
@@ -543,7 +553,10 @@ impl<R: Resource> DynResource for ResourceAdapter<R> {
         let before = self.audit_snapshot(&model);
         // Conditions (ADR 0037) on the locked record merged with the input.
         let mut input = input;
-        self.apply_conditions(&wctx, Operation::Update, &mut input, Some(&self.record(&model)))?;
+        let stored = self.record(&model);
+        self.apply_conditions(&wctx, Operation::Update, &mut input, Some(&stored))?;
+        // Strict reactions (ADR 0041) on the resulting values.
+        self.check_strict(&wctx, Operation::Update, Some(key), &input, Some(&stored)).await?;
         let data = R::mutate_before_update(&wctx, &txn, &model, input).await?;
         self.check_parent_written(&wctx, &data, &parents)?;
         self.check_written(&wctx, &txn, &data).await?;

@@ -28,6 +28,7 @@
                     "nullable": false,
                     "placeholder": "Name",
                     "prefix": "/gadgets/",
+                    "reacts": true,
                     "rules": [
                       {
                         "rule": "required"
@@ -567,5 +568,5 @@
     "searchable": true,
     "softDeletes": true
   },
-  "vocabularyVersion": 15
+  "vocabularyVersion": 16
 }

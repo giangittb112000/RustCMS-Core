@@ -18,6 +18,7 @@
             "name": "title",
             "nullable": false,
             "placeholder": "Title",
+            "reacts": true,
             "rules": [
               {
                 "rule": "required"
@@ -294,5 +295,5 @@
     ],
     "searchable": true
   },
-  "vocabularyVersion": 15
+  "vocabularyVersion": 16
 }

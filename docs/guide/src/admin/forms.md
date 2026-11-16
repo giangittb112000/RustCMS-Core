@@ -260,6 +260,67 @@ The same works on [settings pages](settings.md) and in
 [action forms](actions.md) (`ActionField::shown_when`; a hidden field reaches
 the handler as `null`).
 
+## Reacting to changes
+
+`.reacts(f)` runs `f` on the server when the user changes the input, once
+typing pauses (about 400 ms), and the panel applies the changes it answers
+with: a slug filled from a name, a total from order lines, rows kept in step
+with a text.
+
+<<< @/../../../examples/demo/src/admin/resources/category_resource.rs#reacts [src/admin/resources/category_resource.rs]
+
+`f` takes the request's `Ctx` (it may read the database) and a `FormState`
+(`text(name)`, `get(name)`, `rows(name)`, `operation()`, `key()`,
+`changed()`), and returns a list of `FormPatch`es:
+
+| Patch | Effect |
+|---|---|
+| `FormPatch::set(field, value)` | sets the field (a wire value) |
+| `FormPatch::set_if_empty(field, value)` | sets it when it is `null`, `""` or `[]` |
+| `FormPatch::add_row(field, row)`, `add_row_at(field, index, row)` | adds a row to a JSON repeater |
+| `FormPatch::remove_row(field, index)`, `move_row(field, from, to)` | removes or moves a row |
+| `FormPatch::flag_row(field, index, message)` | a warning under a row; changes nothing |
+| `FormPatch::notice(message)` | a message to the user |
+
+```rust
+Repeater::make("lines")
+    .schema(components![TextInput::make("name"), NumberInput::make("qty").integer()])
+    .reacts(|_ctx, state| {
+        let total: i64 = state.rows("lines").iter().map(|r| r["qty"].as_i64().unwrap_or(0)).sum();
+        Box::pin(async move { Ok(vec![FormPatch::set("total", total)]) })
+    })
+    .strict(),
+NumberInput::make("total"),
+```
+
+- **What it sees.** The values in the form, as the user has them, of the
+  fields the user may read; never encrypted fields, links or child records.
+  On an edit form, a field not sent is the stored value. A value that does
+  not decode yet (a number half typed) is left out.
+- **What it may change.** Patches apply in order (a row index is the row's
+  place after the previous patches). The server drops, and logs, a patch the
+  user could not make: a field not in the form, not readable and writable by
+  the user,
+  hidden by its conditions, encrypted, or a value its input refuses; row
+  patches name JSON repeaters only. Patches that change nothing are dropped.
+  Changes made by a patch do not set off other reactions.
+- **Who may ask.** The form's own rule: `create` on a create form, `update` on
+  the record (in the user's scope) on an edit form. Never on view pages,
+  lists or exports. 120 requests per user per minute.
+- **Failing alone.** An error, or a reaction slower than its time limit
+  (`.reaction_timeout(d)`: 5 seconds by default, at most 30), is logged and
+  the form goes on without it. The panel ignores an answer once the user has
+  changed the form again.
+- **`.strict()`** refuses a save while the reaction still has changes to make
+  or a row flagged (`is not up to date`), or when it fails (`could not be
+  checked`), on the reaction's input. It runs on every save of the record,
+  from the form, the API and CSV imports (not their preview), on the values
+  the record will have, before the hooks: keep it light. A record saved before
+  the reaction was declared must be brought in step at its next save.
+
+Reactions are for resource forms: settings pages and action forms do not take
+them yet, nor inputs inside repeater rows.
+
 ## Leaving with unsaved changes
 
 A create or edit form with changes not saved asks before the user leaves it:
@@ -490,7 +551,11 @@ Besides the layout and encrypted-field rules above, the boot stops when:
   default (a record created while it is hidden could not be stored: declare a
   default or make the column nullable); `clear_when_hidden` is on an input
   without a condition, or on a non-nullable number, date or boolean column
-  without a declared default.
+  without a declared default;
+- `.strict()` or `.reaction_timeout()` is on an input without `.reacts()`;
+  the timeout is zero or over 30 seconds; `.reacts()` is on a hidden,
+  encrypted, link or relationship repeater input, an input that is not a
+  field, an input in a repeater's row, or a settings input.
 
 [Settings pages](settings.md) follow the same layout rules.
 

@@ -268,6 +268,8 @@ impl<R: Resource> ResourceAdapter<R> {
             clear_when_hidden: input.clear_when_hidden,
             integer: false,
             repeater: self.repeater_schema(ctx, input, disabled),
+            // Never on view pages, nor for a user who cannot change the input (ADR 0041).
+            reacts: !disabled && op != SchemaOperation::View && input.reaction.is_some(),
         })
     }
 
@@ -314,6 +316,7 @@ impl<R: Resource> ResourceAdapter<R> {
             clear_when_hidden: false,
             integer: false,
             repeater: None,
+            reacts: false,
         }
     }
 
@@ -441,6 +444,7 @@ impl<R: Resource> ResourceAdapter<R> {
             clear_when_hidden: false,
             integer: false,
             repeater: None,
+            reacts: false,
         })
     }
 
@@ -666,5 +670,6 @@ fn pivot_input_schema(
         clear_when_hidden: false,
         integer: false,
         repeater: None,
+        reacts: false,
     }
 }

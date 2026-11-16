@@ -1,0 +1,14 @@
+{
+  "patches": [
+    {
+      "field": "notes",
+      "op": "set_if_empty",
+      "value": "About Widget"
+    },
+    {
+      "message": "Notes filled",
+      "op": "notice"
+    }
+  ],
+  "seq": 4
+}
