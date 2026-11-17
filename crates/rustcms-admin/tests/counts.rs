@@ -46,7 +46,44 @@ pub mod line {
     }
 
     #[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]
-    pub enum Relation {}
+    pub enum Relation {
+        #[sea_orm(has_many = "super::label::Entity")]
+        Labels,
+    }
+
+    impl Related<super::label::Entity> for Entity {
+        fn to() -> RelationDef {
+            Relation::Labels.def()
+        }
+    }
+
+    impl ActiveModelBehavior for ActiveModel {}
+}
+
+/// Labels of a line: a scope joining them yields a line once per label.
+pub mod label {
+    use sea_orm::entity::prelude::*;
+
+    #[derive(Clone, Debug, PartialEq, DeriveEntityModel)]
+    #[sea_orm(table_name = "line_labels")]
+    pub struct Model {
+        #[sea_orm(primary_key)]
+        pub id: i32,
+        pub line_id: i32,
+        pub name: String,
+    }
+
+    #[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]
+    pub enum Relation {
+        #[sea_orm(belongs_to = "super::line::Entity", from = "Column::LineId", to = "super::line::Column::Id")]
+        Line,
+    }
+
+    impl Related<super::line::Entity> for Entity {
+        fn to() -> RelationDef {
+            Relation::Line.def()
+        }
+    }
 
     impl ActiveModelBehavior for ActiveModel {}
 }
@@ -70,11 +107,40 @@ impl Resource for OrderResource {
     }
 
     fn table() -> Table {
-        Table::new().columns(vec![TextColumn::make("number"), TextColumn::make("lines_count").counts("lines")])
+        Table::new().columns(vec![
+            TextColumn::make("number"),
+            TextColumn::make("lines_count").counts("lines"),
+            TextColumn::make("labelled_count").counts("labelled"),
+        ])
     }
 
     fn relations() -> Vec<Relation> {
-        vec![Relation::has_many("lines", "order_lines", "order_id")]
+        vec![
+            Relation::has_many("lines", "order_lines", "order_id"),
+            Relation::has_many("labelled", "labelled_lines", "order_id"),
+        ]
+    }
+}
+
+/// Lines with a label: a scope joining the labels, which yields a line once
+/// per label (the count must count each line once).
+pub struct LabelledLineResource;
+
+impl Resource for LabelledLineResource {
+    type Entity = line::Entity;
+    const SLUG: &'static str = "labelled_lines";
+
+    fn meta() -> ResourceMeta {
+        ResourceMeta::new("Labelled line").title("product")
+    }
+
+    fn fields() -> Vec<Field> {
+        vec![Field::column(line::Column::OrderId).belongs_to("orders"), Field::column(line::Column::Product)]
+    }
+
+    fn scope(query: sea_orm::Select<line::Entity>, _ctx: &Ctx) -> sea_orm::Select<line::Entity> {
+        use sea_orm::{JoinType, QuerySelect, RelationTrait};
+        query.join(JoinType::InnerJoin, line::Relation::Labels.def())
     }
 }
 
@@ -136,7 +202,9 @@ impl Resource for LineResource {
 fn build(config: Config) -> AppBuilder {
     let mut app = AppBuilder::new(config);
     app.provider(AuthProvider::new());
-    app.provider(AdminProvider::new().resource::<OrderResource>().resource::<LineResource>());
+    app.provider(
+        AdminProvider::new().resource::<OrderResource>().resource::<LineResource>().resource::<LabelledLineResource>(),
+    );
     app
 }
 
@@ -145,6 +213,7 @@ async fn setup(db: TestDb) -> (TestApp, rustcms_core::models::user::Model) {
     let schema = Schema::new(db.conn().get_database_backend());
     rustcms_testing::create_table(db.conn(), &schema.create_table_from_entity(order::Entity)).await;
     rustcms_testing::create_table(db.conn(), &schema.create_table_from_entity(line::Entity)).await;
+    rustcms_testing::create_table(db.conn(), &schema.create_table_from_entity(label::Entity)).await;
     let app = TestApp::new(build, db).await;
     let auth = app.state().service::<AuthState>().unwrap();
     let db = app.state().db();
@@ -191,7 +260,7 @@ db_test!(a_count_column_counts_the_rows_the_user_may_list, |db: TestDb| async mo
     assert_eq!((column["counts"].clone(), column["label"].clone()), (json!("lines"), json!("Lines count")));
     assert_eq!(column["sortable"], json!(false));
     let list = admin.get(&app.admin_api("resources/orders/records")).await.json();
-    assert_eq!(list["data"][0]["counts"], json!({"lines": 2}));
+    assert_eq!(list["data"][0]["counts"]["lines"], json!(2));
     assert!(list["data"][0]["data"].get("lines_count").is_none());
     // A record without lines counts zero; a single read carries no counts.
     app.state().db().execute_unprepared("INSERT INTO orders (number) VALUES ('A-0')").await.unwrap();
@@ -204,7 +273,7 @@ db_test!(a_count_column_counts_the_rows_the_user_may_list, |db: TestDb| async mo
     let empty = json!(empty.id.to_string());
     let list = admin.get(&app.admin_api("resources/orders/records")).await.json();
     let row = list["data"].as_array().unwrap().iter().find(|r| r["key"] == empty).unwrap().clone();
-    assert_eq!(row["counts"], json!({"lines": 0}));
+    assert_eq!(row["counts"]["lines"], json!(0));
     let one = admin.get(&app.admin_api(&format!("resources/orders/records/{order}"))).await.json();
     assert!(one["data"].get("counts").is_none());
 
@@ -216,13 +285,14 @@ db_test!(a_count_column_counts_the_rows_the_user_may_list, |db: TestDb| async mo
         ))
         .await
         .unwrap();
-    let counts =
-        |list: Value| -> Vec<Value> { list["data"].as_array().unwrap().iter().map(|r| r["counts"].clone()).collect() };
+    let counts = |list: Value| -> Vec<Value> {
+        list["data"].as_array().unwrap().iter().map(|r| r["counts"]["lines"].clone()).collect()
+    };
     let list = admin.get(&app.admin_api("resources/orders/records")).await.json();
-    assert_eq!(counts(list), [json!({"lines": 3}), json!({"lines": 0})], "decided once: the scope alone");
+    assert_eq!(counts(list), [json!(3), json!(0)], "decided once: the scope alone");
     PER_RECORD.store(true, std::sync::atomic::Ordering::SeqCst);
     let list = admin.get(&app.admin_api("resources/orders/records")).await.json();
-    assert_eq!(counts(list), [json!({"lines": 2}), json!({"lines": 0})], "per record: the secret line is not listed");
+    assert_eq!(counts(list), [json!(2), json!(0)], "per record: the secret line is not listed");
     PER_RECORD.store(false, std::sync::atomic::Ordering::SeqCst);
 
     // Someone who may not list lines gets neither the column nor the counts.
@@ -273,3 +343,23 @@ impl Resource for RepeatedLines {
 fn relationship_repeaters_are_refused_at_boot() {
     Registry::new().register::<RepeatedLines>().register::<LineResource>().finish();
 }
+
+db_test!(a_scope_joining_rows_counts_each_child_once, |db: TestDb| async move {
+    let (app, admin) = setup(db).await;
+    let admin = app.acting_as(&admin).await;
+    let order = order_with_lines(&app).await;
+    let db = app.state().db();
+    // "a" has two labels, "b" one, "hidden" none: the join yields "a" twice.
+    for (line, name) in [("a", "red"), ("a", "blue"), ("b", "red")] {
+        db.execute_unprepared(&format!(
+            "INSERT INTO line_labels (line_id, name) SELECT id, '{name}' FROM order_lines \
+             WHERE order_id = {order} AND product = '{line}'"
+        ))
+        .await
+        .unwrap();
+    }
+    let list = admin.get(&app.admin_api("resources/orders/records")).await.json();
+    let row = list["data"].as_array().unwrap().iter().find(|r| r["key"] == json!(order)).unwrap().clone();
+    // Labelled lines: "a" and "b", each once ("c" and "hidden" have no label).
+    assert_eq!(row["counts"]["labelled"], json!(2), "{row}");
+});
