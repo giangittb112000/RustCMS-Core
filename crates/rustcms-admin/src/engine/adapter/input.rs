@@ -625,29 +625,6 @@ pub(crate) fn form_empty(input: InputType, kind: FieldKind, nullable: bool) -> s
     }
 }
 
-#[cfg(test)]
-mod not_null_tests {
-    use super::not_null_column;
-
-    #[test]
-    fn reads_the_column_of_each_backend_s_not_null_violation() {
-        let cases = [
-            ("error returned from database: (code: 1299) NOT NULL constraint failed: courses.published", "published"),
-            (
-                "error returned from database: null value in column \"published\" of relation \"courses\" violates \
-                 not-null constraint",
-                "published",
-            ),
-            ("error returned from database: 1364 (HY000): Field 'published' doesn't have a default value", "published"),
-            ("error returned from database: 1048 (23000): Column 'published' cannot be null", "published"),
-        ];
-        for (message, column) in cases {
-            assert_eq!(not_null_column(message, "courses").as_deref(), Some(column), "{message}");
-        }
-        assert_eq!(not_null_column("UNIQUE constraint failed: courses.code", "courses"), None);
-    }
-}
-
 pub(super) fn cleared_value<C>(column: &ColumnInfo<C>) -> Option<serde_json::Value> {
     if let Some(default) = &column.default {
         Some(default.clone())
@@ -692,5 +669,28 @@ fn storable(
             Err(format!("has more than {precision} digits"))
         }
         _ => Ok(()),
+    }
+}
+
+#[cfg(test)]
+mod not_null_tests {
+    use super::not_null_column;
+
+    #[test]
+    fn reads_the_column_of_each_backend_s_not_null_violation() {
+        let cases = [
+            ("error returned from database: (code: 1299) NOT NULL constraint failed: courses.published", "published"),
+            (
+                "error returned from database: null value in column \"published\" of relation \"courses\" violates \
+                 not-null constraint",
+                "published",
+            ),
+            ("error returned from database: 1364 (HY000): Field 'published' doesn't have a default value", "published"),
+            ("error returned from database: 1048 (23000): Column 'published' cannot be null", "published"),
+        ];
+        for (message, column) in cases {
+            assert_eq!(not_null_column(message, "courses").as_deref(), Some(column), "{message}");
+        }
+        assert_eq!(not_null_column("UNIQUE constraint failed: courses.code", "courses"), None);
     }
 }
