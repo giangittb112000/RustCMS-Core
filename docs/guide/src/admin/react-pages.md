@@ -29,7 +29,7 @@ writes, for an application whose package is `blog`:
 - in the admin provider:
 
   ```rust
-  .extension_script_v2("stats", include_str!(concat!(env!("CARGO_MANIFEST_DIR"), "/resources/admin/js/blog/stats.js")), rustcms::admin::Requires { react: "19.3", react_query: "5.104", ui: 3 })
+  .extension_script_v2("stats", include_str!(concat!(env!("CARGO_MANIFEST_DIR"), "/resources/admin/js/blog/stats.js")), rustcms::admin::Requires { react: "19.3", react_query: "5.104", ui: 4 })
   .extension_style("stats", include_str!(concat!(env!("CARGO_MANIFEST_DIR"), "/resources/admin/css/blog/stats.css")))
   ```
 
@@ -325,7 +325,7 @@ end-to-end tests drive the built page in a browser.
 the one the command carries (older or newer). Run `rustcms make:sdk`: it
 replaces the files you did not edit and lists the ones it kept, and the
 `extension_script_v2` registrations whose `Requires` declare an older `ui`:
-set `ui: 3` there. Then update `package.json` to the versions in `Requires`,
+set `ui: 4` there. Then update `package.json` to the versions in `Requires`,
 run `npm install && npm run build`, and commit.
 
 ## Security notes

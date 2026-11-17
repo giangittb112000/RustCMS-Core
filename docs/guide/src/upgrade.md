@@ -38,9 +38,22 @@ No migration. To roll back, install 0.13.0 again; no data changes shape.
   before, a `belongs_to` field's title links to the related record when the
   user may list it, and an encrypted field no longer shows whether it is set.
   A declared `infolist()` is unchanged.
-- **Schema (vocabulary 17).** `InfolistSchema` gains `fromForm`; a view
+- **Schema (vocabulary 18).** `InfolistSchema` gains `fromForm`; a view
   schema without `key` no longer carries `infolist` (a client drawing a
-  record's view page passes `key`).
+  record's view page passes `key`); `InputSchema` and rich text entries gain
+  `richNodes`.
+- **Rich text version 3** (underline, superscript, subscript, application
+  elements). Documents are stored in the lowest version they need, so 0.13.0
+  still reads every document without a version 3 part. **Rollback:** 0.13.0
+  refuses version 3 documents on save and shows them read-only.
+- **Rust API.** `Mark` is `#[non_exhaustive]` and gains `Underline`,
+  `Superscript`, `Subscript`; `Node` gains `App`: an exhaustive `match`
+  needs an arm (or `_`). `rich_text::parse` refuses `app.*` nodes: read
+  documents holding them with `Registry::rich_nodes()` (or
+  `AppNodes::parse`).
+- **Extensions: SDK `ui` 4.** Bundles built for `ui` 3 keep working. To draw
+  elements, copy the new SDK (`rustcms make:sdk`), set `Requires { ui: 4 }`
+  and rebuild.
 
 ## From 0.12.1 to 0.13.0
 

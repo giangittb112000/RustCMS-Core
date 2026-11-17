@@ -13,7 +13,7 @@ use crate::ui::{
 /// Version of the schema structure.
 pub const SCHEMA_VERSION: u32 = 2;
 /// Version of the component, column and filter vocabulary.
-pub const VOCABULARY_VERSION: u32 = 17;
+pub const VOCABULARY_VERSION: u32 = 18;
 
 /// Navigation entry and identity of a resource.
 #[derive(Debug, Clone, PartialEq, Serialize)]
@@ -204,6 +204,58 @@ pub struct InputSchema {
     #[cfg_attr(feature = "ts", ts(as = "Option<RepeaterSchema>", optional))]
     #[serde(skip_serializing_if = "Option::is_none")]
     pub repeater: Option<Box<RepeaterSchema>>,
+    /// Rich text: the application nodes the document may hold (vocabulary
+    /// 18, ADR 0042); absent when none.
+    #[cfg_attr(feature = "ts", ts(as = "Option<Vec<RichNodeSchema>>", optional))]
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub rich_nodes: Vec<RichNodeSchema>,
+}
+
+/// An application node a rich text document may hold (vocabulary 18, ADR
+/// 0042): an atom with typed attributes, checked again by the server.
+#[derive(Debug, Clone, PartialEq, Serialize)]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
+#[serde(rename_all = "camelCase")]
+pub struct RichNodeSchema {
+    /// Its name (`app.…`).
+    pub name: String,
+    /// Label (translated).
+    pub label: String,
+    /// Inside text, or a block.
+    pub inline: bool,
+    /// Its attributes, in declaration order.
+    pub attrs: Vec<RichAttrSchema>,
+}
+
+/// An attribute of an application node. Options absent when unset.
+#[derive(Debug, Clone, PartialEq, Serialize)]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
+#[serde(rename_all = "camelCase")]
+pub struct RichAttrSchema {
+    /// Its name.
+    pub name: String,
+    /// The label of its input (translated; its name when none is declared).
+    pub label: String,
+    /// `text`, `integer`, `boolean`, `one_of` or `uuid`.
+    pub kind: &'static str,
+    /// Without a default: the document must give it.
+    pub required: bool,
+    /// The value when left out.
+    #[cfg_attr(feature = "ts", ts(optional, type = "JsonValue"))]
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub default: Option<serde_json::Value>,
+    /// Text: fewest characters; integer: smallest value.
+    #[cfg_attr(feature = "ts", ts(optional, type = "number"))]
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub min: Option<i64>,
+    /// Text: most characters; integer: largest value.
+    #[cfg_attr(feature = "ts", ts(optional, type = "number"))]
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub max: Option<i64>,
+    /// `one_of`: the values allowed.
+    #[cfg_attr(feature = "ts", ts(as = "Option<Vec<String>>", optional))]
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub options: Vec<String>,
 }
 
 /// The rows of a repeater (vocabulary 15, ADR 0040). Options absent when unset.
@@ -457,6 +509,11 @@ pub struct EntrySchema {
     #[cfg_attr(feature = "ts", ts(as = "Option<bool>", optional))]
     #[serde(skip_serializing_if = "std::ops::Not::not")]
     pub outline: bool,
+    /// Rich text entries: the application nodes the document may hold
+    /// (vocabulary 18).
+    #[cfg_attr(feature = "ts", ts(as = "Option<Vec<RichNodeSchema>>", optional))]
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub rich_nodes: Vec<RichNodeSchema>,
     /// Related resource (relation entries; the title is the record's `labels[name]`).
     #[cfg_attr(feature = "ts", ts(optional))]
     #[serde(skip_serializing_if = "Option::is_none")]

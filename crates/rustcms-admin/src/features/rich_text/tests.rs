@@ -11,6 +11,10 @@ fn doc(content: Value) -> Value {
     json!({"type": "doc", "version": 2, "content": content})
 }
 
+fn v3(content: Value) -> Value {
+    json!({"type": "doc", "version": 3, "content": content})
+}
+
 fn text(t: &str) -> Value {
     json!({"type": "text", "text": t})
 }
@@ -72,12 +76,17 @@ fn version_1_is_read_as_it_is_and_is_a_subset_of_version_2() {
     let new = parse(&doc(content.clone())).unwrap();
     assert_eq!((old.version, new.version), (1, 2));
     assert_eq!(old.content, new.content);
-    // `upgrade_value` changes the version only.
+    // `upgrade_value` changes the version only, 1 to 2; never to 3 (the lowest
+    // version a document needs, so 0.10 to 0.12 keep reading it).
     assert_eq!(upgrade_value(&v1(content.clone())), doc(content.clone()));
     assert_eq!(parse(&upgrade_value(&v1(content.clone()))).unwrap(), new);
-    for same in
-        [doc(content), json!("<p>x</p>"), json!({"type": "doc", "version": 3}), json!({"type": "x", "version": 1})]
-    {
+    for same in [
+        doc(content.clone()),
+        v3(content),
+        json!("<p>x</p>"),
+        json!({"type": "doc", "version": 4}),
+        json!({"type": "x", "version": 1}),
+    ] {
         assert_eq!(upgrade_value(&same), same);
     }
     // What only version 2 has is refused in version 1.
@@ -102,7 +111,7 @@ fn anything_else_is_refused() {
     for bad in [
         json!({"type": "doc", "content": []}),
         json!({"type": "doc", "version": 0, "content": []}),
-        json!({"type": "doc", "version": 3, "content": []}),
+        json!({"type": "doc", "version": 4, "content": []}),
         json!("<p>html</p>"),
         doc(json!([{"type": "script", "content": []}])),
         doc(json!([{"type": "paragraph", "attrs": {"style": "x"}, "content": []}])),
@@ -444,4 +453,303 @@ fn embed_addresses_parse_to_an_allowed_provider_and_id() {
     let embed = Embed::from_url("https://youtu.be/dQw4w9WgXcQ").unwrap();
     let value = doc(json!([{"type": "embed", "attrs": {"provider": embed.provider.as_str(), "id": embed.id}}]));
     assert!(parse(&value).is_ok());
+}
+
+// --- Version 3 ---------------------------------------------------------------
+
+fn marked(marks: &[&str]) -> Value {
+    json!({"type": "text", "text": "x", "marks": marks.iter().map(|m| json!({"type": m})).collect::<Vec<_>>()})
+}
+
+fn kbd(keys: Value) -> Value {
+    json!({"type": "app.kbd", "attrs": {"keys": keys}})
+}
+
+fn nodes() -> AppNodes {
+    AppNodes::new([
+        RichTextNode::inline_atom("app.kbd")
+            .label("Shortcut")
+            .attr("keys", Attr::text().min(1).max(20))
+            .text(|attrs| format!("[{}]", attrs.text("keys"))),
+        RichTextNode::block_atom("app.product")
+            .attr("id", Attr::uuid())
+            .attr("layout", Attr::one_of(["card", "row"]).default("card"))
+            .attr("qty", Attr::integer().range(1..=9).default(1))
+            .attr("featured", Attr::boolean().default(false)),
+        RichTextNode::inline_atom("app.blank").attr("n", Attr::integer().range(1..=99)),
+    ])
+}
+
+const PRODUCT: &str = "0199D3A4-1B2C-7D3E-8F40-123456789ABC";
+
+#[test]
+fn version_3_marks_parse_render_and_exclude_each_other() {
+    let value = v3(json!([para(
+        marked(&["bold", "italic", "underline", "strike", "link", "superscript"])
+            .as_object()
+            .map(|o| {
+                let mut o = o.clone();
+                o["marks"][4] = json!({"type": "link", "attrs": {"href": "https://x.test"}});
+                Value::Object(o)
+            })
+            .unwrap()
+    )]));
+    let parsed = parse(&value).unwrap();
+    assert_eq!(parsed.version, 3);
+    assert_eq!(
+        to_html(&parsed, &|_| None),
+        r#"<p><sup><a href="https://x.test" rel="noopener noreferrer nofollow"><s><u><em><strong>x</strong></em></u></s></a></sup></p>"#
+    );
+    let sub = parse(&v3(json!([para(marked(&["subscript"]))]))).unwrap();
+    assert_eq!(to_html(&sub, &|_| None), "<p><sub>x</sub></p>");
+    for (bad, code) in [
+        (v3(json!([para(marked(&["superscript", "subscript"]))])), "document_structure"),
+        (v3(json!([para(marked(&["underline", "underline"]))])), "document_structure"),
+        (doc(json!([para(marked(&["underline"]))])), "document_needs_version"),
+        (v1(json!([para(marked(&["superscript"]))])), "document_needs_version"),
+        (doc(json!([para(marked(&["subscript"]))])), "document_needs_version"),
+        (
+            v3(json!([para(
+                json!({"type": "text", "text": "x", "marks": [{"type": "underline", "attrs": {"style": "x"}}]})
+            )])),
+            "document_structure",
+        ),
+    ] {
+        let err = parse(&bad).expect_err(&bad.to_string());
+        assert_eq!(rustcms_core::i18n::Issue::of(&err.0).code, code, "{err}");
+    }
+}
+
+#[test]
+fn application_nodes_are_checked_against_their_declaration() {
+    let nodes = nodes();
+    let value = v3(json!([
+        {"type": "heading", "attrs": {"level": 2}, "content": [text("Press "), kbd(json!("Ctrl+C"))]},
+        para(kbd(json!("<b>&\"'"))),
+        {"type": "app.product", "attrs": {"id": PRODUCT}},
+        {"type": "bulletList", "content": [{"type": "listItem", "content": [{"type": "app.product", "attrs": {"id": PRODUCT, "layout": "row"}}]}]},
+        {"type": "blockquote", "content": [{"type": "app.product", "attrs": {"id": PRODUCT, "qty": 9, "featured": true}}]},
+        {"type": "table", "content": [{"type": "tableRow", "content": [{"type": "tableCell", "content": [para(kbd(json!("A")))]}]}]},
+        {"type": "callout", "attrs": {"tone": "info"}, "content": [para(json!({"type": "app.blank", "attrs": {"n": 3}}))]},
+    ]));
+    let parsed = nodes.parse(&value).unwrap();
+    // Defaults filled in, UUIDs in lower case.
+    let Node::App(product) = &parsed.content[2] else { panic!() };
+    assert_eq!(
+        Value::Object(product.attrs.as_map().clone()),
+        json!({"id": PRODUCT.to_lowercase(), "layout": "card", "qty": 1, "featured": false})
+    );
+    let completed = nodes.complete(&value).unwrap();
+    assert_eq!(completed["content"][2]["attrs"], Value::Object(product.attrs.as_map().clone()));
+    assert_eq!(completed["content"][0], value["content"][0], "the rest is left as it is");
+    // The plain parser and other lists know none of them.
+    let err = parse(&value).unwrap_err();
+    assert_eq!(err.0, "has an unknown element `app.kbd`");
+    let err = nodes.parse_for(&value, &["app.kbd", "app.blank"]).unwrap_err();
+    assert_eq!(err.0, "has an unknown element `app.product`");
+    assert!(nodes.parse_for(&value, &["app.kbd", "app.blank", "app.product"]).is_ok());
+
+    // HTML: escaped attributes and texts; outline with the node texts.
+    let html = Html::new(&parsed).nodes(&nodes).render();
+    assert!(
+        html.starts_with(
+            r#"<h2 id="press-ctrl-c">Press <span data-node="app.kbd" data-keys="Ctrl+C">[Ctrl+C]</span></h2>"#
+        ),
+        "{html}"
+    );
+    assert!(html.contains(r#"<p><span data-node="app.kbd" data-keys="&lt;b&gt;&amp;&quot;&#39;">[&lt;b&gt;&amp;&quot;&#39;]</span></p>"#), "{html}");
+    assert!(
+        html.contains(&format!(
+            r#"<div data-node="app.product" data-featured="false" data-id="{}" data-layout="card" data-qty="1"></div>"#,
+            PRODUCT.to_lowercase()
+        )),
+        "{html}"
+    );
+    assert_eq!(Html::new(&parsed).nodes(&nodes).outline()[0].text, "Press [Ctrl+C]");
+    // Without the declarations: the elements, no text.
+    let bare = to_html(&parsed, &|_| None);
+    assert!(
+        bare.starts_with(r#"<h2 id="press">Press <span data-node="app.kbd" data-keys="Ctrl+C"></span></h2>"#),
+        "{bare}"
+    );
+    assert_eq!(outline(&parsed)[0].id, "press");
+
+    for (bad, message) in [
+        (v3(json!([para(kbd(json!("")))])), "has an element `app.kbd` with an invalid attribute `keys`"),
+        (v3(json!([para(kbd(json!("x".repeat(21))))])), "has an element `app.kbd` with an invalid attribute `keys`"),
+        (v3(json!([para(kbd(json!(1)))])), "has an element `app.kbd` with an invalid attribute `keys`"),
+        (v3(json!([para(json!({"type": "app.kbd"}))])), "has an element `app.kbd` without its attribute `keys`"),
+        (
+            v3(json!([para(json!({"type": "app.kbd", "attrs": {"keys": "x", "html": "<b>"}}))])),
+            "has an element `app.kbd` with an invalid attribute `html`",
+        ),
+        (
+            v3(json!([para(json!({"type": "app.kbd", "attrs": {"keys": "x"}, "content": []}))])),
+            "has unexpected properties on `app.kbd`",
+        ),
+        (
+            v3(json!([para(json!({"type": "app.kbd", "attrs": {"keys": "x"}, "text": "x"}))])),
+            "has unexpected properties on `app.kbd`",
+        ),
+        (
+            v3(json!([para(json!({"type": "app.kbd", "attrs": {"keys": "x"}, "marks": [{"type": "bold"}]}))])),
+            "has unexpected properties on `app.kbd`",
+        ),
+        (v3(json!([kbd(json!("x"))])), "has an element `app.kbd` out of place"),
+        (
+            v3(json!([para(json!({"type": "app.product", "attrs": {"id": PRODUCT}}))])),
+            "has an element `app.product` out of place",
+        ),
+        (
+            v3(json!([{"type": "app.product", "attrs": {"id": "nope"}}])),
+            "has an element `app.product` with an invalid attribute `id`",
+        ),
+        (
+            v3(json!([{"type": "app.product", "attrs": {"id": PRODUCT, "layout": "grid"}}])),
+            "has an element `app.product` with an invalid attribute `layout`",
+        ),
+        (
+            v3(json!([{"type": "app.product", "attrs": {"id": PRODUCT, "qty": 10}}])),
+            "has an element `app.product` with an invalid attribute `qty`",
+        ),
+        (
+            v3(json!([{"type": "app.product", "attrs": {"id": PRODUCT, "qty": 1.5}}])),
+            "has an element `app.product` with an invalid attribute `qty`",
+        ),
+        (
+            v3(json!([{"type": "app.product", "attrs": {"id": PRODUCT, "featured": "yes"}}])),
+            "has an element `app.product` with an invalid attribute `featured`",
+        ),
+        (
+            v3(
+                json!([{"type": "callout", "attrs": {"tone": "info"}, "content": [{"type": "app.product", "attrs": {"id": PRODUCT}}]}]),
+            ),
+            "has a callout holding something else than paragraphs and lists",
+        ),
+        (
+            v3(
+                json!([{"type": "table", "content": [{"type": "tableRow", "content": [{"type": "tableCell", "content": [{"type": "app.product", "attrs": {"id": PRODUCT}}]}]}]}]),
+            ),
+            "has a table cell holding something else than paragraphs",
+        ),
+        (
+            v3(json!([{"type": "codeBlock", "content": [kbd(json!("x"))]}])),
+            "has a code block holding something else than plain text",
+        ),
+        (v3(json!([para(json!({"type": "app.nope", "attrs": {}}))])), "has an unknown element `app.nope`"),
+        (doc(json!([para(kbd(json!("x")))])), "has the element `app.kbd`, which needs document version 3"),
+    ] {
+        let err = nodes.parse(&bad).expect_err(&bad.to_string());
+        assert_eq!(err.0, message, "{bad}");
+        assert_ne!(rustcms_core::i18n::Issue::of(&err.0).code, rustcms_core::i18n::CUSTOM, "{err}");
+    }
+}
+
+#[test]
+fn application_nodes_are_bounded() {
+    let nodes = nodes();
+    let blank = json!({"type": "app.blank", "attrs": {"n": 1}});
+    let fits = v3(json!([{"type": "paragraph", "content": vec![blank.clone(); MAX_APP_NODES]}]));
+    assert!(nodes.parse(&fits).is_ok());
+    let over = v3(json!([{"type": "paragraph", "content": vec![blank; MAX_APP_NODES + 1]}]));
+    let err = nodes.parse(&over).unwrap_err();
+    assert_eq!(err.0, format!("may not have more than {MAX_APP_NODES} application elements"));
+    assert_eq!(rustcms_core::i18n::Issue::of(&err.0).code, "max_app_nodes");
+}
+
+#[test]
+fn declarations_are_checked() {
+    let panics = |f: fn()| std::panic::catch_unwind(f).expect_err("panics");
+    for bad in [
+        (|| drop(AppNodes::new([RichTextNode::inline_atom("kbd")]))) as fn(),
+        || drop(AppNodes::new([RichTextNode::inline_atom("app.Kbd")])),
+        || drop(AppNodes::new([RichTextNode::inline_atom("app.")])),
+        || drop(AppNodes::new([RichTextNode::inline_atom(format!("app.{}", "a".repeat(33)))])),
+        || drop(AppNodes::new([RichTextNode::inline_atom("app.a"), RichTextNode::block_atom("app.a")])),
+        || drop(AppNodes::new([RichTextNode::inline_atom("app.a").label(" ")])),
+        || drop(AppNodes::new([RichTextNode::inline_atom("app.a").attr("x", Attr::text()).attr("x", Attr::text())])),
+        || drop(AppNodes::new([RichTextNode::inline_atom("app.a").attr("data-x", Attr::text())])),
+        // `data-node` names the node in HTML and in the editor.
+        || drop(AppNodes::new([RichTextNode::inline_atom("app.a").attr("node", Attr::text())])),
+        // Defaults are stored in every node: at most 1 KiB of them per node.
+        || {
+            drop(AppNodes::new([
+                RichTextNode::inline_atom("app.a").attr("x", Attr::text().max(2000).default("x".repeat(1100)))
+            ]))
+        },
+        || drop(AppNodes::new([RichTextNode::inline_atom("app.a").attr("x", Attr::text().max(MAX_TEXT_ATTR + 1))])),
+        || drop(AppNodes::new([RichTextNode::inline_atom("app.a").attr("x", Attr::text().min(5).max(2))])),
+        || {
+            drop(AppNodes::new([
+                RichTextNode::inline_atom("app.a").attr("x", Attr::integer().range(0..=MAX_SAFE_INTEGER + 1))
+            ]))
+        },
+        || drop(AppNodes::new([RichTextNode::inline_atom("app.a").attr("x", Attr::one_of(Vec::<String>::new()))])),
+        || drop(AppNodes::new([RichTextNode::inline_atom("app.a").attr("x", Attr::one_of(["a", "a"]))])),
+        || drop(AppNodes::new([RichTextNode::inline_atom("app.a").attr("x", Attr::one_of(["a"]).default("b"))])),
+        || drop(AppNodes::new([RichTextNode::inline_atom("app.a").attr("x", Attr::integer().range(1..=2).default(3))])),
+        || drop(AppNodes::new([RichTextNode::inline_atom("app.a").attr("x", Attr::uuid().default(PRODUCT))])),
+        || drop(Attr::boolean().max(3)),
+        || {
+            let mut node = RichTextNode::inline_atom("app.a");
+            for i in 0..=MAX_NODE_ATTRS {
+                node = node.attr(format!("a{i}"), Attr::boolean());
+            }
+            drop(AppNodes::new([node]));
+        },
+    ] {
+        panics(bad);
+    }
+}
+
+#[test]
+fn defaults_count_towards_the_size_limit() {
+    let nodes = AppNodes::new([
+        RichTextNode::inline_atom("app.note").attr("text", Attr::text().max(1000).default("x".repeat(1000)))
+    ]);
+    // A few bytes per node that would grow past the limit once completed: refused.
+    let many = v3(json!([{"type": "paragraph", "content": vec![json!({"type": "app.note"}); MAX_BYTES / 1000 + 1]}]));
+    assert!(serde_json::to_vec(&many).unwrap().len() < 10_000);
+    let err = nodes.parse(&many).unwrap_err();
+    assert_eq!(err.0, format!("may not be larger than {} KiB", MAX_BYTES / 1024));
+    assert_eq!(nodes.complete(&many), None);
+    // What fits is stored complete, within the limit, and parses again.
+    let few = v3(json!([{"type": "paragraph", "content": vec![json!({"type": "app.note"}); 200]}]));
+    let completed = nodes.complete(&few).unwrap();
+    assert!(serde_json::to_vec(&completed).unwrap().len() <= MAX_BYTES);
+    assert_eq!(completed["content"][0]["content"][0]["attrs"]["text"], json!("x".repeat(1000)));
+    assert!(nodes.parse(&completed).is_ok());
+}
+
+#[test]
+fn block_elements_stay_out_of_callouts_at_any_depth() {
+    let nodes = nodes();
+    let list = json!({"type": "bulletList", "content": [{"type": "listItem", "content": [
+        {"type": "paragraph", "content": [{"type": "text", "text": "Item"}]},
+        {"type": "app.product", "attrs": {"id": PRODUCT}},
+    ]}]});
+    let inside = v3(json!([{"type": "callout", "attrs": {"tone": "info"}, "content": [list.clone()]}]));
+    let err = nodes.parse(&inside).unwrap_err();
+    assert_eq!(err.0, "has a callout holding the element `app.product`");
+    assert_eq!(rustcms_core::i18n::Issue::of(&err.0).code, "document_structure");
+    // The same list outside a callout holds it.
+    assert!(nodes.parse(&v3(json!([list]))).is_ok());
+}
+
+#[test]
+fn documents_are_stored_in_the_lowest_version_they_need() {
+    let nodes = nodes();
+    let plain = json!([para(json!({"type": "text", "text": "Hi"}))]);
+    // Only version 1 parts, written as version 3: stored as version 1.
+    assert_eq!(nodes.complete(&v3(plain.clone())).unwrap()["version"], json!(1));
+    // A callout needs version 2; an element version 3.
+    let callout = json!([{"type": "callout", "attrs": {"tone": "info"}, "content": [para(json!({"type": "text", "text": "Hi"}))]}]);
+    assert_eq!(nodes.complete(&v3(callout)).unwrap()["version"], json!(2));
+    let element = json!([para(kbd(json!("K")))]);
+    assert_eq!(nodes.complete(&v3(element)).unwrap()["version"], json!(3));
+    // An image caption, even empty, needs version 2.
+    let (_, needed) =
+        super::parse::parse_needed(&v3(json!([{"type": "image", "attrs": {"media": PRODUCT, "caption": null}}])), None)
+            .unwrap();
+    assert_eq!(needed, 2);
 }

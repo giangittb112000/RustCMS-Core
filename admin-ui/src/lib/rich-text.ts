@@ -2,8 +2,11 @@
 // editor's (TipTap) JSON. Only the nodes, marks and attributes the server
 // accepts survive the mapping; images travel as media ids, shown through the
 // panel's own media URL; embeds as a provider and an id (never a URL or HTML).
-// Version 1 documents are read as they are (a subset of version 2); the
-// editor writes the lowest version a document needs (`fromEditor`).
+// Versions 1 and 2 are read as they are (1 ⊂ 2 ⊂ 3); the editor writes the
+// lowest version a document needs (`toDocument`). Version 3 adds underline,
+// superscript, subscript and the application's nodes (`app.*`): atoms whose
+// attributes are checked against the field's declarations (`richNodes`).
+import type { RichAttrSchema, RichNodeSchema } from "@/api/types";
 
 export interface DocNode {
   type: string;
@@ -15,12 +18,12 @@ export interface DocNode {
 
 export interface RichDocument {
   type: "doc";
-  version: 1 | 2;
+  version: 1 | 2 | 3;
   content: DocNode[];
 }
 
-/** The newest version the editor reads and writes (it writes version 1 when a document needs no more). */
-export const DOCUMENT_VERSION = 2;
+/** The newest version the editor reads and writes (it writes the lowest version a document needs). */
+export const DOCUMENT_VERSION = 3;
 
 /** The server's limits (`rustcms_admin::rich_text`). */
 export const LIMITS = { alt: 500, caption: 1000, tableRows: 50, tableColumns: 20 } as const;
@@ -35,7 +38,77 @@ export type CalloutTone = (typeof CALLOUT_TONES)[number];
 
 const BLOCKS = new Set(["paragraph", "heading", "bulletList", "orderedList", "listItem", "blockquote", "codeBlock", "horizontalRule", "image", "table", "embed", "callout"]);
 const INLINES = new Set(["text", "hardBreak"]);
-const MARKS = new Set(["bold", "italic", "strike", "code", "link"]);
+const MARKS = new Set(["bold", "italic", "strike", "code", "link", "underline", "superscript", "subscript"]);
+/** Marks only version 3 has. */
+const V3_MARKS = new Set(["underline", "superscript", "subscript"]);
+/** Largest integer attribute (exact in JavaScript and Rust alike). */
+const MAX_SAFE = Number.MAX_SAFE_INTEGER;
+
+/** Whether `type` names an application node. */
+export const isAppNode = (type: unknown): type is string => typeof type === "string" && type.startsWith("app.");
+
+/** Whether `value` fits attribute `attr` (the server's rule: lengths in code points). */
+export function attrFits(attr: RichAttrSchema, value: unknown): boolean {
+  switch (attr.kind) {
+    case "text": {
+      if (typeof value !== "string") return false;
+      const length = [...value].length;
+      return length >= (attr.min ?? 0) && length <= (attr.max ?? Infinity);
+    }
+    case "integer":
+      return typeof value === "number" && Number.isInteger(value) && value >= (attr.min ?? -MAX_SAFE) && value <= (attr.max ?? MAX_SAFE);
+    case "boolean":
+      return typeof value === "boolean";
+    case "one_of":
+      return typeof value === "string" && (attr.options ?? []).includes(value);
+    case "uuid":
+      return typeof value === "string" && UUID.test(value);
+    default:
+      return false;
+  }
+}
+
+/**
+ * The attributes of an application node as stored (defaults filled in, UUIDs
+ * in lower case), or null when they do not fit its declaration (an unknown
+ * attribute, a missing required one, a value of another kind, `null`), as the
+ * server decides.
+ */
+export function checkAttrs(node: RichNodeSchema, attrs: unknown): Record<string, unknown> | null {
+  const given = attrs && typeof attrs === "object" && !Array.isArray(attrs) ? (attrs as Record<string, unknown>) : {};
+  if (Object.keys(given).some((name) => !node.attrs.some((a) => a.name === name))) return null;
+  const out: Record<string, unknown> = {};
+  for (const attr of node.attrs) {
+    const value = Object.hasOwn(given, attr.name) ? given[attr.name] : attr.default;
+    if (value === undefined || !attrFits(attr, value)) return null;
+    out[attr.name] = attr.kind === "uuid" ? String(value).toLowerCase() : value;
+  }
+  return out;
+}
+
+/**
+ * Attributes the editor holds, without its `null` placeholders (an attribute
+ * not set yet, or emptied in the dialog): those take their default.
+ */
+export function withoutUnset(attrs: unknown): Record<string, unknown> {
+  if (!attrs || typeof attrs !== "object" || Array.isArray(attrs)) return {};
+  return Object.fromEntries(Object.entries(attrs as Record<string, unknown>).filter(([, v]) => v !== null && v !== undefined));
+}
+
+/** What a document may hold where it is checked: its version and the field's application nodes. */
+interface Reading {
+  version: number;
+  nodes: Map<string, RichNodeSchema>;
+}
+
+const reading = (version: number, nodes: readonly RichNodeSchema[] = []): Reading => ({ version, nodes: new Map(nodes.map((n) => [n.name, n])) });
+
+/** Whether `n` is an application node the reading accepts, inline or a block as it is placed. */
+function appNodeFits(n: DocNode, inline: boolean, r: Reading): boolean {
+  const decl = r.nodes.get(n.type);
+  return r.version >= 3 && !!decl && decl.inline === inline && n.content === undefined && n.text === undefined &&
+    n.marks === undefined && checkAttrs(decl, n.attrs) !== null;
+}
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 /** `http(s)://` or `mailto:` without spaces or controls, at most 2,048 bytes (the server's rule). */
@@ -146,10 +219,10 @@ export function parseEmbedUrl(input: string): Embed | null {
 
 // --- Checking and mapping -------------------------------------------------
 
-/** Paragraphs only, at least one, each holding inline content (table cells, callouts). */
-function paragraphs(nodes: unknown): boolean {
+/** Paragraphs only, at least one, each holding inline content (table cells). */
+function paragraphs(nodes: unknown, r: Reading): boolean {
   return Array.isArray(nodes) && nodes.length > 0 &&
-    nodes.every((p: DocNode) => !!p && p.type === "paragraph" && !p.attrs && editable(p.content, "inline"));
+    nodes.every((p: DocNode) => !!p && p.type === "paragraph" && !p.attrs && editable(p.content, "inline", r));
 }
 
 /** Whether any node at any depth is of one of `types`. */
@@ -157,15 +230,24 @@ function holds(nodes: unknown, types: string[]): boolean {
   return Array.isArray(nodes) && nodes.some((n: DocNode) => !!n && (types.includes(n.type) || holds(n.content, types)));
 }
 
+/** Whether lists in `nodes` hold an application node as a block (a list item's child), at any depth. */
+function blockAppInLists(nodes: unknown): boolean {
+  return Array.isArray(nodes) && nodes.some((n: DocNode) => {
+    if (!n) return false;
+    if (n.type === "listItem") return (n.content ?? []).some((c) => isAppNode(c?.type)) || blockAppInLists(n.content);
+    return (n.type === "bulletList" || n.type === "orderedList") && blockAppInLists(n.content);
+  });
+}
+
 /** A table the editor can hold as it is: rectangular rows of cells, header cells in the first row only. */
-function editableTable(n: DocNode): boolean {
+function editableTable(n: DocNode, reading: Reading): boolean {
   const rows = n.content;
   if (n.attrs || !Array.isArray(rows) || rows.length === 0) return false;
   const header = rows[0]?.content?.[0]?.type === "tableHeader";
   const width = rows[0]?.content?.length ?? 0;
   return width > 0 && rows.every((row, r) =>
     row?.type === "tableRow" && !row.attrs && Array.isArray(row.content) && row.content.length === width &&
-    row.content.every((cell) => cell?.type === (header && r === 0 ? "tableHeader" : "tableCell") && !cell.attrs && paragraphs(cell.content)));
+    row.content.every((cell) => cell?.type === (header && r === 0 ? "tableHeader" : "tableCell") && !cell.attrs && paragraphs(cell.content, reading)));
 }
 
 const CONTAINERS: Record<string, "inline" | "blocks" | "items" | "text" | "none"> = {
@@ -174,7 +256,8 @@ const CONTAINERS: Record<string, "inline" | "blocks" | "items" | "text" | "none"
 };
 
 /** Whether every node is one the editor holds where it holds it (else editing would drop content). */
-function editable(nodes: unknown, kind: "blocks" | "inline" | "items" | "text", version: number = DOCUMENT_VERSION): boolean {
+function editable(nodes: unknown, kind: "blocks" | "inline" | "items" | "text", r: Reading): boolean {
+  const version = r.version;
   if (nodes === undefined) return true;
   if (!Array.isArray(nodes)) return false;
   return nodes.every((raw: unknown) => {
@@ -182,18 +265,23 @@ function editable(nodes: unknown, kind: "blocks" | "inline" | "items" | "text", 
     const n = raw as DocNode;
     if (kind === "text" || kind === "inline") {
       if (n.type === "hardBreak") return kind === "inline";
+      if (kind === "inline" && isAppNode(n.type)) return appNodeFits(n, true, r);
       if (n.type !== "text" || typeof n.text !== "string") return false;
-      return kind === "inline" ? (n.marks ?? []).every((m) => MARKS.has(m.type)) : !n.marks;
+      if (kind === "text") return !n.marks;
+      const marks = (n.marks ?? []).map((m) => m.type);
+      return marks.every((m) => MARKS.has(m) && (version >= 3 || !V3_MARKS.has(m))) &&
+        !(marks.includes("superscript") && marks.includes("subscript"));
     }
-    if (kind === "items") return n.type === "listItem" && editable(n.content, "blocks", version);
+    if (kind === "items") return n.type === "listItem" && editable(n.content, "blocks", r);
     if (n.type === "listItem") return false;
+    if (isAppNode(n.type)) return appNodeFits(n, false, r);
     // Version 2 nodes.
-    if (n.type === "table") return version >= 2 && editableTable(n);
+    if (n.type === "table") return version >= 2 && editableTable(n, r);
     if (n.type === "embed") return version >= 2 && n.content === undefined && validEmbed(n.attrs?.provider, n.attrs?.id);
     if (n.type === "callout") {
       return version >= 2 && CALLOUT_TONES.includes(n.attrs?.tone as CalloutTone) && Array.isArray(n.content) && n.content.length > 0 &&
         n.content.every((c) => ["paragraph", "bulletList", "orderedList"].includes(c?.type)) && !holds(n.content, ["table", "callout"]) &&
-        editable(n.content, "blocks", version);
+        !blockAppInLists(n.content) && editable(n.content, "blocks", r);
     }
     if (!(n.type in CONTAINERS)) return false;
     if (n.type === "image") {
@@ -203,18 +291,67 @@ function editable(nodes: unknown, kind: "blocks" | "inline" | "items" | "text", 
         (a.width === undefined || IMAGE_WIDTHS.includes(a.width as ImageWidth));
     }
     const inner = CONTAINERS[n.type] ?? "none";
-    return inner === "none" ? n.content === undefined : editable(n.content, inner, version);
+    return inner === "none" ? n.content === undefined : editable(n.content, inner, r);
   });
 }
 
 /**
  * A stored document the editor can hold without losing anything, or null (the
- * value is then shown read-only and never rewritten). Versions 1 and 2.
+ * value is then shown read-only and never rewritten). Versions 1 to 3; an
+ * application node must be one of `nodes` (the field's) with valid attributes.
  */
-export function asDocument(value: unknown): RichDocument | null {
+export function asDocument(value: unknown, nodes: readonly RichNodeSchema[] = []): RichDocument | null {
   if (!value || typeof value !== "object") return null;
   const doc = value as RichDocument;
-  return doc.type === "doc" && (doc.version === 1 || doc.version === 2) && editable(doc.content, "blocks", doc.version) ? doc : null;
+  return doc.type === "doc" && [1, 2, 3].includes(doc.version) && editable(doc.content, "blocks", reading(doc.version, nodes)) ? doc : null;
+}
+
+/**
+ * `doc` without the application nodes the field does not accept (undeclared,
+ * or with attributes that no longer fit), when that leaves a document the
+ * editor can hold; else null. The user removes them, and edits the rest.
+ */
+export function withoutUnknownElements(doc: RichDocument, nodes: readonly RichNodeSchema[] = []): RichDocument | null {
+  const r = reading(doc.version, nodes);
+  // A list item or quote left empty would not be a document the server accepts.
+  let emptied = false;
+  const strip = (list: DocNode[], inline: boolean): DocNode[] =>
+    list
+      .filter((n) => !n || !isAppNode(n.type) || appNodeFits(n, inline, r))
+      .map((n) => {
+        if (!n || !Array.isArray(n.content)) return n;
+        const content = strip(n.content, CONTAINERS[n.type] === "inline");
+        if (n.content.length > 0 && content.length === 0 && CONTAINERS[n.type] !== "inline") emptied = true;
+        return { ...n, content };
+      });
+  if (!Array.isArray(doc.content)) return null;
+  const cleaned = { ...doc, content: strip(doc.content, false) };
+  if (emptied || cleaned.content.length === 0) return null;
+  return JSON.stringify(cleaned) !== JSON.stringify(doc) ? asDocument(cleaned, nodes) : null;
+}
+
+/** Whether every node is shaped like one (a type; content, marks and attrs of the right kinds), at any depth. */
+function wellFormed(nodes: unknown, depth = 0): boolean {
+  return Array.isArray(nodes) && depth <= 40 && nodes.every((raw: unknown) => {
+    if (!raw || typeof raw !== "object" || Array.isArray(raw)) return false;
+    const n = raw as DocNode;
+    return typeof n.type === "string" &&
+      (n.text === undefined || typeof n.text === "string") &&
+      (n.attrs === undefined || (typeof n.attrs === "object" && n.attrs !== null && !Array.isArray(n.attrs))) &&
+      (n.marks === undefined || (Array.isArray(n.marks) && n.marks.every((m) => !!m && typeof m === "object" && typeof m.type === "string"))) &&
+      (n.content === undefined || wellFormed(n.content, depth + 1));
+  });
+}
+
+/**
+ * A stored document of a known version, well formed, whatever nodes it holds:
+ * for showing it (parts it does not know become placeholders), never for
+ * editing. Anything else: null (shown as "cannot be shown").
+ */
+export function asShownDocument(value: unknown): RichDocument | null {
+  if (!value || typeof value !== "object") return null;
+  const doc = value as RichDocument;
+  return doc.type === "doc" && [1, 2, 3].includes(doc.version) && wellFormed(doc.content) ? doc : null;
 }
 
 /** Cut to `max` code points, as the server counts. */
@@ -256,15 +393,29 @@ function tableRows(rows: DocNode[], cell: (c: DocNode) => DocNode[]): DocNode[] 
   });
 }
 
-/** Editor JSON → stored document (version 2): unknown parts dropped, images as media ids. */
-export function toDocument(editor: DocNode, apiPath: string): RichDocument {
+/**
+ * Editor JSON → stored document (the lowest version it needs): unknown parts
+ * dropped, images as media ids, application nodes among `nodes` only.
+ */
+export function toDocument(editor: DocNode, apiPath: string, nodes: readonly RichNodeSchema[] = []): RichDocument {
+  const declared = new Map(nodes.map((d) => [d.name, d]));
   const node = (n: DocNode, inline: boolean): DocNode | null => {
+    if (isAppNode(n.type)) {
+      const decl = declared.get(n.type);
+      const attrs = decl && decl.inline === inline ? checkAttrs(decl, withoutUnset(n.attrs)) : null;
+      return attrs ? { type: n.type, attrs } : null;
+    }
     if (!(inline ? INLINES : BLOCKS).has(n.type)) return null;
     switch (n.type) {
       case "text": {
         if (!n.text) return null;
+        const kinds = (n.marks ?? []).map((m) => m.type);
+        // Superscript and subscript exclude each other: the first one stays.
+        const excluded = kinds.indexOf("superscript") >= 0 && kinds.indexOf("subscript") >= 0
+          ? (kinds.indexOf("superscript") < kinds.indexOf("subscript") ? "subscript" : "superscript")
+          : null;
         const marks = (n.marks ?? []).flatMap((m) => {
-          if (!MARKS.has(m.type)) return [];
+          if (!MARKS.has(m.type) || m.type === excluded) return [];
           if (m.type !== "link") return [{ type: m.type }];
           const href = String(m.attrs?.href ?? "");
           return safeHref(href) ? [{ type: "link", attrs: { href } }] : [];
@@ -321,19 +472,30 @@ export function toDocument(editor: DocNode, apiPath: string): RichDocument {
   const children = (n: DocNode, inline: boolean) =>
     (n.content ?? []).map((c) => node(c, inline)).filter((c): c is DocNode => c !== null);
   const content = children(editor, false);
-  return { type: "doc", version: needsV2(content) ? 2 : 1, content };
+  return { type: "doc", version: lowestVersion(content), content };
 }
 
 /**
- * Whether content uses what only version 2 has (tables, embeds, callouts,
- * image captions and widths). Documents without it are written as version 1,
- * which 0.9 still reads (a rollback, an older reader of the same database).
+ * The lowest version content needs: 3 with underline, superscript, subscript
+ * or an application node; 2 with a table, an embed, a callout, an image
+ * caption or width; else 1, which 0.9 still reads (a rollback, an older
+ * reader of the same database).
  */
-function needsV2(content: DocNode[]): boolean {
-  return content.some((n) =>
-    ["table", "embed", "callout"].includes(n.type) ||
-    (n.type === "image" && (n.attrs?.caption !== undefined || n.attrs?.width !== undefined)) ||
-    needsV2(n.content ?? []));
+export function lowestVersion(content: DocNode[]): 1 | 2 | 3 {
+  let version: 1 | 2 | 3 = 1;
+  const visit = (list: DocNode[]) => {
+    for (const n of list) {
+      if (isAppNode(n.type) || (n.marks ?? []).some((m) => V3_MARKS.has(m.type))) version = 3;
+      else if (
+        ["table", "embed", "callout"].includes(n.type) ||
+        (n.type === "image" && (n.attrs?.caption !== undefined || n.attrs?.width !== undefined))
+      ) version = Math.max(version, 2) as 1 | 2 | 3;
+      if (version === 3) return;
+      visit(n.content ?? []);
+    }
+  };
+  visit(content);
+  return version;
 }
 
 /** Stored document → editor JSON (images shown from the panel's media URL). */
@@ -348,9 +510,9 @@ export function toEditor(doc: RichDocument, apiPath: string): DocNode {
   return { type: "doc", content: doc.content.length ? doc.content.map(node) : [{ type: "paragraph" }] };
 }
 
-/** Whether a document has no text, image, embed or table (saved as "not set" when allowed). */
+/** Whether a document has no text, image, embed, table or application node (saved as "not set" when allowed). */
 export function isEmptyDocument(doc: RichDocument): boolean {
   const has = (n: DocNode): boolean =>
-    ["image", "horizontalRule", "embed", "table"].includes(n.type) || !!n.text || (n.content ?? []).some(has);
+    ["image", "horizontalRule", "embed", "table"].includes(n.type) || isAppNode(n.type) || !!n.text || (n.content ?? []).some(has);
   return !doc.content.some(has);
 }

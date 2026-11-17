@@ -277,6 +277,7 @@ fn input_schema(ctx: &Ctx, field: &SettingField, input: &crate::ui::Input, disab
             .repeater
             .as_deref()
             .map(|spec| Box::new(crate::engine::repeater::rows_schema(spec, &|text| ctx.t(text), disabled))),
+        rich_nodes: Vec::new(),
     }
 }
 

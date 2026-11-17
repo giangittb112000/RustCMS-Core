@@ -315,6 +315,7 @@ impl SettingField {
             max_length: self.max_length,
             key_value: self.key_value,
             rich_text: false,
+            rich_nodes: None,
             options: None,
             bounds: self.input.number.as_deref().map(|&range| crate::engine::validate::Bounds::new(range, None)),
         }

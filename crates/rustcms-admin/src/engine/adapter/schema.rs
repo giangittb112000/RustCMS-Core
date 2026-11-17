@@ -137,6 +137,14 @@ impl<R: Resource> ResourceAdapter<R> {
         }
         // Messages of declared unique constraints (translated when they fire).
         out.extend(self.meta.constraints.iter().map(|c| c.message.clone()));
+        // Labels of the rich text nodes the fields accept.
+        for field in &self.fields {
+            if let Some(accepts) = self.accepts(field) {
+                out.extend(
+                    field.rich_nodes.iter().filter_map(|n| accepts.nodes.get(n)).map(|n| n.label_text().to_owned()),
+                );
+            }
+        }
         for action in &self.actions {
             out.push(action.label.clone().unwrap_or_else(|| humanize(action.name)));
             out.extend(action.confirm.clone());
@@ -268,7 +276,46 @@ impl<R: Resource> ResourceAdapter<R> {
             clear_when_hidden: input.clear_when_hidden,
             integer: false,
             repeater: self.repeater_schema(ctx, input, disabled),
+            rich_nodes: self.rich_node_schemas(ctx, &input.name),
         })
+    }
+
+    /// The application nodes rich text field `name` accepts (ADR 0042).
+    pub(super) fn rich_node_schemas(&self, ctx: &Ctx, name: &str) -> Vec<crate::contract::RichNodeSchema> {
+        use crate::rich_text::AttrKind;
+        let Some(accepts) = self.field(name).and_then(|f| self.accepts(f)) else { return Vec::new() };
+        let names = accepts.only.unwrap_or_default();
+        names
+            .iter()
+            .filter_map(|n| accepts.nodes.get(n))
+            .map(|node| crate::contract::RichNodeSchema {
+                name: node.name().to_owned(),
+                label: ctx.t_in(R::SLUG, node.label_text()),
+                inline: node.is_inline(),
+                attrs: node
+                    .attrs()
+                    .map(|(name, attr)| {
+                        let (kind, min, max, options) = match attr.kind() {
+                            AttrKind::Text { min, max } => ("text", Some(*min as i64), Some(*max as i64), Vec::new()),
+                            AttrKind::Integer { min, max } => ("integer", Some(*min), Some(*max), Vec::new()),
+                            AttrKind::Boolean => ("boolean", None, None, Vec::new()),
+                            AttrKind::OneOf(options) => ("one_of", None, None, options.clone()),
+                            AttrKind::Uuid => ("uuid", None, None, Vec::new()),
+                        };
+                        crate::contract::RichAttrSchema {
+                            name: name.to_owned(),
+                            label: attr.label_text().map_or_else(|| name.to_owned(), |l| ctx.t_in(R::SLUG, l)),
+                            kind,
+                            required: attr.default_value().is_none(),
+                            default: attr.default_value().cloned(),
+                            min,
+                            max,
+                            options,
+                        }
+                    })
+                    .collect(),
+            })
+            .collect()
     }
 
     /// The rows of a repeater input (JSON: as declared; relationship rows come
@@ -314,6 +361,7 @@ impl<R: Resource> ResourceAdapter<R> {
             clear_when_hidden: false,
             integer: false,
             repeater: None,
+            rich_nodes: Vec::new(),
         }
     }
 
@@ -446,6 +494,7 @@ impl<R: Resource> ResourceAdapter<R> {
             clear_when_hidden: false,
             integer: false,
             repeater: None,
+            rich_nodes: Vec::new(),
         })
     }
 
@@ -671,5 +720,6 @@ fn pivot_input_schema(
         clear_when_hidden: false,
         integer: false,
         repeater: None,
+        rich_nodes: Vec::new(),
     }
 }

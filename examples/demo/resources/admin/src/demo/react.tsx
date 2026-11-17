@@ -1,13 +1,17 @@
 // The React demo page (`ReactPage`, `/admin/p/react-demo`): host API v2, on
-// the panel's React, React Query and UI kit (level 3), and the swatch entry
-// of a category's view page. Built by `npm run build`.
+// the panel's React, React Query and UI kit, the swatch entry of a
+// category's view page (level 3), and the `app.kbd` element of a post's
+// content (level 4). Built by `npm run build`.
 import { useEffect, useState } from "react";
 import {
   type EntryProps,
   type PageProps,
+  type RichNodeEditProps,
+  type RichNodeViewProps,
   fieldErrors,
   registerEntry,
   registerPage,
+  registerRichTextNode,
   useAdminMutation,
   useColorScheme,
   useAdminQuery,
@@ -179,3 +183,31 @@ function Swatch(props: EntryProps<string | null>) {
 
 registerEntry("demo/swatch", Swatch);
 // #endregion swatch-entry
+
+// #region rich-text-node
+type Shortcut = { keys: string };
+
+/** `app.kbd` in a post's content (`AdminProvider::rich_text_node`): its keys as keyboard keys. */
+function ShortcutView(props: RichNodeViewProps<Shortcut>) {
+  return (
+    <span className="demo-kbd">
+      {props.attrs.keys.split("+").map((key, i) => <kbd key={i}>{key}</kbd>)}
+    </span>
+  );
+}
+
+/** Its dialog: the keys, as typed (the panel checks them against the declaration). */
+function ShortcutEdit(props: RichNodeEditProps<Shortcut>) {
+  return (
+    <Input
+      aria-label={props.t("Keys")}
+      placeholder="Ctrl+S"
+      autoFocus
+      value={props.attrs.keys ?? ""}
+      onChange={(e) => props.onChange({ ...props.attrs, keys: e.target.value })}
+    />
+  );
+}
+
+registerRichTextNode<Shortcut>("app.kbd", { view: ShortcutView, edit: ShortcutEdit });
+// #endregion rich-text-node

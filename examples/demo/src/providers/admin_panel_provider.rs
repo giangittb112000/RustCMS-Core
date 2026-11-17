@@ -2,6 +2,7 @@
 //! resources (`rustcms make:resource`), pages (`make:settings`) and labels.
 
 use rustcms::admin::Requires;
+use rustcms::admin::rich_text::{Attr, RichTextNode};
 use rustcms::prelude::*;
 
 use crate::admin::resources::{
@@ -20,6 +21,24 @@ pub fn provider() -> AdminProvider {
         .media()
         .media_hook(crate::admin::media_hooks::MediaChanges)
         // #endregion media
+        // #region rich-text-nodes
+        // Elements a post's content may hold (rich text version 3): a keyboard
+        // shortcut inside text, drawn by the React extension below, and a
+        // reference to a note as a block, shown as a placeholder.
+        .rich_text_node(
+            RichTextNode::inline_atom("app.kbd")
+                .label("Keyboard shortcut")
+                .attr("keys", Attr::text().min(1).max(40))
+                .text(|attrs| attrs.text("keys").to_owned()),
+        )
+        .rich_text_node(
+            RichTextNode::block_atom("app.note_ref")
+                .label("Note reference")
+                .attr("number", Attr::integer().range(1..=999))
+                .attr("tone", Attr::one_of(["info", "warn"]).default("info"))
+                .text(|attrs| format!("Note {}", attrs.integer("number").unwrap_or_default())),
+        )
+        // #endregion rich-text-nodes
         .resource::<CategoryResource>()
         .resource::<PostResource>()
         .resource::<TagResource>()
@@ -65,7 +84,7 @@ pub fn provider() -> AdminProvider {
         .extension_script_v2(
             "demo-react",
             include_str!("../../resources/admin/js/demo/react.js"),
-            Requires { react: "19.3", react_query: "5.104", ui: 3 },
+            Requires { react: "19.3", react_query: "5.104", ui: 4 },
         )
         .extension_style("demo-react", include_str!("../../resources/admin/css/demo/react.css"))
         // #endregion react-extension

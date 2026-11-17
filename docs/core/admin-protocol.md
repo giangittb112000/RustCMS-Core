@@ -183,6 +183,27 @@ row is tagged `{"new": ref}` (a reference never reads as a key; at most 1,000
 rows); edit schemas add `repeater.createComponents`, the inputs of a new row
 (the child's create form), `components` being those of a stored row.
 
+Vocabulary 18 adds rich text document version 3 (ADR 0042): marks
+`underline`, `superscript` and `subscript` (never both of the last two on one
+text), and application nodes (`app.…`, atoms with `attrs` only). A
+`rich_editor` input, and a `rich_text_entry`, carry `richNodes` when the
+field accepts application nodes: `[{name, label, inline, attrs: [{name, label, kind,
+required, default?, min?, max?, options?}]}]` (integers as JSON numbers, an
+exception to the wire format: bounded to ±(2^53 − 1)), `kind` one of `text` (`min`,
+`max` characters), `integer` (`min`, `max`, within ±(2^53 − 1)), `boolean`,
+`one_of` (`options`), `uuid`. Clients write the lowest version a document
+needs, keep only the declared nodes with attributes that fit, and show a
+document holding anything else read-only (never rewritten unless the user
+removes the elements the field no longer accepts); an unknown node
+is shown as a placeholder, never as JSON. The server fills in defaults and lowers
+`version` to the lowest the parts need before storing, and refuses undeclared nodes (`document_element`),
+block elements inside a callout (`document_structure`), a document over 256 KiB
+once its defaults are filled in (`max_kib`), version 3 parts in
+older documents (`document_needs_version`) and more than 500 nodes
+(`max_app_nodes`). Clients of vocabulary 17 and below show version 3 documents
+read-only (they read versions 1 and 2 only). Extensions draw and edit nodes
+with `registerRichTextNode` (host `ui` 4).
+
 Vocabulary 14 adds infolists (ADR 0039): the view schema of a record
 (`operation=view&key=…`) carries `infolist`, declared or, for a resource
 without one, made from the form; a view schema without a key

@@ -3,25 +3,28 @@
 // (`injectCSS: false`) and its nodes render no `style` attribute: its styles
 // are in index.css, as the CSP requires.
 import { findParentNode } from "@tiptap/core";
-import { type EditorState, TextSelection, type Transaction } from "@tiptap/pm/state";
+import { type EditorState, NodeSelection, TextSelection, type Transaction } from "@tiptap/pm/state";
 import { TableMap } from "@tiptap/pm/tables";
 import { EditorContent, useEditor, useEditorState } from "@tiptap/react";
 import StarterKit from "@tiptap/starter-kit";
 import {
   BetweenHorizontalEnd, BetweenVerticalEnd, Bold, Code, Columns3, Heading2, Heading3, Heading4, ImagePlus, Info, Italic, Link, List,
-  ListOrdered, Minus, Quote, Rows3, Settings2, Strikethrough, Table as TableIcon, TableRowsSplit, TriangleAlert, Video, X,
+  ListOrdered, Minus, PencilLine, Puzzle, Quote, Rows3, Settings2, Strikethrough, Subscript, Superscript, Table as TableIcon, TableRowsSplit,
+  TriangleAlert, Underline, Video, X,
 } from "lucide-react";
 import { useEffect, useId, useRef, useState } from "react";
 import type * as React from "react";
-import type { MediaItem } from "@/api/types";
+import type { MediaItem, RichNodeSchema } from "@/api/types";
+import { DropdownMenu, DropdownMenuItem } from "@/components/ui/menu";
 import { usePanelConfig } from "@/api/context";
 import { Button } from "@/components/ui/button";
 import { Dialog } from "@/components/ui/dialog";
 import { Input, Label, Textarea } from "@/components/ui/input";
 import {
-  type DocNode, EMBED_NAMES, type Embed, IMAGE_WIDTHS, type ImageWidth, LIMITS, type RichDocument, asDocument, embedUrl,
-  isEmptyDocument, mediaUrl, parseEmbedUrl, safeHref, toDocument, toEditor, validEmbed,
+  type DocNode, EMBED_NAMES, type Embed, IMAGE_WIDTHS, type ImageWidth, LIMITS, type RichDocument, asDocument, asShownDocument,
+  checkAttrs, embedUrl, isAppNode, isEmptyDocument, mediaUrl, parseEmbedUrl, safeHref, toDocument, toEditor, validEmbed, withoutUnknownElements,
 } from "@/lib/rich-text";
+import { AppNode, AppNodeFields, RichSubscript, RichSuperscript, appNodeExtensions } from "./rich-text-app";
 import { MediaImage } from "./media";
 import { MediaPicker, usePickerAccess } from "./media-picker";
 import { UploadList, useUploads } from "./uploads";
@@ -31,6 +34,16 @@ import { later, useT } from "@/i18n";
 /** Most images inserted from the library at once. */
 const PICK_MAX = 20;
 
+/** No application node (a field without `richNodes`). */
+const NO_NODES: RichNodeSchema[] = [];
+
+/** What the element dialog edits: a node to insert (`position` null) or the one at `position`. */
+interface ElementEdit {
+  decl: RichNodeSchema;
+  attrs: Record<string, unknown>;
+  position: number | null;
+}
+
 /** What the image dialog edits. */
 interface ImageDetails {
   alt: string;
@@ -38,7 +51,7 @@ interface ImageDetails {
   size: ImageWidth;
 }
 
-export function RichEditorWidget({ id, label, value, onChange, disabled, invalid, describedBy, nullable, onBusy }: {
+export function RichEditorWidget({ id, label, value, onChange, disabled, invalid, describedBy, nullable, onBusy, nodes = NO_NODES }: {
   id: string;
   label: string;
   value: string;
@@ -48,6 +61,8 @@ export function RichEditorWidget({ id, label, value, onChange, disabled, invalid
   describedBy?: string;
   nullable: boolean;
   onBusy?: (busy: boolean) => void;
+  /** The application nodes the field accepts (version 3). */
+  nodes?: RichNodeSchema[];
 }) {
   const t = useT();
   const { apiPath } = usePanelConfig();
@@ -57,6 +72,12 @@ export function RichEditorWidget({ id, label, value, onChange, disabled, invalid
   const [linking, setLinking] = useState<{ href: string; editing: boolean } | null>(null);
   const [describing, setDescribing] = useState<ImageDetails | null>(null);
   const [embedding, setEmbedding] = useState(false);
+  const [element, setElement] = useState<ElementEdit | null>(null);
+  // Double-clicking an application node edits it (set once the editor exists).
+  const editElement = useRef<(position: number) => void>(() => {});
+  // The element being edited, mapped through every change while its dialog is
+  // open (uploads may insert before it); null once it is gone.
+  const elementAt = useRef<number | null>(null);
   // Images dropped or pasted: inserted in the order they were added, after
   // the selection's block (never replacing it).
   const anchor = useRef<number | null>(null);
@@ -87,14 +108,13 @@ export function RichEditorWidget({ id, label, value, onChange, disabled, invalid
     onBusy?.(uploads.busy);
   }, [uploads.busy, onBusy]);
   useEffect(() => () => onBusy?.(false), [onBusy]);
-  const stored = value ? asDocument(JSON.parse(value)) : null;
+  const stored = value ? asDocument(JSON.parse(value), nodes) : null;
   const editor = useEditor({
     injectCSS: false,
     editable: !disabled,
     extensions: [
       StarterKit.configure({
         heading: { levels: [2, 3, 4] },
-        underline: false,
         link: { openOnClick: false, autolink: false, linkOnPaste: false, protocols: [], HTMLAttributes: { rel: "noopener noreferrer nofollow", target: null } },
       }),
       RichImage.configure({ inline: false, allowBase64: false, apiPath }),
@@ -104,6 +124,9 @@ export function RichEditorWidget({ id, label, value, onChange, disabled, invalid
       RichTableCell,
       RichEmbed,
       RichCallout,
+      RichSuperscript,
+      RichSubscript,
+      ...appNodeExtensions(nodes, (position) => editElement.current(position)),
     ],
     content: toEditor(stored ?? { type: "doc", version: 2, content: [] }, apiPath),
     editorProps: {
@@ -127,12 +150,13 @@ export function RichEditorWidget({ id, label, value, onChange, disabled, invalid
     },
     onUpdate: ({ editor }) => {
       setRefused(false);
-      const doc = toDocument(editor.getJSON() as DocNode, apiPath);
+      const doc = toDocument(editor.getJSON() as DocNode, apiPath, nodes);
       onChange(nullable && isEmptyDocument(doc) ? "" : JSON.stringify(doc));
     },
   });
   useEffect(() => {
-    editor?.setEditable(!disabled);
+    // Not an edit: no update (it would mark the form changed).
+    editor?.setEditable(!disabled, false);
   }, [editor, disabled]);
   // Where the next uploaded image goes: after the block where the files were
   // added, then after the previous image (mapped through every change).
@@ -140,6 +164,10 @@ export function RichEditorWidget({ id, label, value, onChange, disabled, invalid
     if (!editor) return;
     const follow = ({ transaction }: { transaction: Transaction }) => {
       if (anchor.current !== null) anchor.current = transaction.mapping.map(anchor.current, 1);
+      if (elementAt.current !== null) {
+        const mapped = transaction.mapping.mapResult(elementAt.current, 1);
+        elementAt.current = mapped.deleted ? null : mapped.pos;
+      }
     };
     editor.on("transaction", follow);
     return () => {
@@ -170,7 +198,20 @@ export function RichEditorWidget({ id, label, value, onChange, disabled, invalid
       const map = table ? TableMap.get(table.node) : null;
       const active = (name: string, attrs?: Record<string, unknown>) => e.isActive(name, attrs);
       return {
-        marks: { bold: active("bold"), italic: active("italic"), strike: active("strike"), link: active("link") },
+        marks: {
+          bold: active("bold"),
+          italic: active("italic"),
+          strike: active("strike"),
+          link: active("link"),
+          underline: active("underline"),
+          superscript: active("superscript"),
+          subscript: active("subscript"),
+        },
+        // The application node selected, if any (its position, for editing).
+        element: e.state.selection instanceof NodeSelection && isAppNode(e.state.selection.node.type.name)
+          ? e.state.selection.from
+          : null,
+        code: active("code") || active("codeBlock"),
         heading: [2, 3, 4].find((level) => active("heading", { level })) ?? null,
         bulletList: active("bulletList"),
         orderedList: active("orderedList"),
@@ -183,8 +224,27 @@ export function RichEditorWidget({ id, label, value, onChange, disabled, invalid
     },
   });
 
-  // A stored value that is not a document: shown as it is, never rewritten.
-  if (value && !stored) return <pre id={id} tabIndex={-1} className="overflow-x-auto rounded-md bg-muted p-3 text-xs" data-fallback="true">{value}</pre>;
+  // A stored value the editor cannot hold: shown, never rewritten. A document
+  // (with elements the field does not declare) as a document, anything else as it is.
+  if (value && !stored) {
+    const shown = asShownDocument(JSON.parse(value));
+    if (shown) {
+      // Elements the field no longer accepts: removing them makes the rest editable.
+      const cleaned = disabled ? null : withoutUnknownElements(shown, nodes);
+      return (
+        <div id={id} tabIndex={-1} className="rounded-md border border-border p-3" data-fallback="true">
+          <p className="mb-2 text-xs text-muted-foreground">{t("rich.readOnlyElements")}</p>
+          {cleaned && (
+            <Button type="button" variant="outline" size="sm" className="mb-3" onClick={() => onChange(JSON.stringify(cleaned))}>
+              {t("rich.removeUnknown")}
+            </Button>
+          )}
+          <RichTextView doc={shown} nodes={nodes} />
+        </div>
+      );
+    }
+    return <pre id={id} tabIndex={-1} className="overflow-x-auto rounded-md bg-muted p-3 text-xs" data-fallback="true">{value}</pre>;
+  }
 
   const tool = (name: string, icon: React.ReactNode, active: boolean, run: () => void, off = false) => (
     // Keeps the editor's focus and selection while clicking the toolbar.
@@ -223,6 +283,33 @@ export function RichEditorWidget({ id, label, value, onChange, disabled, invalid
     if (!editor || editor.isDestroyed) return;
     chain().setEmbed(embed).run();
   };
+  // Application nodes: inserted with their defaults, or edited where they are.
+  editElement.current = (position) => {
+    if (!editor || editor.isDestroyed) return;
+    const node = editor.state.doc.nodeAt(position);
+    const decl = node && nodes.find((n) => n.name === node.type.name);
+    if (!node || !decl) return;
+    elementAt.current = position;
+    setElement({ decl, attrs: { ...node.attrs }, position });
+  };
+  const applyElement = (attrs: Record<string, unknown>) => {
+    const editing = element;
+    setElement(null);
+    if (!editor || editor.isDestroyed || !editing) return;
+    if (editing.position === null) {
+      const content = { type: editing.decl.name, attrs };
+      // A selected node (an image, an element) stays: the new element goes after it.
+      const { selection } = editor.state;
+      return void (selection instanceof NodeSelection ? chain().insertContentAt(selection.to, content) : chain().insertContent(content)).run();
+    }
+    // Where the element is now (null: removed meanwhile, nothing to change).
+    const position = elementAt.current;
+    elementAt.current = null;
+    const node = position === null ? null : editor.state.doc.nodeAt(position);
+    if (position === null || node?.type.name !== editing.decl.name) return;
+    editor.view.dispatch(editor.state.tr.setNodeMarkup(position, undefined, attrs));
+    editor.commands.focus();
+  };
   const s = state;
   const table = s?.table ?? null;
   // Table cells and callouts hold paragraphs (and lists) only: no rule, table or embed there.
@@ -233,6 +320,9 @@ export function RichEditorWidget({ id, label, value, onChange, disabled, invalid
         {tool(t("rich.bold"), <Bold />, !!s?.marks.bold, () => chain().toggleBold().run())}
         {tool(t("rich.italic"), <Italic />, !!s?.marks.italic, () => chain().toggleItalic().run())}
         {tool(t("rich.strike"), <Strikethrough />, !!s?.marks.strike, () => chain().toggleStrike().run())}
+        {tool(t("rich.underline"), <Underline />, !!s?.marks.underline, () => chain().toggleUnderline().run())}
+        {tool(t("rich.superscript"), <Superscript />, !!s?.marks.superscript, () => chain().toggleSuperscript().run())}
+        {tool(t("rich.subscript"), <Subscript />, !!s?.marks.subscript, () => chain().toggleSubscript().run())}
         {tool(t("rich.h2"), <Heading2 />, s?.heading === 2, () => chain().toggleHeading({ level: 2 }).run())}
         {tool(t("rich.h3"), <Heading3 />, s?.heading === 3, () => chain().toggleHeading({ level: 3 }).run())}
         {tool(t("rich.h4"), <Heading4 />, s?.heading === 4, () => chain().toggleHeading({ level: 4 }).run())}
@@ -248,6 +338,26 @@ export function RichEditorWidget({ id, label, value, onChange, disabled, invalid
         {tool(t("rich.imageDetails"), <Settings2 />, false, describe, !s?.image)}
         {tool(t("rich.table"), <TableIcon />, false, () => chain().insertTable({ rows: 3, cols: 3, withHeaderRow: true }).run(), contained)}
         {tool(t("rich.embed"), <Video />, false, () => setEmbedding(true), contained)}
+        {nodes.length > 0 && (
+          <DropdownMenu
+            variant="ghost"
+            size="icon"
+            aria-label={t("rich.insertElement")}
+            trigger={<Puzzle />}
+          >
+            {nodes.map((decl) => (
+              <DropdownMenuItem
+                key={decl.name}
+                // Blocks never go in table cells or callouts; nothing goes in code.
+                disabled={disabled || !editor || !!s?.code || (!decl.inline && contained)}
+                onSelect={() => setElement({ decl, attrs: checkAttrs(decl, {}) ?? {}, position: null })}
+              >
+                {decl.label}
+              </DropdownMenuItem>
+            ))}
+          </DropdownMenu>
+        )}
+        {nodes.length > 0 && tool(t("rich.editElement"), <PencilLine />, false, () => s?.element != null && editElement.current(s.element), s?.element == null)}
       </div>
       {table && (
         <div role="toolbar" aria-label={t("rich.tableTools")} className="flex flex-wrap items-center gap-1 border border-t-0 border-border bg-muted/20 p-1">
@@ -303,6 +413,12 @@ export function RichEditorWidget({ id, label, value, onChange, disabled, invalid
           editor?.commands.focus();
         }}
       />
+      <Dialog open={element !== null} onClose={() => {
+        setElement(null);
+        editor?.commands.focus();
+      }} title={element?.decl.label ?? ""}>
+        {element && <AppNodeFields decl={element.decl} initial={element.attrs} onClose={() => setElement(null)} onApply={applyElement} />}
+      </Dialog>
       <Dialog open={embedding} onClose={() => {
         setEmbedding(false);
         editor?.commands.focus();
@@ -489,15 +605,31 @@ function EmbedCard({ embed, link = false }: { embed: Embed; link?: boolean }) {
   );
 }
 
-/** A stored document rendered with React elements only. */
-export function RichTextView({ doc }: { doc: RichDocument }) {
+/**
+ * A stored document rendered with React elements only. Application nodes are
+ * drawn by their extension (`declared`: the field's), else as placeholders;
+ * an undeclared one, or one whose attributes do not fit, as "unknown element".
+ */
+export function RichTextView({ doc, nodes: declared = NO_NODES }: { doc: RichDocument; nodes?: RichNodeSchema[] }) {
   const { apiPath } = usePanelConfig();
   const nodes = (list: DocNode[] | undefined): React.ReactNode =>
-    (list ?? []).map((n, i) => <RichNode key={i} node={n} nodes={nodes} apiPath={apiPath} />);
+    (list ?? []).map((n, i) => <RichNode key={i} node={n} nodes={nodes} apiPath={apiPath} declared={declared} />);
   return <div className="rich-text">{nodes(doc.content)}</div>;
 }
 
-function RichNode({ node, nodes, apiPath }: { node: DocNode; nodes: (list?: DocNode[]) => React.ReactNode; apiPath: string }) {
+function RichNode({ node, nodes, apiPath, declared }: {
+  node: DocNode;
+  nodes: (list?: DocNode[]) => React.ReactNode;
+  apiPath: string;
+  declared: RichNodeSchema[];
+}) {
+  if (isAppNode(node.type)) {
+    const decl = declared.find((d) => d.name === node.type);
+    const attrs = decl ? checkAttrs(decl, node.attrs) : null;
+    const known = decl && attrs ? decl : undefined;
+    const shown = <AppNode decl={known} name={node.type} attrs={attrs ?? undefined} />;
+    return known && !known.inline ? <div className="rich-app-block">{shown}</div> : shown;
+  }
   switch (node.type) {
     case "paragraph":
       return <p>{nodes(node.content)}</p>;
@@ -546,6 +678,11 @@ function RichNode({ node, nodes, apiPath }: { node: DocNode; nodes: (list?: DocN
       return validEmbed(node.attrs?.provider, node.attrs?.id) ? <EmbedCard embed={{ provider: node.attrs.provider, id: String(node.attrs.id) }} link /> : null;
     case "callout":
       return <aside className="rich-callout" data-tone={node.attrs?.tone === "warn" ? "warn" : "info"}>{nodes(node.content)}</aside>;
+    case "tableRow":
+    case "tableHeader":
+    case "tableCell":
+      // Only inside a table (drawn there): out of place, an unknown part.
+      return <AppNode name={node.type} attrs={undefined} />;
     case "text": {
       let out: React.ReactNode = node.text ?? "";
       for (const mark of node.marks ?? []) {
@@ -553,6 +690,9 @@ function RichNode({ node, nodes, apiPath }: { node: DocNode; nodes: (list?: DocN
         else if (mark.type === "italic") out = <em>{out}</em>;
         else if (mark.type === "strike") out = <s>{out}</s>;
         else if (mark.type === "code") out = <code>{out}</code>;
+        else if (mark.type === "underline") out = <u>{out}</u>;
+        else if (mark.type === "superscript") out = <sup>{out}</sup>;
+        else if (mark.type === "subscript") out = <sub>{out}</sub>;
         else if (mark.type === "link" && safeHref(String(mark.attrs?.href ?? ""))) {
           out = <a href={String(mark.attrs?.href)} rel="noopener noreferrer nofollow" className="underline">{out}</a>;
         }
@@ -560,6 +700,7 @@ function RichNode({ node, nodes, apiPath }: { node: DocNode; nodes: (list?: DocN
       return <>{out}</>;
     }
     default:
-      return null;
+      // A part this panel does not know: a placeholder, never dropped silently.
+      return <AppNode name={node.type} attrs={undefined} />;
   }
 }

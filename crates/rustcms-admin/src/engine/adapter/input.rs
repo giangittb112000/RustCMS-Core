@@ -39,9 +39,17 @@ impl<R: Resource> ResourceAdapter<R> {
             max_length: field.and_then(|f| f.max_length),
             key_value: self.key_values.get(name).copied(),
             rich_text: field.is_some_and(|f| f.rich_text),
+            rich_nodes: field.and_then(|f| self.accepts(f)),
             options: None,
             bounds: None,
         }
+    }
+
+    /// The application nodes rich text field `field` accepts, if any.
+    pub(super) fn accepts<'a>(&'a self, field: &'a crate::field::Field) -> Option<crate::rich_text::Accepts<'a>> {
+        let nodes = self.rich_nodes.get()?;
+        (field.rich_text && !field.rich_nodes.is_empty())
+            .then(|| crate::rich_text::Accepts { nodes, only: Some(&field.rich_nodes) })
     }
 
     /// The static options client input of field `name` must match, if any.
@@ -268,9 +276,30 @@ impl<R: Resource> ResourceAdapter<R> {
                 continue;
             }
             // Hooks may change values: limits hold for what is actually written.
-            if !check_written(name, &self.rule(name, false), value, &mut errors) {
+            let rule = self.rule(name, false);
+            if !check_written(name, &rule, value, &mut errors) {
                 continue;
             }
+            // Rich text stored complete (application nodes' defaults filled in) and in
+            // the lowest version it needs (ADR 0008), whoever wrote it (client input and
+            // hooks alike); copied only when something changes.
+            let filled = if rule.rich_text && value.is_object() {
+                crate::rich_text::parse_needed(value, rule.rich_nodes).ok().and_then(|(_, needed)| {
+                    let fill = rule.rich_nodes.filter(|a| a.nodes.holds(value));
+                    let lower = value.get("version").and_then(serde_json::Value::as_u64).is_some_and(|v| v > needed);
+                    (fill.is_some() || lower).then(|| {
+                        let mut filled = value.clone();
+                        if let Some(accepts) = fill {
+                            accepts.nodes.fill(&mut filled);
+                        }
+                        crate::rich_text::lower_version(&mut filled, needed);
+                        filled
+                    })
+                })
+            } else {
+                None
+            };
+            let value = filled.as_ref().unwrap_or(value);
             let Ok(candidates) = column.kind.decode(value) else { continue };
             if !candidates.into_iter().any(|v| model.try_set(column.column, v).is_ok()) {
                 // Only a number too large for an `f32` column (see `FieldKind::decode`).

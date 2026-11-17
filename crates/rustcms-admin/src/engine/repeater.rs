@@ -272,6 +272,7 @@ impl Rows {
                             max_length: *max_length,
                             key_value: key_value.then_some(KEY_VALUE),
                             rich_text: false,
+                            rich_nodes: None,
                             options: (!options.is_empty()).then(|| {
                                 if *many {
                                     Options::Many(options)
@@ -416,6 +417,7 @@ pub(crate) fn rows_schema(
                         clear_when_hidden: false,
                         integer: input.integer,
                         repeater: input.repeater.as_deref().map(|nested| Box::new(rows_schema(nested, t, disabled))),
+                        rich_nodes: Vec::new(),
                     }))
                 }
             })

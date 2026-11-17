@@ -55,6 +55,7 @@ keeps it complete.
 | `max_elements` | `may not have more than {max} elements` |
 | `max_images` | `may not have more than {max} images` |
 | `max_embeds` | `may not have more than {max} embeds` |
+| `max_app_nodes` | `may not have more than {max} application elements` |
 | `too_many_roles` | `has too many roles` |
 | `too_many_permissions` | `has too many permissions` |
 | `unknown_roles` | `has unknown roles` |
@@ -126,10 +127,11 @@ keeps it complete.
 | `too_many_pixels` | `has too many pixels` |
 | `document` | `is not a document` |
 | `document_invalid` | `is not a valid document` |
-| `document_version` | `is not a valid document (version 1 or 2)` |
-| `document_needs_version` | `has a table, which needs document version 2` (also an embed, a callout, an image caption, an image width) |
+| `document_version` | `is not a valid document (version 1 to 3)` |
+| `document_needs_version` | `has a table, which needs document version 2` (also an embed, a callout, an image caption, an image width) / has the mark `{node}`, which needs document version 3 / has the element `{node}`, which needs document version 3 |
 | `document_depth` | `is nested too deeply` |
-| `document_structure` | `has a list item outside a list` / `has a list holding something else than list items` / `has a code block holding something else than plain text` / `has a heading without a level from 2 to 4` / has unexpected properties on `{node}` / has an unknown block `{node}` / has an unknown inline `{node}` / has an unknown mark `{node}` / `has a mark with attributes` / `has a text with the same mark twice` / `has a text with too many marks` / `has a text without text` / `has an empty text` / `has a table holding something else than rows` / `has a table whose rows have different lengths` / `has a table cell out of place (header cells make up the first row only)` / `has a table cell holding something else than paragraphs` / `has a callout holding something else than paragraphs and lists` / `has a callout holding a table or a callout` / `has a callout with unexpected attributes` / has a callout whose tone is not `info` or `warn` |
+| `document_structure` | `has a list item outside a list` / `has a list holding something else than list items` / `has a code block holding something else than plain text` / `has a heading without a level from 2 to 4` / has unexpected properties on `{node}` / has an unknown block `{node}` / has an unknown inline `{node}` / has an unknown mark `{node}` / `has a mark with attributes` / `has a text with the same mark twice` / `has a text with too many marks` / `has a text without text` / `has an empty text` / `has a text both superscript and subscript` / `has a table holding something else than rows` / `has a table whose rows have different lengths` / `has a table cell out of place (header cells make up the first row only)` / `has a table cell holding something else than paragraphs` / `has a callout holding something else than paragraphs and lists` / `has a callout holding a table or a callout` / has a callout holding the element `{node}` / `has a callout with unexpected attributes` / has a callout whose tone is not `info` or `warn` |
+| `document_element` | has an unknown element `{node}` / has an element `{node}` out of place / has an element `{node}` with an invalid attribute `{attr}` / has an element `{node}` without its attribute `{attr}` |
 | `document_link` | `has a link that is not http, https or mailto` / `has a link with unexpected attributes` |
 | `document_image` | `has an image that is not a media item` / `has an image with unexpected attributes` / has an image width other than `normal`, `wide` or `full` |
 | `document_alt` | `has an image description longer than {max} characters` |

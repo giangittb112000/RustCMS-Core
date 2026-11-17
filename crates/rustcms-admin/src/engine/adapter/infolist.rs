@@ -382,7 +382,11 @@ impl<R: Resource> ResourceAdapter<R> {
         let relationship = relationship.filter(|_| relation);
         let link = relationship.is_some_and(|r| links.get(r).copied().unwrap_or(false));
         let computed = self.field(&entry.name).is_none();
-        Some(entry_schema(entry, &label, value_type, relationship, link, computed, &t))
+        let mut schema = entry_schema(entry, &label, value_type, relationship, link, computed, &t);
+        if entry.kind == EntryType::RichTextEntry {
+            schema.rich_nodes = self.rich_node_schemas(ctx, &entry.name);
+        }
+        Some(schema)
     }
 
     /// The computed values of record `key` its view page shows, for a user who
@@ -511,6 +515,7 @@ fn entry_schema(
         size: d.size,
         gallery: d.gallery,
         outline: d.outline,
+        rich_nodes: Vec::new(),
         relationship: relationship.map(|resource| Relationship { resource }),
         computed,
         link,

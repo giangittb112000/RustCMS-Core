@@ -360,7 +360,12 @@ integer?: boolean,
 /**
  * Repeaters: their rows (vocabulary 15, ADR 0040).
  */
-repeater?: RepeaterSchema, };
+repeater?: RepeaterSchema, 
+/**
+ * Rich text: the application nodes the document may hold (vocabulary
+ * 18, ADR 0042); absent when none.
+ */
+richNodes?: Array<RichNodeSchema>, };
 
 export type LayoutSchema = { 
 /**
@@ -493,6 +498,11 @@ gallery?: boolean,
  * The document's headings as an outline.
  */
 outline?: boolean, 
+/**
+ * Rich text entries: the application nodes the document may hold
+ * (vocabulary 18).
+ */
+richNodes?: Array<RichNodeSchema>, 
 /**
  * Related resource (relation entries; the title is the record's `labels[name]`).
  */
@@ -633,6 +643,58 @@ data: Record<string, JsonValue>,
  * Names that failed (error, timeout, too large): shown as not available.
  */
 failed: Array<string>, };
+
+export type RichNodeSchema = { 
+/**
+ * Its name (`app.…`).
+ */
+name: string, 
+/**
+ * Label (translated).
+ */
+label: string, 
+/**
+ * Inside text, or a block.
+ */
+inline: boolean, 
+/**
+ * Its attributes, in declaration order.
+ */
+attrs: Array<RichAttrSchema>, };
+
+export type RichAttrSchema = { 
+/**
+ * Its name.
+ */
+name: string, 
+/**
+ * The label of its input (translated; its name when none is declared).
+ */
+label: string, 
+/**
+ * `text`, `integer`, `boolean`, `one_of` or `uuid`.
+ */
+kind: string, 
+/**
+ * Without a default: the document must give it.
+ */
+required: boolean, 
+/**
+ * The value when left out.
+ */
+default?: JsonValue, 
+/**
+ * Text: fewest characters; integer: smallest value.
+ */
+min?: number, 
+/**
+ * Text: most characters; integer: largest value.
+ */
+max?: number, 
+/**
+ * `one_of`: the values allowed.
+ */
+options?: Array<string>, };
 
 export type ComponentSchema = InputSchema | LayoutSchema | EntrySchema;
 

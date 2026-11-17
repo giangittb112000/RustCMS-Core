@@ -28,6 +28,8 @@ pub(crate) struct InputRule<'a> {
     pub key_value: Option<(usize, usize)>,
     /// A rich text document.
     pub rich_text: bool,
+    /// The application nodes it may hold (none: `None`).
+    pub rich_nodes: Option<crate::rich_text::Accepts<'a>>,
     /// The values allowed (a select or a checkbox list).
     pub options: Option<Options<'a>>,
     /// The range of a number input (`min`, `max`; the step is not checked).
@@ -99,6 +101,7 @@ impl InputRule<'_> {
             max_length: None,
             key_value: None,
             rich_text: false,
+            rich_nodes: None,
             options: None,
             bounds: None,
         }
@@ -133,7 +136,7 @@ pub(crate) fn check_written(name: &str, rule: &InputRule<'_>, value: &Value, err
 fn shape_problem(rule: &InputRule<'_>, value: &Value) -> Option<String> {
     if let Some(message) = rule.key_value.and_then(|bounds| key_value_problem(value, bounds)) {
         Some(message)
-    } else if let Some(Err(e)) = rule.rich_text.then(|| crate::rich_text::parse(value)) {
+    } else if let Some(Err(e)) = rule.rich_text.then(|| crate::rich_text::parse_with(value, rule.rich_nodes)) {
         Some(e.0)
     } else if let (Some(max), Some(text)) = (rule.max_length, value.as_str())
         && text.chars().count() > max

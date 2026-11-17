@@ -160,6 +160,51 @@ export function registerReactView(
   viewLevels.set(`${kind}:${name}`, declared);
 }
 
+/** How an application's rich text node is shown and edited (`ui` 4, ADR 0042). */
+export interface RichNodeRenderer {
+  /** Shows the node (editor and view pages); without it, a labelled placeholder. */
+  view?: React.ComponentType<never>;
+  /** Edits its attributes (a dialog); without it, a form made from their kinds. */
+  edit?: React.ComponentType<never>;
+}
+
+const RICH_NODE = /^app\.[a-z][a-z0-9_]{0,31}$/;
+const richNodes = new Map<string, RichNodeRenderer>();
+
+const isComponent = (c: unknown) => typeof c === "function" || (typeof c === "object" && c !== null);
+
+/**
+ * Registers how the rich text node `name` (`app.…`, declared by the server)
+ * is shown and edited, while extensions load only, once per name. `meta.ui`
+ * is the SDK's level; it may not exceed what the script declares.
+ */
+export function registerRichTextNode(
+  name: string,
+  renderer: RichNodeRenderer,
+  meta?: { ui?: unknown },
+  declared: number = declaredLevel(),
+): void {
+  if (frozen || (document.currentScript && expired.has(document.currentScript))) {
+    throw new Error(`rustcms: rich text nodes must be registered while extensions load (${name})`);
+  }
+  if (!RICH_NODE.test(name)) throw new Error(`rustcms: invalid rich text node name ${name} (app.[a-z][a-z0-9_]*)`);
+  if (richNodes.has(name)) throw new Error(`rustcms: rich text node ${name} is already registered`);
+  const { view, edit } = renderer ?? {};
+  if ((view === undefined && edit === undefined) || (view !== undefined && !isComponent(view)) || (edit !== undefined && !isComponent(edit))) {
+    throw new Error(`rustcms: rich text node ${name} needs a \`view\` or an \`edit\` React component`);
+  }
+  const sdk = typeof meta?.ui === "number" ? meta.ui : 1;
+  if (sdk > declared) {
+    throw new Error(`rustcms: rich text node ${name} was built with SDK ui ${sdk} but \`Requires\` declares ui ${declared}: update the provider`);
+  }
+  richNodes.set(name, Object.freeze({ view, edit }));
+}
+
+/** How rich text node `name` is shown and edited, if an extension says so. */
+export function richTextNode(name: string): RichNodeRenderer | undefined {
+  return richNodes.get(name);
+}
+
 /** The `ui` level a v2 view's script declared (which props it gets). */
 export function reactViewLevel(kind: ViewKind, name: string): number {
   return viewLevels.get(`${kind}:${name}`) ?? 1;
@@ -264,6 +309,8 @@ export async function loadExtensions(basePath: string, extensions: ExtensionsCon
     registerSlot: (name: string, component: React.ComponentType<never>, meta?: { ui?: unknown }) => registerReactView("slot", name, component, meta),
     registerCell: (name: string, component: React.ComponentType<never>, meta?: { ui?: unknown }) => registerReactView("cell", name, component, meta),
     registerEntry: (name: string, component: React.ComponentType<never>, meta?: { ui?: unknown }) => registerReactView("entry", name, component, meta),
+    // ui 4
+    registerRichTextNode: (name: string, renderer: RichNodeRenderer, meta?: { ui?: unknown }) => registerRichTextNode(name, renderer, meta),
   });
   (window as unknown as { rustcms: unknown }).rustcms = {
     registerWidget,
@@ -324,6 +371,7 @@ export function resetWidgets(): void {
   for (const map of Object.values(views)) map.clear();
   for (const map of Object.values(reactViews)) map.clear();
   viewLevels.clear();
+  richNodes.clear();
   failedViews.clear();
   translations.clear();
   frozen = false;

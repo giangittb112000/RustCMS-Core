@@ -154,6 +154,7 @@ impl<R: Resource> ResourceAdapter<R> {
                     clear_when_hidden: false,
                     integer: false,
                     repeater: None,
+                    rich_nodes: Vec::new(),
                 })
             })
             .collect();
@@ -204,6 +205,7 @@ fn canonical(
         max_length: field.max_length,
         key_value: None,
         rich_text: false,
+        rich_nodes: None,
         options: (!options.is_empty()).then_some(Options::One { values: &options, scale: None }),
         bounds: None,
     };

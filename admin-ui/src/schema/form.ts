@@ -49,7 +49,7 @@ export const isTextObject = (value: unknown): value is Record<string, string> =>
 /** A stored key/value that is not an object of text: shown, never rewritten. */
 const foreignKeyValue = (input: InputSchema, value: unknown) =>
   value !== null && value !== undefined &&
-  ((input.type === "key_value" && !isTextObject(value)) || (input.type === "rich_editor" && !asDocument(value)));
+  ((input.type === "key_value" && !isTextObject(value)) || (input.type === "rich_editor" && !asDocument(value, input.richNodes)));
 
 /**
  * The form with JSON inputs made read-only where the stored value would lose

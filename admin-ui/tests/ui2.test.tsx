@@ -18,7 +18,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/lib/../components/ui
 import { MODULES } from "@/lib/host";
 import { recordKey, resourcePath } from "@/lib/paths";
 import { loadExtensions, reactViewLevel, registerReactView, resetWidgets } from "@/lib/widgets";
-import { fieldErrors, registerPage as sdkRegisterPage, resourceKey } from "../sdk/index.js";
+import { fieldErrors, registerPage as sdkRegisterPage, registerRichTextNode as sdkRegisterRichTextNode, resourceKey } from "../sdk/index.js";
 
 const panel = {
   brand: "T",
@@ -234,11 +234,15 @@ describe("levels", () => {
     const host = globalThis as unknown as { rustcms?: unknown };
     const before = host.rustcms;
     const register = vi.fn();
-    host.rustcms = { v2: { versions: { ui: 2 }, registerPage: register } };
+    const Kbd = () => null;
+    host.rustcms = { v2: { versions: { ui: 3 }, registerPage: register, registerRichTextNode: register } };
     expect(() => sdkRegisterPage("test/x", Probe)).toThrow(/newer panel/);
-    host.rustcms = { v2: { versions: { ui: 3 }, registerPage: register } };
+    expect(() => sdkRegisterRichTextNode("app.x", { view: Kbd })).toThrow(/newer panel/);
+    host.rustcms = { v2: { versions: { ui: 4 }, registerPage: register, registerRichTextNode: register } };
     sdkRegisterPage("test/x", Probe);
-    expect(register).toHaveBeenCalledWith("test/x", Probe, { ui: 3 });
+    expect(register).toHaveBeenCalledWith("test/x", Probe, { ui: 4 });
+    sdkRegisterRichTextNode("app.x", { view: Kbd });
+    expect(register).toHaveBeenCalledWith("app.x", { view: Kbd }, { ui: 4 });
     host.rustcms = before;
   });
 

@@ -46,6 +46,8 @@ fn bindings() -> String {
         RepeaterRelationship::decl(&cfg),
         InfolistSchema::decl(&cfg),
         ComputedValues::decl(&cfg),
+        RichNodeSchema::decl(&cfg),
+        RichAttrSchema::decl(&cfg),
         ComponentSchema::decl(&cfg),
         FormSchema::decl(&cfg),
         ColumnSchema::decl(&cfg),

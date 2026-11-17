@@ -89,8 +89,9 @@ describe("compatibility", () => {
     expect(incompatibility(ok)).toBeNull();
     expect(incompatibility({ ...ok, ui: 2 })).toBeNull();
     expect(incompatibility({ ...ok, ui: 3 })).toBeNull();
+    expect(incompatibility({ ...ok, ui: 4 })).toBeNull();
     expect(incompatibility({ ...ok, api: 3 })).toMatch(/host API/);
-    expect(incompatibility({ ...ok, ui: 4 })).toMatch(/ui/);
+    expect(incompatibility({ ...ok, ui: 5 })).toMatch(/ui/);
     expect(incompatibility({ ...ok, ui: 0 })).toMatch(/ui/);
     expect(incompatibility({ ...ok, react: "18.3" })).toMatch(/React/);
     expect(incompatibility({ ...ok, reactQuery: "5.999" })).toMatch(/React Query/);

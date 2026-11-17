@@ -9,7 +9,7 @@ import type { ComponentSchema, Condition, Data, EntrySchema, InfolistSchema, Jso
 import { Badge } from "@/components/ui/badge";
 import { ScriptView } from "@/components/custom";
 import { cn } from "@/lib/utils";
-import { asDocument } from "@/lib/rich-text";
+import { asShownDocument } from "@/lib/rich-text";
 import type { DocNode } from "@/lib/rich-text";
 import { formatWireDate, useLocale, useT } from "@/i18n";
 import { isDateKind } from "@/lib/wire";
@@ -189,9 +189,12 @@ function Shown({ entry, value, ctx }: { entry: EntrySchema; value: JsonValue; ct
       );
     }
     case "rich_text_entry": {
-      const doc = asDocument(value);
-      if (!doc) return <Raw value={value} />;
-      return <>{entry.outline && <Outline nodes={doc.content} />}<RichTextView doc={doc} /></>;
+      // Never raw JSON: a value that is not a document says so.
+      const doc = asShownDocument(value);
+      // A legacy value that is text (stored before the field held documents): shown as it is.
+      if (!doc && typeof value === "string") return <Raw value={value} />;
+      if (!doc) return <p className="text-sm text-muted-foreground">{t("rich.cannotShow")}</p>;
+      return <>{entry.outline && <Outline nodes={doc.content} />}<RichTextView doc={doc} nodes={entry.richNodes} /></>;
     }
     default:
       // Text, computed and unknown (newer) entries.

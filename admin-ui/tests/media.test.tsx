@@ -42,7 +42,7 @@ describe("documents", () => {
       content: [
         { type: "heading", attrs: { level: 1 }, content: [{ type: "text", text: "T" }] },
         { type: "paragraph", content: [
-          { type: "text", text: "x", marks: [{ type: "bold" }, { type: "underline" }, { type: "link", attrs: { href: "javascript:alert(1)" } }] },
+          { type: "text", text: "x", marks: [{ type: "bold" }, { type: "highlight" }, { type: "link", attrs: { href: "javascript:alert(1)" } }] },
           { type: "text", text: "y", marks: [{ type: "link", attrs: { href: "https://ok.test", target: "_blank" } }] },
         ] },
         { type: "image", attrs: { src: `${API}/media/${ID}/file`, alt: "a" } },
@@ -79,7 +79,7 @@ describe("documents", () => {
       [{ type: "table", content: [] }],
       [{ type: "listItem", content: [] }],
       [{ type: "paragraph", content: [{ type: "image", attrs: { media: ID } }] }],
-      [{ type: "paragraph", content: [{ type: "text", text: "x", marks: [{ type: "underline" }] }] }],
+      [{ type: "paragraph", content: [{ type: "text", text: "x", marks: [{ type: "highlight" }] }] }],
       [{ type: "bulletList", content: [{ type: "paragraph" }] }],
       [{ type: "image", attrs: { media: "not-a-uuid" } }],
     ]) {

@@ -49,7 +49,7 @@ impl ImageInfo {
 /// image's media id to its URL (images whose URL is `None` are left out). See
 /// [`to_html_with`], which also writes images' sizes.
 pub fn to_html(doc: &Document, media_url: &dyn Fn(uuid::Uuid) -> Option<String>) -> String {
-    render(doc, &|id| media_url(id).map(ImageInfo::new))
+    render(doc, &|id| media_url(id).map(ImageInfo::new), None)
 }
 
 /// HTML for a document, every text and attribute escaped. `images` maps an
@@ -65,18 +65,82 @@ pub fn to_html(doc: &Document, media_url: &dyn Fn(uuid::Uuid) -> Option<String>)
 ///   a link to the provider's page (no iframe, no script): frontends may
 ///   replace it by the provider's player.
 /// - Callouts: `<aside class="callout" data-tone="info">`.
+/// - Underline, superscript, subscript: `<u>`, `<sup>`, `<sub>`.
+/// - Application nodes: `<span data-node="app.x" data-{attr}="…">` (inline)
+///   or `<div data-node="app.x" …>` (block), every attribute escaped; empty
+///   here: [`Html`] with [`Html::nodes`] writes their text.
 pub fn to_html_with(doc: &Document, images: &std::collections::HashMap<uuid::Uuid, ImageInfo>) -> String {
-    render(doc, &|id| images.get(&id).cloned())
+    Html::new(doc).images(images).render()
 }
 
-fn render(doc: &Document, image: &dyn Fn(uuid::Uuid) -> Option<ImageInfo>) -> String {
-    let mut ids = outline(doc).into_iter().map(|h| h.id);
+/// HTML for a document, with the options [`to_html_with`] lacks: the texts
+/// of application nodes ([`RichTextNode::text`]).
+///
+/// ```
+/// # use rustcms_admin::rich_text::{AppNodes, Attr, Html, RichTextNode};
+/// let nodes = AppNodes::new([RichTextNode::inline_atom("app.kbd")
+///     .attr("keys", Attr::text())
+///     .text(|attrs| attrs.text("keys").to_owned())]);
+/// let doc = nodes.parse(&serde_json::json!({"type": "doc", "version": 3, "content": [
+///     {"type": "paragraph", "content": [{"type": "app.kbd", "attrs": {"keys": "Ctrl+C"}}]}
+/// ]})).unwrap();
+/// assert_eq!(
+///     Html::new(&doc).nodes(&nodes).render(),
+///     r#"<p><span data-node="app.kbd" data-keys="Ctrl+C">Ctrl+C</span></p>"#
+/// );
+/// ```
+#[derive(Clone, Copy)]
+pub struct Html<'a> {
+    doc: &'a Document,
+    images: Option<&'a std::collections::HashMap<uuid::Uuid, ImageInfo>>,
+    nodes: Option<&'a AppNodes>,
+}
+
+impl<'a> Html<'a> {
+    /// The document, without images or application node texts.
+    pub fn new(doc: &'a Document) -> Self {
+        Self { doc, images: None, nodes: None }
+    }
+
+    /// Images' URLs and sizes (see [`to_html_with`]); images missing from it
+    /// are left out.
+    pub fn images(mut self, images: &'a std::collections::HashMap<uuid::Uuid, ImageInfo>) -> Self {
+        self.images = Some(images);
+        self
+    }
+
+    /// The application's nodes: their texts are written in their elements
+    /// and count in heading ids.
+    pub fn nodes(mut self, nodes: &'a AppNodes) -> Self {
+        self.nodes = Some(nodes);
+        self
+    }
+
+    /// The document's outline, with the ids [`Html::render`] gives headings.
+    pub fn outline(&self) -> Vec<Heading> {
+        outline_with(self.doc, self.nodes)
+    }
+
+    /// The HTML.
+    pub fn render(&self) -> String {
+        let images = self.images;
+        render(self.doc, &|id| images.and_then(|m| m.get(&id).cloned()), self.nodes)
+    }
+}
+
+fn render(doc: &Document, image: &dyn Fn(uuid::Uuid) -> Option<ImageInfo>, nodes: Option<&AppNodes>) -> String {
+    let mut ids = outline_with(doc, nodes).into_iter().map(|h| h.id);
     let mut out = String::new();
-    blocks(&doc.content, image, &mut ids, &mut out);
+    blocks(&doc.content, &Ctx { image, nodes }, &mut ids, &mut out);
     out
 }
 
-type Images<'a> = &'a dyn Fn(uuid::Uuid) -> Option<ImageInfo>;
+struct Ctx<'a> {
+    image: &'a dyn Fn(uuid::Uuid) -> Option<ImageInfo>,
+    nodes: Option<&'a AppNodes>,
+}
+
+type Images<'a> = &'a Ctx<'a>;
 
 fn wrap(
     open: &str,
@@ -89,6 +153,25 @@ fn wrap(
     out.push_str(open);
     blocks(children, image, ids, out);
     out.push_str(close);
+}
+
+/// The plain text of an application node (empty when undeclared).
+pub(super) fn app_text(node: &AppNode, nodes: Option<&AppNodes>) -> String {
+    nodes.and_then(|n| n.get(&node.name)).map(|d| d.plain_text(&node.attrs)).unwrap_or_default()
+}
+
+fn app_element(node: &AppNode, ctx: Images, out: &mut String) {
+    let tag = if node.inline { "span" } else { "div" };
+    out.push_str(&format!("<{tag} data-node=\"{}\"", escape(&node.name)));
+    for (name, value) in node.attrs.iter() {
+        let text = match value {
+            Value::String(s) => s.clone(),
+            other => other.to_string(),
+        };
+        // Names are `[a-z][a-z0-9_]*` (checked); escaped all the same.
+        out.push_str(&format!(" data-{}=\"{}\"", escape(name), escape(&text)));
+    }
+    out.push_str(&format!(">{}</{tag}>", escape(&app_text(node, ctx.nodes))));
 }
 
 fn blocks(nodes: &[Node], image: Images, ids: &mut dyn Iterator<Item = String>, out: &mut String) {
@@ -131,7 +214,7 @@ fn blocks(nodes: &[Node], image: Images, ids: &mut dyn Iterator<Item = String>, 
             Node::HorizontalRule => out.push_str("<hr>"),
             Node::HardBreak => out.push_str("<br>"),
             Node::Image(img) => {
-                let Some(info) = image(img.media) else { continue };
+                let Some(info) = (image.image)(img.media) else { continue };
                 out.push_str("<figure");
                 if img.width != ImageWidth::Normal {
                     out.push_str(&format!(" data-width=\"{}\"", img.width.as_str()));
@@ -163,6 +246,9 @@ fn blocks(nodes: &[Node], image: Images, ids: &mut dyn Iterator<Item = String>, 
                         Mark::Italic => format!("<em>{html}</em>"),
                         Mark::Strike => format!("<s>{html}</s>"),
                         Mark::Code => format!("<code>{html}</code>"),
+                        Mark::Underline => format!("<u>{html}</u>"),
+                        Mark::Superscript => format!("<sup>{html}</sup>"),
+                        Mark::Subscript => format!("<sub>{html}</sub>"),
                         Mark::Link(href) => {
                             format!("<a href=\"{}\" rel=\"noopener noreferrer nofollow\">{html}</a>", escape(href))
                         }
@@ -170,6 +256,7 @@ fn blocks(nodes: &[Node], image: Images, ids: &mut dyn Iterator<Item = String>, 
                 }
                 out.push_str(&html);
             }
+            Node::App(node) => app_element(node, image, out),
         }
     }
 }

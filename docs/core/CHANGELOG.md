@@ -6,7 +6,37 @@ All notable changes are documented here. The format follows
 
 ## [Unreleased]
 
+### Added
+- Rich text document version 3 (vocabulary 18, ADR 0042; contributed by
+  @giangittb112000): underline, superscript and subscript marks (`<u>`,
+  `<sup>`, `<sub>` in HTML), and application elements:
+  `AdminProvider::rich_text_node(RichTextNode::inline_atom("app.kbd").attr("keys", Attr::text()))`
+  declares an atom with typed attributes (`text`, `integer`, `boolean`,
+  `one_of`, `uuid`; `.label(..)`; defaults filled in before storing, at most
+  1 KiB per element), and `Field::rich_text().nodes([...])` names the ones a
+  field accepts (none by default). Checked on every write; at most 500 per
+  document, which is bounded to 256 KiB once its defaults are filled in;
+  block elements never inside a callout; the attribute name `node` is
+  reserved. The editor inserts them from an *Insert an element* menu; an
+  extension draws and edits them with `registerRichTextNode(name, { view,
+  edit })` (SDK `ui` 4), else a placeholder and a generated form. A document
+  holding elements the field no longer accepts opens read-only with a button
+  that removes them. Exported HTML writes them as `<span|div data-node
+  data-{attr}>` with the declaration's `.text` (`rich_text::Html`,
+  `AppNodes::parse`). The server stores every document in the lowest version
+  it needs (1, 2 or 3), whoever writes it. Demo: `app.kbd` and
+  `app.note_ref` in posts.
+
 ### Changed
+- `rich_text::Mark` is `#[non_exhaustive]` and has three new variants: an
+  exhaustive `match` needs a `_` arm. `rich_text::VERSION` is 3
+  (`upgrade_value` still only lifts version 1 to 2); `rich_text::parse`
+  refuses application elements (use `AppNodes::parse`). The SDK is `ui` 4:
+  extensions rebuilt with it declare `Requires { ui: 4, … }` (`rustcms
+  make:sdk` lists the registrations to update).
+- Admin panel: a rich text view whose value is not a document says it cannot
+  be shown instead of showing its JSON (a legacy text value is still shown as
+  it is).
 - Admin panel: the default view page (contributed by @giangittb112000). A
   record's view page without `infolist()` is drawn by an infolist made from
   its form at boot (`InfolistSchema.fromForm`, vocabulary 17), one read-only
@@ -19,6 +49,10 @@ All notable changes are documented here. The format follows
   `infolist` only for a record (with a key). A list of records in a text
   entry shows as indented JSON; a field shown twice at one level no longer
   logs a duplicate key.
+
+### Fixed
+- Admin panel: opening a rich text editor reported a change (TipTap's
+  `setEditable`), so a form could count as edited before any edit.
 
 ## [0.13.0] — 2026-11-17
 
