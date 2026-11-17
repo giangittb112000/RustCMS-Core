@@ -136,6 +136,9 @@
   "image": [
     "is not a valid image"
   ],
+  "incomplete": [
+    "is incomplete"
+  ],
   "incomplete_file": [
     "is not a complete file of its type"
   ],

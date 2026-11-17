@@ -122,6 +122,7 @@ pub const TEMPLATES: &[(&str, &str)] = &[
     // Records and references.
     ("conflicts", "conflicts with existing data"),
     ("missing_reference", "references a missing or protected record"),
+    ("incomplete", "is incomplete"),
     ("stale", "This was changed by someone else meanwhile. Reload and try again."),
     ("last_super_admin", "At least one active super admin is required for the `{guard}` guard."),
     ("no_super_admin_role", "no super_admin role for guard `{guard}`"),

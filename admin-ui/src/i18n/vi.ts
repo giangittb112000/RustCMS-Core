@@ -78,6 +78,7 @@ export const vi: Record<keyof typeof en, string> = {
   "issue.invalid_key": "khoá không hợp lệ",
   "issue.conflicts": "xung đột với dữ liệu hiện có",
   "issue.missing_reference": "trỏ tới bản ghi không tồn tại hoặc được bảo vệ",
+  "issue.incomplete": "chưa đủ thông tin",
   "issue.stale": "Dữ liệu vừa được người khác thay đổi. Hãy tải lại và thử lại.",
   "issue.last_super_admin": "Cần ít nhất một super admin đang hoạt động cho guard `{guard}`.",
   "issue.duplicate_file": "không được chọn cùng một tệp hai lần",

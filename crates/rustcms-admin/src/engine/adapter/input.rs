@@ -320,9 +320,49 @@ impl<R: Resource> ResourceAdapter<R> {
                 errors.add_form("references a missing or protected record");
                 errors.into()
             }
-            _ => err.into(),
+            _ => match not_null_column(&err.to_string(), &self.table) {
+                // A column that may not be null left out (not declared required, no
+                // default): the field's "is required", never a server error.
+                Some(column) => {
+                    let mut errors = ValidationErrors::new();
+                    if self.field(&column).is_some() {
+                        errors.add(column.as_str(), "is required");
+                    } else {
+                        tracing::warn!(resource = R::SLUG, column, "a column outside the fields is not set");
+                        errors.add_form("is incomplete");
+                    }
+                    errors.into()
+                }
+                None => err.into(),
+            },
         }
     }
+}
+
+/// The column a NOT NULL violation names, from the database's message:
+/// SQLite `NOT NULL constraint failed: table.column`, PostgreSQL `null value
+/// in column "column" … violates not-null constraint`, MySQL `Field 'column'
+/// doesn't have a default value` or `Column 'column' cannot be null`.
+pub(crate) fn not_null_column(message: &str, table: &str) -> Option<String> {
+    let between = |text: &str, start: &str, end: &str| -> Option<String> {
+        let from = text.find(start)? + start.len();
+        let to = text[from..].find(end)? + from;
+        Some(text[from..to].to_owned())
+    };
+    if let Some(rest) = message.split("NOT NULL constraint failed: ").nth(1) {
+        let column = rest.split(|c: char| c.is_whitespace() || c == ',').next()?;
+        return Some(column.strip_prefix(&format!("{table}.")).unwrap_or(column).to_owned());
+    }
+    if message.contains("violates not-null constraint") {
+        return between(message, "null value in column \"", "\"");
+    }
+    if message.contains("doesn't have a default value") {
+        return between(message, "Field '", "'");
+    }
+    if message.contains("cannot be null") {
+        return between(message, "Column '", "'");
+    }
+    None
 }
 
 /// The static options of a field: one of them (a select) or a list of them
@@ -582,6 +622,29 @@ pub(crate) fn form_empty(input: InputType, kind: FieldKind, nullable: bool) -> s
             serde_json::Value::String(String::new())
         }
         _ => serde_json::Value::Null,
+    }
+}
+
+#[cfg(test)]
+mod not_null_tests {
+    use super::not_null_column;
+
+    #[test]
+    fn reads_the_column_of_each_backend_s_not_null_violation() {
+        let cases = [
+            ("error returned from database: (code: 1299) NOT NULL constraint failed: courses.published", "published"),
+            (
+                "error returned from database: null value in column \"published\" of relation \"courses\" violates \
+                 not-null constraint",
+                "published",
+            ),
+            ("error returned from database: 1364 (HY000): Field 'published' doesn't have a default value", "published"),
+            ("error returned from database: 1048 (23000): Column 'published' cannot be null", "published"),
+        ];
+        for (message, column) in cases {
+            assert_eq!(not_null_column(message, "courses").as_deref(), Some(column), "{message}");
+        }
+        assert_eq!(not_null_column("UNIQUE constraint failed: courses.code", "courses"), None);
     }
 }
 

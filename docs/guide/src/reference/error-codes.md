@@ -105,6 +105,7 @@ keeps it complete.
 | `unsupported_key` | `unsupported key type` |
 | `conflicts` | `conflicts with existing data` |
 | `missing_reference` | `references a missing or protected record` |
+| `incomplete` | `is incomplete` (a column the form does not set may not be empty: the application must set it, e.g. in a hook) |
 | `stale` | `This was changed by someone else meanwhile. Reload and try again.` |
 | `last_super_admin` | At least one active super admin is required for the `{guard}` guard. |
 | `no_super_admin_role` | no super_admin role for guard `{guard}` |

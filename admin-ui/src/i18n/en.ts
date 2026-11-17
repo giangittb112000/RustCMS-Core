@@ -79,6 +79,7 @@ export const en = {
   "issue.invalid_key": "invalid key",
   "issue.conflicts": "conflicts with existing data",
   "issue.missing_reference": "references a missing or protected record",
+  "issue.incomplete": "is incomplete",
   "issue.stale": "This was changed by someone else meanwhile. Reload and try again.",
   "issue.last_super_admin": "At least one active super admin is required for the `{guard}` guard.",
   "issue.duplicate_file": "may not list the same file twice",

@@ -105,6 +105,10 @@ All notable changes are documented here. The format follows
   still never quoted back.
 
 ### Fixed
+- A create leaving out a column that may not be null (not declared
+  `required`, no default) answered 500: it is now that field's
+  `is required` (422), or the form error `is incomplete` for a column outside
+  the resource's fields, on SQLite, PostgreSQL and MySQL.
 - Admin panel: a record's History card had no space under its "Show history"
   button when closed (the header has no bottom padding), and its entries were
   inset less than the header.
