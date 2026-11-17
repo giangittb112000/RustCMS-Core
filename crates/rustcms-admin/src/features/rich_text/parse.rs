@@ -305,13 +305,15 @@ pub(super) fn app_node(raw: RawNode, budget: &mut Budget<'_>, inline: bool) -> R
     if budget.app_nodes > MAX_APP_NODES {
         return Err(err(format!("may not have more than {MAX_APP_NODES} application elements")));
     }
+    // Sent without `attrs`: storing adds the key too.
+    let key = if raw.attrs.is_some() { 0 } else { r#","attrs":"#.len() };
     let given = raw.attrs.unwrap_or_default();
     let attrs = decl.accept(&given)?;
     // Defaults are stored: the document is bounded as it will be stored, before
     // anything is filled in (a few bytes of input may not grow past the limit).
     let size = |map: &serde_json::Map<String, Value>| serde_json::to_vec(map).map_or(usize::MAX, |b| b.len());
-    let before = if given.is_empty() { 0 } else { size(&given) };
-    let after = size(attrs.as_map()) + r#","attrs":"#.len();
+    let before = if key == 0 { size(&given) } else { 0 };
+    let after = size(attrs.as_map()) + key;
     budget.bytes = budget.bytes.saturating_add(after.saturating_sub(before));
     if budget.bytes > MAX_BYTES {
         return Err(err(format!("may not be larger than {} KiB", MAX_BYTES / 1024)));

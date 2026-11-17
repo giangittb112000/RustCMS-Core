@@ -230,12 +230,16 @@ function holds(nodes: unknown, types: string[]): boolean {
   return Array.isArray(nodes) && nodes.some((n: DocNode) => !!n && (types.includes(n.type) || holds(n.content, types)));
 }
 
-/** Whether lists in `nodes` hold an application node as a block (a list item's child), at any depth. */
-function blockAppInLists(nodes: unknown): boolean {
+/**
+ * Whether `nodes` (in block positions) hold an application node as a block at
+ * any depth: through lists, list items and quotes; inline ones do not count.
+ */
+function blockAppInside(nodes: unknown): boolean {
   return Array.isArray(nodes) && nodes.some((n: DocNode) => {
     if (!n) return false;
-    if (n.type === "listItem") return (n.content ?? []).some((c) => isAppNode(c?.type)) || blockAppInLists(n.content);
-    return (n.type === "bulletList" || n.type === "orderedList") && blockAppInLists(n.content);
+    if (isAppNode(n.type)) return true;
+    const inner = CONTAINERS[n.type];
+    return (inner === "blocks" || inner === "items") && blockAppInside(n.content);
   });
 }
 
@@ -281,7 +285,7 @@ function editable(nodes: unknown, kind: "blocks" | "inline" | "items" | "text", 
     if (n.type === "callout") {
       return version >= 2 && CALLOUT_TONES.includes(n.attrs?.tone as CalloutTone) && Array.isArray(n.content) && n.content.length > 0 &&
         n.content.every((c) => ["paragraph", "bulletList", "orderedList"].includes(c?.type)) && !holds(n.content, ["table", "callout"]) &&
-        !blockAppInLists(n.content) && editable(n.content, "blocks", r);
+        !blockAppInside(n.content) && editable(n.content, "blocks", r);
     }
     if (!(n.type in CONTAINERS)) return false;
     if (n.type === "image") {
@@ -326,7 +330,9 @@ export function withoutUnknownElements(doc: RichDocument, nodes: readonly RichNo
       });
   if (!Array.isArray(doc.content)) return null;
   const cleaned = { ...doc, content: strip(doc.content, false) };
-  if (emptied || cleaned.content.length === 0) return null;
+  if (emptied) return null;
+  // Nothing left: an empty document (the editor's own).
+  if (cleaned.content.length === 0) cleaned.content = [{ type: "paragraph" }];
   return JSON.stringify(cleaned) !== JSON.stringify(doc) ? asDocument(cleaned, nodes) : null;
 }
 

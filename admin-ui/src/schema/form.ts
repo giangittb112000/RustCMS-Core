@@ -3,7 +3,7 @@
 import { z } from "zod";
 import { t } from "@/i18n";
 import type { ComponentSchema, EntrySchema, InputSchema, JsonValue, LayoutSchema } from "@/api/types";
-import { asDocument } from "@/lib/rich-text";
+import { asShownDocument } from "@/lib/rich-text";
 import { widget } from "@/lib/widgets";
 import { checkText, fromText, toText, type WireKind } from "@/lib/wire";
 import { type WireValues, formConditions, hasConditions, hiddenFields } from "./conditions";
@@ -46,10 +46,15 @@ export const lossyJson = (input: InputSchema, value: unknown) =>
 export const isTextObject = (value: unknown): value is Record<string, string> =>
   typeof value === "object" && value !== null && !Array.isArray(value) && Object.values(value).every((v) => typeof v === "string");
 
-/** A stored key/value that is not an object of text: shown, never rewritten. */
+/**
+ * A stored key/value that is not an object of text, or a rich text value that
+ * is not a document at all: shown, never rewritten. A document holding
+ * elements the field no longer accepts is the editor's (it shows it read-only
+ * and offers to remove them).
+ */
 const foreignKeyValue = (input: InputSchema, value: unknown) =>
   value !== null && value !== undefined &&
-  ((input.type === "key_value" && !isTextObject(value)) || (input.type === "rich_editor" && !asDocument(value, input.richNodes)));
+  ((input.type === "key_value" && !isTextObject(value)) || (input.type === "rich_editor" && !asShownDocument(value)));
 
 /**
  * The form with JSON inputs made read-only where the stored value would lose

@@ -130,6 +130,7 @@ impl Resource for ArticleResource {
                             }
                             "many" => Ok((0..300).map(|i| FormPatch::notice(format!("n{i}"))).collect()),
                             "long" => Ok(vec![FormPatch::notice("x".repeat(501)), FormPatch::notice("short")]),
+                            "clear lines" => Ok(vec![FormPatch::set("lines", Value::Null)]),
                             _ => Ok(vec![
                                 FormPatch::set_if_empty("slug", slugify(&title)),
                                 // Shown only for gold tiers: never for a user who cannot read the tier.
@@ -367,6 +368,14 @@ db_test!(patches_follow_the_form_and_stay_bounded, |db: TestDb| async move {
             {"op": "set", "field": "summary", "value": "Now live"},
         ])
     );
+    // `null` clears a nullable JSON repeater, as a save would.
+    let answer = react(
+        &ctx,
+        json!({"operation": "create", "changed": "title", "state": {"title": "clear lines", "lines": [{"name": "a", "qty": 1}]}, "seq": 1}),
+    )
+    .await
+    .unwrap();
+    assert_eq!(serde_json::to_value(&answer.patches).unwrap(), json!([{"op": "set", "field": "lines", "value": null}]));
     // At most 200 patches; a message of more than 500 characters is dropped.
     assert_eq!(react(&ctx, create("many")).await.unwrap().patches.len(), 200);
     assert_eq!(

@@ -265,10 +265,11 @@ export const RichCallout = Node.create({
             const range = $from.blockRange($to, (n) => !["bulletList", "orderedList", "listItem"].includes(n.type.name));
             const wrapping = range && findWrapping(range, state.schema.nodes[this.name]!, { tone });
             if (!range || !wrapping) return false;
-            // Documents refuse a table or a callout inside a callout: never wrap one.
+            // Documents refuse a table, a callout or a block element inside a callout:
+            // never wrap one.
             let nested = false;
             state.doc.nodesBetween(range.start, range.end, (n) => {
-              if (n.type.name === "table" || n.type.name === "callout") nested = true;
+              if (n.type.name === "table" || n.type.name === "callout" || (n.isBlock && n.type.name.startsWith("app."))) nested = true;
               return !nested;
             });
             if (nested) return false;

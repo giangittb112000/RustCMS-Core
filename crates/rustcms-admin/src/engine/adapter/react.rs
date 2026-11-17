@@ -167,17 +167,17 @@ impl<R: Resource> ResourceAdapter<R> {
                 .map(|(k, v)| (k.clone(), v.clone()))
                 .collect(),
         };
-        match tokio::time::timeout(reaction.timeout, (reaction.run)(ctx, &state)).await {
-            Ok(Ok(patches)) => Ok(FormReactResponse {
-                seq: request.seq,
-                patches: self.keep_patches(ctx, op, &state, values, patches),
-                failed: false,
-            }),
-            outcome => {
-                let failure = match outcome {
-                    Ok(Err(err)) => err.to_string(),
-                    _ => format!("took longer than {:?}", reaction.timeout),
-                };
+        // One time limit for the reaction and the checking of its patches.
+        let deadline = tokio::time::Instant::now() + reaction.timeout;
+        let outcome = match tokio::time::timeout_at(deadline, (reaction.run)(ctx, &state)).await {
+            Ok(Ok(patches)) => self.keep_patches(ctx, op, &state, values, patches, deadline).ok_or(None),
+            Ok(Err(err)) => Err(Some(err.to_string())),
+            Err(_) => Err(None),
+        };
+        match outcome {
+            Ok(patches) => Ok(FormReactResponse { seq: request.seq, patches, failed: false }),
+            Err(failure) => {
+                let failure = failure.unwrap_or_else(|| format!("took longer than {:?}", reaction.timeout));
                 tracing::warn!(resource = R::SLUG, input = reaction.name, failure, "form reaction failed");
                 Ok(empty(true))
             }
@@ -228,7 +228,8 @@ impl<R: Resource> ResourceAdapter<R> {
     /// (the form's) for the next, conditions evaluated again after each;
     /// values canonical, messages translated and bounded. The others are
     /// logged and dropped (the application's bug, not the user's), as are
-    /// patches that change nothing and those beyond [`MAX_PATCHES`].
+    /// patches that change nothing and those beyond [`MAX_PATCHES`]. `None`
+    /// when the reaction's time runs out before they are all checked.
     fn keep_patches(
         &self,
         ctx: &Ctx,
@@ -236,7 +237,8 @@ impl<R: Resource> ResourceAdapter<R> {
         state: &FormState,
         mut values: Data,
         patches: Vec<FormPatch>,
-    ) -> Vec<FormPatch> {
+        deadline: tokio::time::Instant,
+    ) -> Option<Vec<FormPatch>> {
         let dropped = |field: &str, reason: &str| {
             tracing::warn!(resource = R::SLUG, input = state.changed, field, reason, "form reaction patch dropped");
         };
@@ -245,13 +247,16 @@ impl<R: Resource> ResourceAdapter<R> {
         }
         let mut kept = Vec::new();
         for patch in patches.into_iter().take(MAX_PATCHES) {
+            if tokio::time::Instant::now() >= deadline {
+                return None;
+            }
             match self.keep_patch(ctx, op, &mut values, patch) {
                 Ok(Some(patch)) => kept.push(patch),
                 Ok(None) => {}
                 Err((field, reason)) => dropped(&field, reason),
             }
         }
-        kept
+        Some(kept)
     }
 
     /// `patch` as the panel applies it (`None`: it changes nothing), applied
@@ -281,6 +286,10 @@ impl<R: Resource> ResourceAdapter<R> {
         {
             return Err(fail("a hidden, encrypted, link or relationship repeater input"));
         }
+        // The key a relation binds is the relation's (the save binds it again).
+        if ctx.bound.as_ref().is_some_and(|(_, bound, _)| *bound == field) {
+            return Err(fail("the key a relation binds"));
+        }
         // Written into the user's form: a field the user may read and write.
         if !self.writable(ctx, op, &field) || self.field(&field).is_none_or(|f| !f.can_read(ctx)) {
             return Err(fail("not readable and writable by the user"));
@@ -305,10 +314,11 @@ impl<R: Resource> ResourceAdapter<R> {
             }
             // As a save would store it: rows checked, values canonical.
             let value = match self.repeaters.get(field.as_str()) {
+                // `null` passed the input's checks (a nullable column): cleared.
+                _ if value.is_null() => Value::Null,
                 Some(rows) => {
                     rows.check(&field, value, &mut errors).ok_or_else(|| fail("rows the repeater refuses"))?
                 }
-                None if value.is_null() => Value::Null,
                 None => self.canonical_value(&field, value),
             };
             let same = current.is_some_and(|c| {

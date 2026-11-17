@@ -134,6 +134,9 @@ describe("documents", () => {
     const list = { type: "bulletList", content: [{ type: "listItem", content: [para(text("i")), { type: "app.card", attrs: { id: UUID } }] }] };
     expect(asDocument(doc(3, list), NODES)).not.toBeNull();
     expect(asDocument(doc(3, { type: "callout", attrs: { tone: "info" }, content: [list] }), NODES)).toBeNull();
+    // Deeper: a quote in a list item.
+    const quoted = { type: "bulletList", content: [{ type: "listItem", content: [para(text("i")), { type: "blockquote", content: [{ type: "app.card", attrs: { id: UUID } }] }] }] };
+    expect(asDocument(doc(3, { type: "callout", attrs: { tone: "info" }, content: [quoted] }), NODES)).toBeNull();
   });
 
   it("are shown only when well formed", () => {
@@ -285,6 +288,8 @@ describe("the editor", () => {
     // A list item holding only the element would be left empty.
     const item = doc(3, { type: "bulletList", content: [{ type: "listItem", content: [{ type: "app.gone", attrs: {} }] }] });
     expect(withoutUnknownElements(item as never, NODES)).toBeNull();
+    // Only the element: an empty document is left, the editor's own.
+    expect(withoutUnknownElements(doc(3, { type: "app.card2", attrs: {} } as never) as never, NODES)).toEqual(doc(3, { type: "paragraph" } as never));
     // An element whose attributes no longer fit is removed too.
     const stale = doc(3, para(text("a"), kbd({ keys: "far too many keys" })));
     expect(withoutUnknownElements(stale as never, NODES)).toEqual(doc(3, para(text("a"))));

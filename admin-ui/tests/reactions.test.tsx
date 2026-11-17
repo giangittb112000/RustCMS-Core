@@ -58,6 +58,16 @@ describe("state and patches", () => {
     expect(applyPatches(productInputs, defaultValues(productInputs, {}), [patches[0]!]).values).toEqual({ name: "Ignored" });
   });
 
+  it("keeps a row's warning with that row when later patches move rows", () => {
+    const values = defaultValues(productInputs, { faq: [{ question: "A" }, { question: "B" }] });
+    const applied = applyPatches(productInputs, values, [
+      { op: "flag_row", field: "faq", index: 0, message: "Check A" },
+      { op: "move_row", field: "faq", from: 0, to: 1 },
+    ]);
+    expect(applied.flags).toEqual({ faq: { 1: ["Check A"] } });
+    expect((JSON.parse(applied.values.faq as string) as { question: string }[]).map((r) => r.question)).toEqual(["B", "A"]);
+  });
+
   it("shows warnings under the rows they name", () => {
     function Harness() {
       const form = useForm<FormValues>({ defaultValues: defaultValues(productInputs, { faq: [{ question: "A" }, { question: "B" }] }) });
