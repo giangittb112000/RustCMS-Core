@@ -47,7 +47,10 @@ fn app() -> tempfile::TempDir {
 }
 
 fn watcher(root: &Path) -> Child {
-    Command::new(env!("CARGO_BIN_EXE_rustcms"))
+    // From a nextest archive (CI) the binary is elsewhere than where it was built.
+    let binary = std::env::var_os("NEXTEST_BIN_EXE_rustcms")
+        .map_or_else(|| PathBuf::from(env!("CARGO_BIN_EXE_rustcms")), PathBuf::from);
+    Command::new(binary)
         .args(["serve", "--watch"])
         .current_dir(root)
         .env("CARGO", root.join("fake-cargo"))

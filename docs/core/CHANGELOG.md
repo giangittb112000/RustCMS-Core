@@ -136,6 +136,10 @@ All notable changes are documented here. The format follows
   unreleased commit (`[patch.crates-io]`, rev `10462fa4`), removed once a
   release does. ammonia 4.2.5 (RUSTSEC-2026-0533).
 
+### Internal
+- CI and release builds run on `macos-15` (GitHub no longer offers
+  `macos-14`).
+
 ## [0.12.1] — 2026-11-05
 
 ### Fixed
