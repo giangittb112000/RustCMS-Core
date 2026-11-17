@@ -88,7 +88,17 @@ impl<R: Resource> ResourceAdapter<R> {
     /// out of the parent write's lock order (ADR 0041). Row inputs never are
     /// such fields (boot); only a hook can add one.
     fn refuse_row_media(&self, data: &Data) -> AppResult<()> {
-        let media = self.fields.iter().find(|f| (f.media.is_some() || f.rich_text) && data.contains_key(&f.name));
+        // A cleared value (null, an empty list) references nothing and locks nothing.
+        let references = |value: &serde_json::Value| match value {
+            serde_json::Value::Null => false,
+            serde_json::Value::Array(items) => !items.is_empty(),
+            serde_json::Value::String(text) => !text.is_empty(),
+            _ => true,
+        };
+        let media = self
+            .fields
+            .iter()
+            .find(|f| (f.media.is_some() || f.rich_text) && data.get(&f.name).is_some_and(references));
         match media {
             Some(field) => Err(AppError::internal(format!(
                 "`{}`: hooks of a relationship repeater's child may not write media or rich-text fields (`{}`)",
@@ -218,12 +228,13 @@ impl<R: Resource> ResourceAdapter<R> {
         if !change.create.is_empty() && !self.policy.allows(&bound, ability::CREATE, None).await {
             return Err(AppError::Forbidden);
         }
-        // New rows go after every row of the parent (an order may move them next).
-        let mut next = match target.order_column {
-            Some(column) => {
-                self.next_position(relation, column, self.largest_position(txn, &target, column, &parent_value).await?)?
+        // New rows go after every row of the parent (an order may move them next);
+        // the largest position is read only when there are rows to place.
+        let mut last = match target.order_column {
+            Some(column) if !change.create.is_empty() => {
+                self.largest_position(txn, &target, column, &parent_value).await?
             }
-            None => 0,
+            _ => 0,
         };
         for (reference, mut data) in change.create {
             if data.contains_key(target.field) || target.order_column.is_some_and(|c| data.contains_key(c)) {
@@ -232,9 +243,8 @@ impl<R: Resource> ResourceAdapter<R> {
             data.insert(target.field.to_owned(), parent_value.clone());
             let position = match target.order_column {
                 Some(column) => {
-                    let at = next;
-                    next = self.next_position(relation, column, next)?;
-                    Some((column, at))
+                    last = self.next_position(relation, column, last)?;
+                    Some((column, last))
                 }
                 None => None,
             };
@@ -333,7 +343,7 @@ impl<R: Resource> ResourceAdapter<R> {
         let mut input = self.accept_input(ctx, Operation::Create, data)?;
         // The position is the server's (never client input).
         if let Some((column, value)) = position {
-            input.insert(column.to_owned(), serde_json::Value::from(value));
+            input.insert(column.to_owned(), self.position_value(column, value));
         }
         let (_, field, _) = ctx.bound.clone().expect("rows are created with their parent");
         self.apply_conditions(ctx, Operation::Create, &mut input, None, Some(field.as_str()))?;

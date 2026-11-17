@@ -687,3 +687,144 @@ db_test!(concurrent_saves_of_one_family_never_hang_nor_fail, |db: TestDb| async 
         }
     }
 });
+
+/// Notes of an order with an `i64` order column and a media field the rows do
+/// not edit (a hook adding it is refused).
+pub mod note {
+    use sea_orm::entity::prelude::*;
+
+    #[derive(Clone, Debug, PartialEq, DeriveEntityModel)]
+    #[sea_orm(table_name = "order_notes")]
+    pub struct Model {
+        #[sea_orm(primary_key)]
+        pub id: i32,
+        pub order_id: i32,
+        pub title: String,
+        pub position: i64,
+        pub photo: Option<Uuid>,
+    }
+
+    #[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]
+    pub enum Relation {}
+
+    impl ActiveModelBehavior for ActiveModel {}
+}
+
+pub struct NoteOrderResource;
+
+impl Resource for NoteOrderResource {
+    type Entity = order::Entity;
+    const SLUG: &'static str = "note_orders";
+
+    fn meta() -> ResourceMeta {
+        ResourceMeta::new("Order").title("number")
+    }
+
+    fn fields() -> Vec<Field> {
+        vec![Field::column(order::Column::Number).required()]
+    }
+
+    fn form() -> Form {
+        Form::new().schema(components![
+            TextInput::make("number"),
+            Repeater::make("notes")
+                .relationship()
+                .order_column("position")
+                .deletable(false)
+                .schema(components![TextInput::make("title")]),
+        ])
+    }
+
+    fn relations() -> Vec<Relation> {
+        vec![Relation::has_many("notes", "order_notes", "order_id")]
+    }
+}
+
+pub struct NoteResource;
+
+#[async_trait::async_trait]
+impl Resource for NoteResource {
+    type Entity = note::Entity;
+    const SLUG: &'static str = "order_notes";
+
+    fn meta() -> ResourceMeta {
+        ResourceMeta::new("Note").title("title").lock_parent("order_id", "note_orders")
+    }
+
+    fn fields() -> Vec<Field> {
+        use note::Column as C;
+        vec![
+            Field::column(C::OrderId).required().belongs_to("note_orders"),
+            Field::column(C::Title).required(),
+            Field::column(C::Position).guarded().readable(|_| true),
+            Field::column(C::Photo).media(),
+        ]
+    }
+
+    /// A note titled "photo" gets a photo from the hook: refused in a row.
+    async fn mutate_before_create(_ctx: &Ctx, _txn: &DatabaseTransaction, mut data: Data) -> AppResult<Data> {
+        if data.get("title") == Some(&json!("photo")) {
+            data.insert("photo".into(), json!("0c7e1d2a-5b3f-4e6a-9d8c-1a2b3c4d5e6f"));
+        }
+        Ok(data)
+    }
+}
+
+fn build_notes(config: Config) -> AppBuilder {
+    let mut app = AppBuilder::new(config);
+    app.provider(AuthProvider::new());
+    app.provider(AdminProvider::new().resource::<NoteOrderResource>().resource::<NoteResource>());
+    app
+}
+
+db_test!(i64_positions_deletable_off_and_hook_added_media, |db: TestDb| async move {
+    db.migrate::<rustcms_migration::Migrator>().await;
+    let schema = Schema::new(db.conn().get_database_backend());
+    rustcms_testing::create_table(db.conn(), &schema.create_table_from_entity(order::Entity)).await;
+    rustcms_testing::create_table(db.conn(), &schema.create_table_from_entity(note::Entity)).await;
+    let app = TestApp::new(build_notes, db).await;
+    let auth = app.state().service::<AuthState>().unwrap();
+    let conn = app.state().db();
+    let rbac = RbacService::new(conn, &auth.resolver);
+    rbac.sync_permissions(&auth.permissions.all()).await.unwrap();
+    let admin = UserFactory::new().name("Admin").create(conn).await;
+    let super_admin = rustcms_auth::entities::role::super_admin_id(conn, ADMIN_GUARD).await.unwrap().unwrap();
+    rbac.assign_role(Actor::System, admin.id, super_admin).await.unwrap();
+    let admin = app.acting_as(&admin).await;
+    let url = app.admin_api("resources/note_orders/records");
+
+    // i64 positions: written as the column's kind, read back in order.
+    let created = admin
+        .post_json(
+            &url,
+            &json!({"number": "N-1", "notes": {
+                "create": [{"ref": "a", "data": {"title": "first"}}, {"ref": "b", "data": {"title": "second"}}],
+                "order": [{"new": "b"}, {"new": "a"}],
+            }}),
+        )
+        .await;
+    created.assert_status(StatusCode::CREATED);
+    let order = created.json()["data"]["key"].as_str().unwrap().to_owned();
+    let mut notes = note::Entity::find().all(app.state().db()).await.unwrap();
+    notes.sort_by_key(|n| n.position);
+    assert_eq!(notes.iter().map(|n| n.title.as_str()).collect::<Vec<_>>(), ["second", "first"]);
+
+    // `deletable(false)`: a delete part is refused by the server.
+    admin.fetch_csrf().await;
+    let first = notes.iter().find(|n| n.title == "first").unwrap().id.to_string();
+    let refused = admin
+        .send(axum::http::Method::PATCH, &format!("{url}/{order}"), Some(&json!({"notes": {"delete": [first]}})))
+        .await;
+    assert_eq!(issues(refused)["notes"][0]["code"], json!("rows_not_deletable"));
+
+    // A hook adding media to a row: refused (no media lock inside rows), nothing saved.
+    let photo = admin
+        .send(
+            axum::http::Method::PATCH,
+            &format!("{url}/{order}"),
+            Some(&json!({"notes": {"create": [{"ref": "p", "data": {"title": "photo"}}]}})),
+        )
+        .await;
+    photo.assert_status(StatusCode::INTERNAL_SERVER_ERROR);
+    assert_eq!(note::Entity::find().all(app.state().db()).await.unwrap().len(), 2);
+});

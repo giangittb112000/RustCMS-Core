@@ -8,7 +8,7 @@ import { useApi } from "@/api/context";
 import { Button } from "@/components/ui/button";
 import { useT } from "@/i18n";
 import { cn } from "@/lib/utils";
-import { type RelationRow, type RelationState, newRef, parseState, stateOf } from "@/schema/relation-rows";
+import { type RelationRow, type RelationState, createView, newRef, parseState, stateOf } from "@/schema/relation-rows";
 import { type Row, hiddenInRow, itemLabel, rowOf, rowProblems } from "@/schema/repeater";
 import type { WidgetProps } from "./form";
 import { IconButton, RowComponents } from "./repeater";
@@ -50,7 +50,7 @@ export function RelationRepeaterWidget({ id, input, ctx, value, onChange, disabl
   };
   const commit = (next: RelationState) => onChange(JSON.stringify(next));
   const canCreate = !locked && relationship.create && repeater.addable && (repeater.maxItems === undefined || state.rows.length < repeater.maxItems);
-  const add = () => commit({ ...state, rows: [...state.rows, { ref: newRef(), values: rowOf(repeater, {}), changed: [] }] });
+  const add = () => commit({ ...state, rows: [...state.rows, { ref: newRef(), values: rowOf(createView(repeater), {}), changed: [] }] });
   const remove = (index: number) => {
     const row = state.rows[index]!;
     commit({ ...state, rows: state.rows.filter((_, i) => i !== index), deleted: row.key ? [...state.deleted, row.key] : state.deleted });
@@ -98,8 +98,9 @@ export function RelationRepeaterWidget({ id, input, ctx, value, onChange, disabl
               </div>
               <div id={bodyId} className="grid grid-cols-1 gap-4 p-4 md:grid-cols-2">
                 {typeof server[rowId] === "string" && <p role="alert" className="col-span-full text-xs text-destructive">{String(server[rowId])}</p>}
-                <RowComponents components={row.key ? repeater.components : (repeater.createComponents ?? repeater.components)}
-                  repeater={repeater} row={row.values} hidden={hiddenInRow(repeater, row.values)}
+                <RowComponents components={row.key ? repeater.components : createView(repeater).components}
+                  repeater={row.key ? repeater : createView(repeater)} row={row.values}
+                  hidden={hiddenInRow(row.key ? repeater : createView(repeater), row.values)}
                   path={(name) => `${index}.${name}`} problem={problem(index)} server={{}}
                   ctx={{ ...ctx, slug: repeater.relationship?.resource ?? ctx.slug, record: row.key }} disabled={!editable}
                   idPrefix={bodyId} onChange={(next) => setRow(index, next)} />

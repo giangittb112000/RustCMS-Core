@@ -37,7 +37,7 @@ Relationship repeaters follow that same contract; it is stated as the contract o
    resource, in rank order; two repeaters on one child resource are refused), then media.
 5. **A row takes no explicit lock but its own.** Row inputs may not be media, rich-text, encrypted,
    belongs-to-many or `belongs_to` fields (boot, from the child's field metadata); a row whose data holds a media
-   or rich-text field after the child's hooks is refused (500 naming the hook). A parent with relationship
+   or rich-text field referencing media after the child's hooks is refused (500 naming the resource and the field: only a hook can put it there). A parent with relationship
    repeaters may not link media records.
 6. **One locking pass per child phase.** The named rows (pre-filtered by parent membership) and, with an order,
    the parent's live children (at most 1,000, discovered before any lock; beyond: 422 `too_many_rows`) are locked

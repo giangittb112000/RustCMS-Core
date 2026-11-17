@@ -30,8 +30,17 @@ export interface RelationState {
 export function stateOf(repeater: RepeaterSchema, records: Envelope[]): RelationState {
   // In the order column's order when there is one (the list reads in key order).
   const column = repeater.relationship?.orderColumn;
-  const position = (r: Envelope) => (column ? Number(r.data[column] ?? Infinity) : 0);
-  const ordered = column ? [...records].sort((a, b) => position(a) - position(b)) : records;
+  // Exact: an i64 position travels as text beyond what a JavaScript number holds.
+  const position = (r: Envelope): bigint | null => {
+    const value = column ? r.data[column] : null;
+    try {
+      return typeof value === "string" || typeof value === "number" ? BigInt(value) : null;
+    } catch {
+      return null;
+    }
+  };
+  const compare = (a: bigint | null, b: bigint | null) => (a === b ? 0 : a === null ? 1 : b === null ? -1 : a < b ? -1 : 1);
+  const ordered = column ? [...records].sort((a, b) => compare(position(a), position(b))) : records;
   return {
     rows: ordered.map((r) => ({
       key: r.key,
@@ -64,7 +73,7 @@ export function relationFormValue(input: InputSchema): FormValue {
   const repeater = input.repeater;
   const count = repeater?.defaultItems ?? 0;
   if (!repeater || count === 0) return "";
-  const rows = Array.from({ length: count }, () => ({ ref: newRef(), values: rowOf(repeater, {}), changed: [] }));
+  const rows = Array.from({ length: count }, () => ({ ref: newRef(), values: rowOf(createView(repeater), {}), changed: [] }));
   return JSON.stringify({ rows, deleted: [] } satisfies RelationState);
 }
 
@@ -73,10 +82,12 @@ export function changeOf(input: InputSchema, value: FormValue): JsonValue | unde
   const repeater = input.repeater;
   const state = parseState(value);
   if (!repeater || !state) return undefined;
-  const inputs = inputsOf(repeater.components);
+  // A stored row has the child's edit inputs; a new one its create inputs.
+  const editInputs = inputsOf(repeater.components);
+  const createInputs = inputsOf(repeater.createComponents ?? repeater.components);
   const wire = (row: RelationRow, only?: string[]) => {
     const out: Record<string, JsonValue> = {};
-    for (const i of inputs) {
+    for (const i of row.key ? editInputs : createInputs) {
       if (only && !only.includes(i.name)) continue;
       const form = row.values[i.name];
       if (form === undefined) continue;
@@ -98,4 +109,9 @@ export function changeOf(input: InputSchema, value: FormValue): JsonValue | unde
   // Stored rows by key, new rows tagged (`{"new": ref}`): a ref never reads as a key.
   if (repeater.reorderable && state.reordered) change.order = state.rows.map((r) => (r.key ? r.key : { new: refs.get(r)! }));
   return change;
+}
+
+/** The repeater as a new row sees it: the child's create inputs when the schema sends them. */
+export function createView(repeater: RepeaterSchema): RepeaterSchema {
+  return repeater.createComponents ? { ...repeater, components: repeater.createComponents } : repeater;
 }

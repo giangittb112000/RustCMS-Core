@@ -741,9 +741,8 @@ impl<R: Resource> DynResource for ResourceAdapter<R> {
                 _ => None,
             }
         });
-        let parents = self
-            .lock_parents(&wctx, &txn, read_parents.values().flatten().cloned().chain(destination))
-            .await?;
+        let parents =
+            self.lock_parents(&wctx, &txn, read_parents.values().flatten().cloned().chain(destination)).await?;
         let locked = self.lock_rows(&txn, &candidates, Trashed::Without).await?;
         candidates.retain(|k| locked.contains(k));
         let mut allowed = Vec::new();

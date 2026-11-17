@@ -48,7 +48,9 @@ No migration. To roll back, install 0.12.1 again; no data changes shape.
 - **Rust API.** New variants: `Component::Entry` (forms hold entries in
   infolists), `ComponentSchema::Entry`, `PageView::Infolist`. An exhaustive
   `match` on one of these enums needs an arm for it (or `_`). Code
-  implementing `DynResource` itself (not through `Resource`) adds `computed`.
+  implementing `DynResource` itself (not through `Resource`) adds `computed`
+  and `field_locks_media_or_secret`; struct literals of `RepeaterSchema` add
+  `create_components`.
 - **`lock_parent` cannot target the media library** (boot refuses it): media
   rows are locked after every other record of a write.
 - **Name clash.** `rustcms_admin::Condition` (form conditions) can clash with

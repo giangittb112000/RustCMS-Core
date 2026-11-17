@@ -283,8 +283,8 @@ impl<R: Resource> ResourceAdapter<R> {
                     input.options.is_empty() && input.widget.is_none(),
                     "resource `{slug}`: BelongsToManySelect `{name}` takes its options from the relation"
                 );
-                // Writes check media references under shared locks first; locking
-                // the same rows as link targets afterwards would upgrade them.
+                // Media rows are locked last by every write (ADR 0041): links to media
+                // records would lock them in an earlier phase.
                 assert!(
                     relation.target != crate::media::SLUG,
                     "resource `{slug}`: BelongsToManySelect `{name}` cannot link the media library; use a \

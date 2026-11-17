@@ -1,6 +1,6 @@
 # ADR 0040: Repeaters
 
-- Status: accepted (unreleased, vocabulary 15)
+- Status: accepted (0.13.0, vocabulary 15; relationship repeaters amended by ADR 0041, vocabulary 16)
 - Date: 2026-11-15
 
 > **0.13:** relationship repeaters (part 2) follow the lock contract of ADR 0041 (child `lock_parent` required, one locking pass, rows without references or media, counts-only history, tagged refs).
@@ -133,7 +133,7 @@ Repeater::make("lines")
   "create": [{"ref": "n1", "data": {"product_id": 4, "quantity": 2}}],
   "update": [{"key": "8", "data": {"quantity": 3}}],
   "delete": ["9"],
-  "order":  ["8", "n1", "10"]
+  "order":  ["8", {"new": "n1"}, "10"]
 }
 ```
 
@@ -172,9 +172,9 @@ Repeater::make("lines")
   back the parent and every row.
 - **Deleting a child with soft deletes moves it to the trash** (as Filament's
   `delete()`); trashed rows are neither shown nor ordered.
-- **History, on both:** the parent's entry lists the relation's change
-  (`created`, `updated`, `deleted` keys, `reordered`), and each child gets its
-  own entry, as when written from the relation manager.
+- **History, on both:** the parent's entry counts the relation's change
+  (`created`, `updated`, `deleted`, `reordered`; never child keys, ADR 0041),
+  and each child gets its own entry, as when written from the relation manager.
 - **Reads go through the relation's list** (`GET …/relations/{rel}`: child
   scope, view policy, read rules), up to `max_items` (at most 100); with more
   rows the repeater is read-only and points to the relation section.
@@ -186,9 +186,10 @@ Repeater::make("lines")
   from the child, and a JSON repeater in a child row would need the child's
   own declaration); they come later. New rows take positions after every row
   of the parent (trashed ones included) before the order is applied.
-- The parent's history entry is `rows_changed`, its `meta` listing the
-  relation and the keys created, updated and deleted, and whether rows were
-  reordered (the history shows it; field changes stay on each child).
+- The parent's history entry is `rows_changed`, its `meta` holding the
+  relation, how many rows were created, updated and deleted, and whether rows
+  were reordered (the history shows it; which rows and their field changes
+  stay on each child).
 
 ### Schema (vocabulary 15)
 

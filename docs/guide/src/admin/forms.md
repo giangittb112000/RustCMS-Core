@@ -381,7 +381,14 @@ ResourceMeta::new("Line").lock_parent("order_id", "orders")
   order column are set by the server, never inputs.
 - **Not in rows:** `belongs_to` selects, media, rich text, encrypted and
   belongs-to-many fields (edit them on the child's page). Hooks of the child
-  should not write other resources, nor add media to a row.
+  should not write other resources; a hook adding media to a row is a server
+  error (media are locked after every other record of a write).
+- **One repeater per child resource** in a form; a resource with relationship
+  repeaters cannot link media records (belongs-to-many), and cannot lock a
+  parent of its own (`lock_parent` has no chains).
+- **Concurrent saves** of one parent and its children wait for each other;
+  a rare conflict through other records answers 409 ("try again"), nothing
+  saved.
 - **A save sends a change, not the list:** the rows added, the fields changed
   in each row, the rows removed, and the order. Rows the user did not touch,
   rows another user added meanwhile, and rows the user cannot see are never
