@@ -177,7 +177,11 @@ whether it may be changed or removed) and send a change, never the list:
 and `name.ref.input`; `name.key` for a row; `name` for the change. Issue
 codes `not_a_row` (a key that is not a visible child of this record) and
 `row_order`. The parent's history has `rows_changed` entries whose `meta`
-lists `relation`, `created`, `updated`, `deleted`, `reordered`.
+lists `relation`, `created`, `updated`, `deleted` (counts, never child keys)
+and `reordered`. Vocabulary 16: in `order`, a stored row is its key and a new
+row is tagged `{"new": ref}` (a reference never reads as a key; at most 1,000
+rows); edit schemas add `repeater.createComponents`, the inputs of a new row
+(the child's create form), `components` being those of a stored row.
 
 Vocabulary 14 adds infolists (ADR 0039): a view schema (`operation=view`)
 of a resource that declares one carries `infolist` (`InfolistSchema`:
