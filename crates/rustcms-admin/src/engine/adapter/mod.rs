@@ -461,7 +461,7 @@ impl<R: Resource> ResourceAdapter<R> {
         crate::engine::conditions::canonicalize(&mut infolist.components, &kind_of);
 
         Self {
-            // Without `infolist()`, the form read-only (plan branch 4).
+            // Without `infolist()`, the form read-only.
             infolist: Some(if infolist.is_empty() { infolist::from_form(&form, &fields, &columns) } else { infolist }),
             computed,
             table: Entity::<R>::default().table_name().to_owned(),

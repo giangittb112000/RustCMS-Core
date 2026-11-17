@@ -7,12 +7,18 @@ All notable changes are documented here. The format follows
 ## [Unreleased]
 
 ### Changed
-- Admin panel (contributed by @giangittb112000): a record's view page without `infolist()` is drawn by an
-  infolist made from its form, one read-only renderer instead
-  of two; values look as before. A `belongs_to` field's title comes with the
-  record (no request per value) and links to the related record when the user
-  may list it. The view schema carries `infolist` only for a record (with a
-  key).
+- Admin panel: the default view page (contributed by @giangittb112000). A
+  record's view page without `infolist()` is drawn by an infolist made from
+  its form at boot (`InfolistSchema.fromForm`, vocabulary 17), one read-only
+  renderer instead of two; values look as before. Its conditions read fields
+  as the edit form does (the values the form would hold, `null` where the
+  form hides a field); a declared infolist still reads the stored values. A
+  `belongs_to` field's title comes with the record (no request per value) and
+  links to the related record when the user may list it; an encrypted field
+  shows nothing (not even whether it is set). The view schema carries
+  `infolist` only for a record (with a key). A list of records in a text
+  entry shows as indented JSON; a field shown twice at one level no longer
+  logs a duplicate key.
 
 ## [0.13.0] — 2026-11-17
 

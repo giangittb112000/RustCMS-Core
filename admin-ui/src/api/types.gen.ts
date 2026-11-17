@@ -616,7 +616,13 @@ components: Array<ComponentSchema>,
 /**
  * How wide the view page is (absent: the default).
  */
-width?: FormWidth, };
+width?: FormWidth, 
+/**
+ * Made from the record's form (the resource declares no `infolist()`): its
+ * conditions read fields as the edit form does, a declared infolist's the
+ * stored values (vocabulary 17).
+ */
+fromForm?: boolean, };
 
 export type ComputedValues = { 
 /**

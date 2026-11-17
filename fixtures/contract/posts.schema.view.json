@@ -130,7 +130,8 @@
         "type": "text_entry",
         "valueType": "instant"
       }
-    ]
+    ],
+    "fromForm": true
   },
   "operation": "view",
   "relations": [
@@ -306,5 +307,5 @@
     ],
     "searchable": true
   },
-  "vocabularyVersion": 16
+  "vocabularyVersion": 17
 }

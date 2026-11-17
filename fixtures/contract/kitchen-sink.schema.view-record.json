@@ -42,12 +42,27 @@
                     "valueType": "string"
                   },
                   {
+                    "clearWhenHidden": true,
                     "columnSpan": 2,
                     "disabled": true,
                     "label": "Notes",
                     "name": "notes",
                     "nullable": true,
                     "rules": [],
+                    "shownWhen": {
+                      "conditions": [
+                        {
+                          "name": "status",
+                          "op": "filled"
+                        },
+                        {
+                          "name": "status",
+                          "op": "ne",
+                          "value": "archived"
+                        }
+                      ],
+                      "op": "any"
+                    },
                     "type": "textarea",
                     "valueType": "string"
                   }
@@ -384,6 +399,20 @@
                     "label": "Notes",
                     "multiline": true,
                     "name": "notes",
+                    "shownWhen": {
+                      "conditions": [
+                        {
+                          "name": "status",
+                          "op": "filled"
+                        },
+                        {
+                          "name": "status",
+                          "op": "ne",
+                          "value": "archived"
+                        }
+                      ],
+                      "op": "any"
+                    },
                     "type": "text_entry",
                     "valueType": "string"
                   }
@@ -587,6 +616,7 @@
         "type": "split"
       }
     ],
+    "fromForm": true,
     "width": "full"
   },
   "operation": "view",
@@ -783,5 +813,5 @@
     "searchable": true,
     "softDeletes": true
   },
-  "vocabularyVersion": 15
+  "vocabularyVersion": 17
 }

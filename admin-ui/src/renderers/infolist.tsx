@@ -14,7 +14,7 @@ import type { DocNode } from "@/lib/rich-text";
 import { formatWireDate, useLocale, useT } from "@/i18n";
 import { isDateKind } from "@/lib/wire";
 import { formConditions, hasConditions, hiddenFields } from "@/schema/conditions";
-import { isEntry, isLayout, isTextObject } from "@/schema/form";
+import { defaultValues, inputsOf, isEntry, isLayout, isTextObject, wireValues } from "@/schema/form";
 import { SchemaLayout, SplitLayout, TabsLayout, always, gridCols, readOnlyText, shownWith, span, withShownChildren } from "./form";
 import { MediaThumb } from "./media";
 import { RichTextView } from "./rich-text";
@@ -67,21 +67,28 @@ export function hasComputed(components: ComponentSchema[]): boolean {
   return components.some((c) => (isLayout(c) ? hasComputed(c.components) : isEntry(c) && c.computed === true));
 }
 
-/** An infolist's components, its conditions evaluated on `data` (the stored values). */
+/**
+ * An infolist's components, its conditions evaluated on `data`: the stored values for a
+ * declared infolist (ADR 0039), as the edit form reads them for one made from the form.
+ */
 export function InfolistRenderer({ infolist, ...ctx }: { infolist: InfolistSchema } & Context) {
-  const { components } = infolist;
+  const { components, fromForm } = infolist;
   const { form, data } = ctx;
   const shown = useMemo(() => {
     if (!hasConditions(components)) return always;
     const own = formConditions(components);
     if (!form) return shownWith(own, data as Record<string, unknown>);
-    // As the edit form reads them: each field with its kind (the form's for fields the
-    // infolist does not show), and as null when the form hides it.
+    // Each field with its kind (the form's for fields the infolist does not show).
     const edit = formConditions(form);
-    const values: Record<string, unknown> = { ...data };
+    const conditions = { fields: own.fields, kinds: new Map([...edit.kinds, ...own.kinds]) };
+    if (!fromForm) return shownWith(conditions, data as Record<string, unknown>);
+    // Made from the form: the values the edit form would hold (empty for fields not
+    // sent, such as write-only ones), null where the form hides them.
+    const inputs = inputsOf(form);
+    const values: Record<string, unknown> = wireValues(inputs, defaultValues(inputs, data as Record<string, unknown>));
     for (const name of hiddenFields(edit, values)) values[name] = null;
-    return shownWith({ fields: own.fields, kinds: new Map([...edit.kinds, ...own.kinds]) }, values);
-  }, [components, form, data]);
+    return shownWith(conditions, values);
+  }, [components, fromForm, form, data]);
   return <Body components={components} ctx={ctx} shown={shown} />;
 }
 
@@ -104,7 +111,7 @@ function Body({ components, ctx, shown }: {
     }
     if (!isEntry(component)) return null;
     return (
-      <dl key={component.name} className={cn("min-w-0 space-y-2", span(component.columnSpan))}>
+      <dl key={`${component.name}-${index}`} className={cn("min-w-0 space-y-2", span(component.columnSpan))}>
         <dt className="text-sm font-medium text-muted-foreground">{component.label}</dt>
         <dd className="select-text break-words text-sm leading-6" data-fallback={!KNOWN_ENTRIES.has(component.type) || undefined}>
           <EntryValue entry={component} ctx={ctx} />

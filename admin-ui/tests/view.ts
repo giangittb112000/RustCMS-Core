@@ -15,7 +15,10 @@ function entryOf(input: InputSchema): EntrySchema | null {
   if (input.type === "select" && input.relationship) return as("relation_entry", { relationship: input.relationship });
   if ((input.type === "toggle" || input.type === "checkbox") && input.valueType === "bool") return as("boolean_entry");
   if (input.type === "key_value" && input.valueType === "json") return as("key_value_entry");
-  if (input.type === "file_upload") return as("media_entry");
+  // The server falls back to text for an upload on a field that is not a media field
+  // (no `media` in the input's schema). A rich editor on a field that is not rich text
+  // falls back too, which an input's schema does not tell: tests use rich text fields.
+  if (input.type === "file_upload" && input.media) return as("media_entry");
   if (input.type === "rich_editor") return as("rich_text_entry");
   const options = input.options?.length ? input.options : undefined;
   const text = input.type === "text_input";

@@ -556,7 +556,8 @@
         "type": "text_entry",
         "valueType": "string"
       }
-    ]
+    ],
+    "fromForm": true
   },
   "operation": "view",
   "resource": {
@@ -630,5 +631,5 @@
     ],
     "searchable": false
   },
-  "vocabularyVersion": 15
+  "vocabularyVersion": 17
 }

@@ -1,4 +1,4 @@
-// The default view page (plan branch 4): the infolist the server makes from a
+// The default view page: the infolist the server makes from a
 // form draws each value as the form's read-only view did. The two were
 // compared value by value before the read-only view was removed; the
 // snapshots keep what it showed. Also checks tests/view.ts makes the

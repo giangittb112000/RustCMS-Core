@@ -29,6 +29,19 @@
    To upgrade to another version than the command's, install that command
    first (`rustcms self-update --version vX.Y.Z`).
 
+## From 0.13.0 to 0.13.1
+
+No migration. To roll back, install 0.13.0 again; no data changes shape.
+
+- **Default view page.** A resource without `infolist()` is shown by an
+  infolist made from its form instead of the read-only form: values look as
+  before, a `belongs_to` field's title links to the related record when the
+  user may list it, and an encrypted field no longer shows whether it is set.
+  A declared `infolist()` is unchanged.
+- **Schema (vocabulary 17).** `InfolistSchema` gains `fromForm`; a view
+  schema without `key` no longer carries `infolist` (a client drawing a
+  record's view page passes `key`).
+
 ## From 0.12.1 to 0.13.0
 
 No migration. To roll back, install 0.12.1 again; no data changes shape.

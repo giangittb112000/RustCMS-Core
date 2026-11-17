@@ -340,7 +340,7 @@ db_test!(a_declared_infolist_replaces_the_view_page, |db: TestDb| async move {
     let keyless = admin.get(&app.admin_api("resources/courses/schema?operation=view")).await.json();
     assert!(keyless.get("infolist").is_none());
 
-    // A resource without an infolist: entries made from its form (plan branch 4).
+    // A resource without an infolist: entries made from its form.
     let teachers = admin.get(&app.admin_api("resources/teachers/records")).await.json();
     let teacher = teachers["data"][0]["key"].as_str().unwrap().to_owned();
     let made = view_schema(&admin, &app, "teachers", &teacher).await;

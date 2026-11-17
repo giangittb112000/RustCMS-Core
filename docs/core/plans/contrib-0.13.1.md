@@ -6,9 +6,10 @@ Source: contributor commits on `pr3-new` (PR #3 head): view page 06cbfad..de9925
 rich text 7705bb2. Reviews: three Claude agents + Codex (findings below, ids V*, R*, F*).
 
 Order (each part: port, fix, tests, docs, Codex verify, then the next):
-1. **Default view page** — no vocabulary change.
-2. **Rich text v3** — ADR 0042, vocabulary 17, document version 3, SDK `ui` 4.
-3. **Form reactions** — ADR 0043, vocabulary 18.
+1. **Default view page** — vocabulary 17 (`InfolistSchema.fromForm`: a generated infolist reads conditions as
+   the edit form, a declared one the stored values).
+2. **Rich text v3** — ADR 0042, vocabulary 18, document version 3, SDK `ui` 4.
+3. **Form reactions** — ADR 0043, vocabulary 19.
 
 Porting is by hand on top of 0.13.0 (cherry-pick conflicts in infolist/form already at the second commit);
 authorship kept with `Co-authored-by: giangittb112000` and CHANGELOG credit.
@@ -33,14 +34,14 @@ Fixes:
 - V4: `tests/view.ts` mirrors the server's fallbacks (`file_upload` on a non-media field, `rich_editor` on a
   non-rich field → text); the schema carries what it needs, or document the gap in the test.
 - V5: no "plan branch N" in public source comments.
-- Docs: ADR 0039 amendment (default view page; vocabulary stays 16), upgrade.md "From 0.13.0 to 0.13.1": keyless
+- Docs: ADR 0039 amendment (default view page, `fromForm`, vocabulary 17), upgrade.md "From 0.13.0 to 0.13.1": keyless
   `operation=view` no longer returns `infolist`; encrypted fields' set/not-set no longer shown on view pages;
   relation values render as links. Guide infolists (default view page, input→entry table), forms.
 - Tests: `db_test!` that encrypted/encrypted_map/guarded/write-only fields have no generated entry and no schema
   entry, with a non-admin user (per-user `readable` rule); `rustcms_testing::create_table`; reverse checks.
   SPA parity test on fixtures. E2E view-pages with cleanup in `finally`.
 
-## 2. Rich text v3 (ADR 0042, vocabulary 17, document version 3, SDK ui 4)
+## 2. Rich text v3 (ADR 0042, vocabulary 18, document version 3, SDK ui 4)
 
 Port: `features/rich_text/*` and SPA rich text files almost clean (main untouched since base); re-apply
 `rich_nodes` to every `InputRule` construction in main's `engine/adapter/input.rs` and `validate.rs`, the fill
@@ -73,7 +74,7 @@ Fixes:
 - Tests: server on 3 databases (bounds, callout nesting, `node`, version lowering, removal of unknown atoms),
   SPA, E2E.
 
-## 3. Form reactions (ADR 0043, vocabulary 18)
+## 3. Form reactions (ADR 0043, vocabulary 19)
 
 Port onto main's `condition_values(ctx, op, stored.map(|r| (r, viewable)))` and bound-key handling (ADR 0037).
 

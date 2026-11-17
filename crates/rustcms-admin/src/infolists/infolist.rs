@@ -19,6 +19,8 @@ pub struct Infolist {
     pub(crate) columns: u8,
     pub(crate) components: Vec<Component>,
     pub(crate) width: Option<FormWidth>,
+    /// Made from the form (no `infolist()`).
+    pub(crate) from_form: bool,
 }
 
 impl Default for Infolist {
@@ -30,7 +32,7 @@ impl Default for Infolist {
 impl Infolist {
     /// Empty one-column infolist.
     pub fn new() -> Self {
-        Self { columns: 1, components: Vec::new(), width: None }
+        Self { columns: 1, components: Vec::new(), width: None, from_form: false }
     }
 
     /// Number of columns.

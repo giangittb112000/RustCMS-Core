@@ -1,4 +1,4 @@
-//! The default view page (plan branch 4): a resource without `infolist()` is
+//! The default view page: a resource without `infolist()` is
 //! shown by entries made from its form, each drawing its value as the form's
 //! read-only view did. Writes `fixtures/contract/view-page.*.json`, which the
 //! SPA's parity test draws both ways.
@@ -10,7 +10,7 @@ use std::sync::Arc;
 use rustcms_admin::schema::{ComponentSchema, ResourceSchema};
 use rustcms_admin::*;
 use rustcms_testing::{TestDb, db_test};
-use sea_orm::{ConnectionTrait, Schema};
+use sea_orm::Schema;
 use serde_json::{Value, json};
 use support::{CategoryResource, admin, category};
 
@@ -123,7 +123,7 @@ async fn registry(db: &TestDb) -> Arc<Registry> {
         schema.create_table_from_entity(rustcms_core::models::audit_log::Entity).if_not_exists().to_owned(),
         schema.create_table_from_entity(support::note::Entity),
     ] {
-        db.conn().execute(&statement).await.unwrap();
+        rustcms_testing::create_table(db.conn(), &statement).await;
     }
     Registry::new()
         .register::<CategoryResource>()

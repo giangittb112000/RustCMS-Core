@@ -91,10 +91,14 @@ RepeatableEntry::make("faq").schema(components![
 
 `shown_when` works as in forms (see [Showing inputs under conditions](forms.md#showing-inputs-under-conditions)),
 evaluated on the **stored** values. A condition names another entry of the
-infolist; a section's condition applies to everything in it. Values are
-read as the edit form reads them: a field the form hides under its own
-conditions counts as empty (`null`), and a field only the form has (a
-`Hidden` input on the default view page) is compared with its kind.
+infolist, or a field of the form (compared with its kind); a section's
+condition applies to everything in it.
+
+On the [default view page](#the-default-view-page) (no `infolist()`),
+conditions read fields as the edit form does: the value the form would hold
+(a write-only toggle is `false`, a field not sent is empty), and `null` for a
+field the form hides under its own conditions, so the page shows what the
+edit form shows.
 
 ```rust
 KeyValueEntry::make("attributes").shown_when(when("published").is_true())
@@ -120,7 +124,7 @@ that shows its value:
 | `KeyValue`, `FileUpload` (media), `RichEditor` | `KeyValueEntry`, `MediaEntry`, `RichTextEntry` |
 | `Repeater` (JSON) | `RepeatableEntry`, each row's inputs as entries |
 | `CustomInput` | `TextEntry` (a form widget draws no view; declare a `CustomEntry` for one) |
-| `Hidden`, `BelongsToManySelect`, secrets, relationship repeaters | nothing (links and child records show in their relation sections) |
+| `Hidden`, `BelongsToManySelect`, secrets, relationship repeaters | nothing (links and child records show in their relation sections; an encrypted field shows nothing, not even whether it is set) |
 
 An input whose entry does not fit its field (a `Toggle` on a number column)
 is shown as text. Labels, column spans and conditions come from the inputs;

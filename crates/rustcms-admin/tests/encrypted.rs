@@ -312,11 +312,19 @@ db_test!(admin_fields_never_send_secrets, |db: TestDb| async move {
         format!("{record}/history"),
         app.admin_api("resources/vaults/schema?operation=edit"),
         app.admin_api("resources/vaults/schema?operation=view"),
+        app.admin_api(&format!("resources/vaults/schema?operation=view&key={key}")),
         app.admin_api("audit"),
     ] {
         let text = client.get(&url).await.text();
         assert!(!text.contains(MARKER) && !text.contains("rcms1."), "{url}: {text}");
     }
+    // The view page made from the form: no entry for an encrypted field, not even
+    // whether it is set.
+    let view = client.get(&app.admin_api(&format!("resources/vaults/schema?operation=view&key={key}"))).await.json();
+    assert_eq!(view["infolist"]["fromForm"], json!(true));
+    let names: Vec<&str> =
+        view["infolist"]["components"].as_array().unwrap().iter().filter_map(|c| c["name"].as_str()).collect();
+    assert_eq!(names, ["name"], "{view}");
     // Stored: only ciphertext; opens with the keyring.
     let row = vault::Entity::find().one(app.state().db()).await.unwrap().unwrap();
     assert!(!row.token.envelope().contains(MARKER));

@@ -13,7 +13,7 @@ use crate::ui::{
 /// Version of the schema structure.
 pub const SCHEMA_VERSION: u32 = 2;
 /// Version of the component, column and filter vocabulary.
-pub const VOCABULARY_VERSION: u32 = 16;
+pub const VOCABULARY_VERSION: u32 = 17;
 
 /// Navigation entry and identity of a resource.
 #[derive(Debug, Clone, PartialEq, Serialize)]
@@ -495,6 +495,12 @@ pub struct InfolistSchema {
     #[cfg_attr(feature = "ts", ts(as = "Option<FormWidth>", optional))]
     #[serde(skip_serializing_if = "FormWidth::is_default")]
     pub width: FormWidth,
+    /// Made from the record's form (the resource declares no `infolist()`): its
+    /// conditions read fields as the edit form does, a declared infolist's the
+    /// stored values (vocabulary 17).
+    #[cfg_attr(feature = "ts", ts(as = "Option<bool>", optional))]
+    #[serde(rename = "fromForm", skip_serializing_if = "std::ops::Not::not")]
+    pub from_form: bool,
 }
 
 /// `GET records/{key}/computed`: the computed values of a view page.

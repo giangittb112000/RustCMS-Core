@@ -130,7 +130,7 @@ pub(super) fn check_infolist<C: ColumnTrait, E: EntityTrait>(
 
 /// The view page of a resource without `infolist()`: its form shown read-only,
 /// each input as the entry that draws its value as the form's read-only view
-/// always has (plan branch 4). Inputs that show nothing there (hidden,
+/// always has. Inputs that show nothing there (hidden,
 /// belongs-to-many, secrets, relationship repeaters) are left out; an entry
 /// that would not fit its field falls back to text, so no form fails at boot.
 /// Not checked as a declared infolist: the form's own checks hold (a field
@@ -144,7 +144,7 @@ pub(super) fn from_form<C: ColumnTrait>(
         let field = fields.iter().find(|f| f.name == input.name && f.secret.is_none())?;
         form_entry(input, Some((field, columns.get(&field.name)?.kind)))
     });
-    Infolist { columns: form.columns, components, width: None }
+    Infolist { columns: form.columns, components, width: None, from_form: true }
 }
 
 /// The entry showing `input` read-only: of a field (`field`, with its column
@@ -336,6 +336,7 @@ impl<R: Resource> ResourceAdapter<R> {
             columns: infolist.columns,
             components: self.entry_components(ctx, &infolist.components, &links),
             width: infolist.width.unwrap_or(self.form.width),
+            from_form: infolist.from_form,
         })
     }
 
@@ -579,5 +580,6 @@ pub(crate) fn page_infolist_schema(ctx: &Ctx, infolist: &Infolist) -> InfolistSc
         columns: infolist.columns,
         components: walk(ctx, &infolist.components),
         width: infolist.width.unwrap_or_default(),
+        from_form: false,
     }
 }

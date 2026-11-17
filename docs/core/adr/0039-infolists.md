@@ -204,10 +204,10 @@ its timeout exceeds 30 seconds.
   `.readable` says otherwise: an aggregate can disclose more than the
   fields it is built from, so the guide asks to restrict it like a field.
 - The new route needs a case in `fixtures/authz/admin.toml`.
-- Making infolists the default view page, and entries for repeaters, are
-  later branches (plan branches 3 and 4).
+- Making infolists the default view page, and entries for repeaters, came
+  later (ADR 0040, and the amendment below).
 
-## Later: the default view page (plan branch 4)
+## Amendment (0.13.1): the default view page
 
 A resource without `infolist()` now gets one made from its form at boot
 (`from_form`, not public: decision 10 holds). Each input becomes the entry
@@ -226,5 +226,13 @@ at boot.
 - One visible change: a `belongs_to` select shows a `RelationEntry`, whose
   title comes with the record (no request per value) and links when the user
   may list the related resource.
-- Vocabulary unchanged (15): nothing new on the wire but where `infolist`
-  appears.
+- **Conditions.** A made infolist carries `fromForm: true` (vocabulary 17).
+  Its conditions read fields as the edit form does: the values the form
+  would hold (empty for fields not sent, such as write-only ones), `null`
+  where the form's own conditions hide a field, each field with its kind.
+  A declared infolist keeps the rule above (conditions on the stored values),
+  taking from the form only the kinds of fields it does not show; its
+  meaning does not change.
+- No entry for an encrypted field (not even whether it is set: the
+  read-only form printed its masked state).
+- Contributed by @giangittb112000 (PR #3), ported onto 0.13.0 and amended.

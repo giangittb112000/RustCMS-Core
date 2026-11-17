@@ -243,7 +243,7 @@ db_test!(kitchen_sink_contract, |db: TestDb| async move {
     let create = gadgets.schema(&ctx, SchemaOperation::Create, None).await.unwrap();
     let edit = gadgets.schema(&ctx, SchemaOperation::Edit, Some(&created.key)).await.unwrap();
     let view = gadgets.schema(&ctx, SchemaOperation::View, None).await.unwrap();
-    // A record's view page: the form and the entries made from it (plan branch 4).
+    // A record's view page: the form and the entries made from it.
     let viewed = gadgets.schema(&ctx, SchemaOperation::View, Some(&created.key)).await.unwrap();
     let page = gadgets.list(&ctx, &ListQuery::default()).await.unwrap();
     // JSON defaults are not announced (their text is ambiguous); an untouched

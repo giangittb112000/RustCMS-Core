@@ -185,9 +185,10 @@ rows); edit schemas add `repeater.createComponents`, the inputs of a new row
 
 Vocabulary 14 adds infolists (ADR 0039): the view schema of a record
 (`operation=view&key=…`) carries `infolist`, declared or, for a resource
-without one, made from the form (plan branch 4); a view schema without a key
+without one, made from the form; a view schema without a key
 (lists, imports, relation sections) has none (`InfolistSchema`:
-`columns`, `components`, `width`), whose components are layouts and
+`columns`, `components`, `width`, and since vocabulary 17 `fromForm: true`
+when made from the form), whose components are layouts and
 entries: `{type: "text_entry" | "relation_entry" | "boolean_entry" |
 "key_value_entry" | "media_entry" | "rich_text_entry" | "computed_entry" |
 "custom_entry", name, label, valueType, columnSpan, help?, shownWhen?, …}`
@@ -198,7 +199,8 @@ with the options absent when unset (`badge`, `colors`, `copyable`, `limit`,
 `records/{key}/computed`, not from the record's data). Entries of fields the user may not read are left out.
 Clients draw the infolist (the form stays in the schema: the dashboard reads
 its option labels), evaluate its
-conditions on the record's values, read titles of related records from the
+conditions on the record's values (with `fromForm`, as the edit form reads
+them: the values the form would hold, `null` where the form hides a field), read titles of related records from the
 envelope's `labels` (`link`: the user may list the related resource), and
 load computed values from `records/{key}/computed` (a name in `failed`, or
 an error, shows as not available). An entry type whose name ends in `_entry`

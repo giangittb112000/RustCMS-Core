@@ -250,42 +250,51 @@ it("marks badge dates with <time>", () => {
   expect(container.querySelector("time")?.getAttribute("dateTime")).toBe("2026-11-16");
 });
 
-it("reads fields only the form has with their kind, and as null when the form hides them", () => {
+it("reads conditions on the stored values (declared) or as the edit form does (made from the form)", () => {
   const input = (name: string, more: object = {}) =>
     ({ type: "hidden", name, label: name, valueType: "string", nullable: true, disabled: true, rules: [], columnSpan: 1, ...more }) as unknown as ComponentSchema;
   const form = [
     input("rate", { valueType: "decimal" }),
     input("on", { type: "toggle", valueType: "bool" }),
     input("flag", { shownWhen: { op: "is_true", name: "on" } }),
+    input("ok", { type: "toggle", valueType: "bool", nullable: false, writeOnly: true }),
   ];
   const shownBy = (shownWhen: object) => entry("note", { shownWhen } as Partial<EntrySchema>);
-  const shows = (when: object, data: Record<string, unknown>, withForm = true) => {
+  const shows = (when: object, data: Record<string, unknown>, how: "declared" | "fromForm" | "noForm", more: EntrySchema[] = []) => {
     const queryClient = new QueryClient();
     const session = createSession({ basePath: "", apiPath: "http://localhost/admin/api" }, queryClient, () => {});
+    const infolist = { ...list(...more, shownBy(when)), ...(how === "fromForm" ? { fromForm: true } : {}) } as InfolistSchema;
     const { unmount } = render(
       <SessionContext.Provider value={session}><QueryClientProvider client={queryClient}>
-        <InfolistRenderer infolist={list(shownBy(when))} form={withForm ? form : undefined} data={{ note: "Shown", ...data }} />
+        <InfolistRenderer infolist={infolist} form={how === "noForm" ? undefined : form} data={{ note: "Shown", ...data }} />
       </QueryClientProvider></SessionContext.Provider>,
     );
     const found = screen.queryByText("Shown") !== null;
     unmount();
     return found;
   };
-  // A decimal compares by value ("10.50" is 10.5), as the form does; without the form, as written.
-  expect(shows({ op: "eq", name: "rate", value: "10.5" }, { rate: "10.50" })).toBe(true);
-  expect(shows({ op: "eq", name: "rate", value: "10.5" }, { rate: "10.50" }, false)).toBe(false);
-  // A field the form hides reads as null, though the record holds a value.
-  expect(shows({ op: "filled", name: "flag" }, { on: false, flag: "x" })).toBe(false);
-  expect(shows({ op: "filled", name: "flag" }, { on: true, flag: "x" })).toBe(true);
-  // The same when the infolist shows the field itself, without a condition.
-  const queryClient = new QueryClient();
-  const session = createSession({ basePath: "", apiPath: "http://localhost/admin/api" }, queryClient, () => {});
-  render(
-    <SessionContext.Provider value={session}><QueryClientProvider client={queryClient}>
-      <InfolistRenderer infolist={list(entry("flag"), shownBy({ op: "filled", name: "flag" }))} form={form} data={{ note: "Shown", on: false, flag: "x" }} />
-    </QueryClientProvider></SessionContext.Provider>,
-  );
-  expect(screen.queryByText("Shown")).toBeNull();
+  // A decimal compares by value ("10.50" is 10.5) with the form's kinds; without the form, as written.
+  expect(shows({ op: "eq", name: "rate", value: "10.5" }, { rate: "10.50" }, "declared")).toBe(true);
+  expect(shows({ op: "eq", name: "rate", value: "10.5" }, { rate: "10.50" }, "fromForm")).toBe(true);
+  expect(shows({ op: "eq", name: "rate", value: "10.5" }, { rate: "10.50" }, "noForm")).toBe(false);
+  // Made from the form: a field the form hides reads as null, though the record holds a value.
+  expect(shows({ op: "filled", name: "flag" }, { on: false, flag: "x" }, "fromForm")).toBe(false);
+  expect(shows({ op: "filled", name: "flag" }, { on: true, flag: "x" }, "fromForm")).toBe(true);
+  // Declared: the stored value (ADR 0039), even when the infolist shows the field itself.
+  expect(shows({ op: "filled", name: "flag" }, { on: false, flag: "x" }, "declared")).toBe(true);
+  expect(shows({ op: "filled", name: "flag" }, { on: false, flag: "x" }, "declared", [entry("flag")])).toBe(true);
+  // A write-only toggle is not sent: the edit form holds false, the stored values nothing.
+  expect(shows({ op: "eq", name: "ok", value: false }, {}, "fromForm")).toBe(true);
+  expect(shows({ op: "eq", name: "ok", value: false }, {}, "declared")).toBe(false);
+});
+
+it("draws a field shown twice at one level without a duplicate key", () => {
+  const errors: unknown[] = [];
+  const spy = vi.spyOn(console, "error").mockImplementation((...args) => { errors.push(args); });
+  draw(list(entry("title"), entry("title")), { title: "Twice" });
+  expect(screen.getAllByText("Twice")).toHaveLength(2);
+  expect(errors).toEqual([]);
+  spy.mockRestore();
 });
 
 it("shows records in a list as indented JSON", () => {
