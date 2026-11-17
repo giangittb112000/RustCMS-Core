@@ -13,19 +13,27 @@ pub fn markdown(cli: &Command, runtime: &Command, auth: &Command, admin: &Comman
          (`./blog <command>`); `cargo run -- --help` lists them all, the application's own included.\n\n\
          ## Global commands\n\n",
     );
-    section(&mut out, cli, &["help"]);
+    section(&mut out, cli, &["help"], &[]);
     out.push_str("## Application commands\n\n");
-    section(&mut out, runtime, &["help"]);
+    section(&mut out, runtime, &["help"], RUSTCMS_ONLY);
     out.push_str("## Auth commands\n\nAdded by `AuthProvider` (registered in new applications).\n\n");
-    section(&mut out, auth, &[]);
+    section(&mut out, auth, &[], &[]);
     out.push_str("## Admin panel commands\n\nAdded by `AdminProvider` (`media:prune` with `media()`).\n\n");
-    section(&mut out, admin, &[]);
+    section(&mut out, admin, &[], &[]);
     // Help text is shown as written: `{{ … }}` is not a template.
     out.push_str(":::\n");
     out
 }
 
-fn section(out: &mut String, command: &Command, skip: &[&str]) {
+/// Arguments this CLI handles itself before running the application's command:
+/// (command, argument, description).
+const RUSTCMS_ONLY: &[(&str, &str, &str)] = &[(
+    "serve",
+    "`--watch`",
+    "With `rustcms` only (macOS, Linux): rebuild and replace the server when the application's files change; a failed build keeps the running server",
+)];
+
+fn section(out: &mut String, command: &Command, skip: &[&str], extra: &[(&str, &str, &str)]) {
     for sub in command.get_subcommands().filter(|s| !skip.contains(&s.get_name())) {
         let _ = writeln!(out, "### `{}`\n", sub.get_name());
         if let Some(about) = sub.get_about() {
@@ -45,7 +53,8 @@ fn section(out: &mut String, command: &Command, skip: &[&str]) {
                     )
             })
             .collect();
-        if args.is_empty() {
+        let extra: Vec<_> = extra.iter().filter(|(command, ..)| *command == sub.get_name()).collect();
+        if args.is_empty() && extra.is_empty() {
             continue;
         }
         out.push_str("| Argument | Description |\n|---|---|\n");
@@ -63,6 +72,9 @@ fn section(out: &mut String, command: &Command, skip: &[&str]) {
                 .map(|d| format!(" (default: `{d}`)"))
                 .unwrap_or_default();
             let _ = writeln!(out, "| {name} | {help}{default} |");
+        }
+        for (_, name, help) in extra {
+            let _ = writeln!(out, "| {name} | {help} |");
         }
         out.push('\n');
     }

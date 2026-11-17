@@ -34,6 +34,7 @@ rustcms make:resource Post --generate
 rustcms migrate
 rustcms make:user --email you@example.com --name You --super-admin
 rustcms serve                                  # http://localhost:8000/admin
+rustcms serve --watch                          # or: rebuild and restart on changes
 ```
 
 Working on RustCMS itself: `cargo install --path crates/rustcms-cli`, and
@@ -54,6 +55,10 @@ cargo run -- migrate && cargo run -- db:seed && cargo run -- serve
 
 - **Resources → admin panel**: forms, tables, filters, actions and relationship
   selects generated from Rust; field- and record-level authorization on every path.
+- **Forms and view pages**: inputs shown under conditions (`shown_when`), number
+  bounds, repeaters (JSON rows, or a has-many relation's records edited in the
+  parent's form), count columns, infolists with computed values, titles from
+  several fields.
 - **Auth**: admin sessions (CSRF, Origin checks, rotation) and API tokens with
   abilities; immediate revocation; rate limits.
 - **Roles & permissions** per guard, escalation-safe (`RbacService`), with Users,
@@ -64,7 +69,7 @@ cargo run -- migrate && cargo run -- db:seed && cargo run -- serve
 - **Branding**: a static theme, or a brand, logos and colors chosen while the
   app runs (`AdminProvider::branding`).
 - **CLI**: `new`, `make:model|migration|resource|policy|test`, `route:list`,
-  `migrate*`, `make:user`, `token:create`, `permission:sync`.
+  `migrate*`, `make:user`, `token:create`, `permission:sync`, `serve --watch`.
 - **Testing kit**: every database test runs on SQLite, PostgreSQL and MySQL;
   `acting_as`, `login_as`, `with_token`, factories.
 
