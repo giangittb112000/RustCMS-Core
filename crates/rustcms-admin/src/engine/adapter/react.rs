@@ -256,7 +256,9 @@ impl<R: Resource> ResourceAdapter<R> {
                 Err((field, reason)) => dropped(&field, reason),
             }
         }
-        Some(kept)
+        // Time ran out during the last check, or in the reaction's own
+        // synchronous work (an answer is never late and successful).
+        (tokio::time::Instant::now() < deadline).then_some(kept)
     }
 
     /// `patch` as the panel applies it (`None`: it changes nothing), applied
@@ -314,7 +316,11 @@ impl<R: Resource> ResourceAdapter<R> {
             }
             // As a save would store it: rows checked, values canonical.
             let value = match self.repeaters.get(field.as_str()) {
-                // `null` passed the input's checks (a nullable column): cleared.
+                // `null` passed the input's checks (a nullable column): cleared,
+                // unless the repeater needs rows.
+                Some(rows) if value.is_null() && rows.min_items().is_some() => {
+                    return Err(fail("rows the repeater refuses"));
+                }
                 _ if value.is_null() => Value::Null,
                 Some(rows) => {
                     rows.check(&field, value, &mut errors).ok_or_else(|| fail("rows the repeater refuses"))?

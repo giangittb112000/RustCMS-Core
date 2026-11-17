@@ -353,7 +353,8 @@ registerRichTextNode("app.kbd", {
   it accepts each node: a document over 256 KiB once completed is refused
   (`may not be larger than 256 KiB`), whatever was sent. A node's defaults
   take at most 1 KiB together (boot). `AppNodes::complete` uses the same
-  parse.
+  parse. An element sent with `"attrs": null` is counted as one sent without
+  `attrs` (a few bytes stricter, never looser).
 - **The server stores the lowest version.** Every rich text write (form, API,
   import, hook) stores the document in the lowest version its parts need, not
   only the editor's; an image caption or width (even empty) needs version 2.
