@@ -731,7 +731,19 @@ impl<R: Resource> DynResource for ResourceAdapter<R> {
             .filter(|(model, _)| candidates.contains(&self.key_of(model)))
             .map(|(model, _)| (self.key_of(model), self.parent_of_model(model)))
             .collect();
-        let parents = self.lock_parents(&wctx, &txn, read_parents.values().flatten().cloned()).await?;
+        // An action moving records (its form's `belongs_to` field of the locked
+        // parent) locks the destination with them, in the same pass.
+        let destination = self.meta.parent_lock.as_ref().and_then(|(field, target)| {
+            action.form.iter().find(|f| f.name == *field && f.belongs_to == Some(*target))?;
+            match data.get(field.as_str())? {
+                serde_json::Value::String(key) => Some(key.clone()),
+                serde_json::Value::Number(key) => Some(key.to_string()),
+                _ => None,
+            }
+        });
+        let parents = self
+            .lock_parents(&wctx, &txn, read_parents.values().flatten().cloned().chain(destination))
+            .await?;
         let locked = self.lock_rows(&txn, &candidates, Trashed::Without).await?;
         candidates.retain(|k| locked.contains(k));
         let mut allowed = Vec::new();
