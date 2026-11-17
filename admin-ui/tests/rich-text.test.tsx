@@ -132,7 +132,7 @@ describe("version 2 documents", () => {
     ]) {
       expect(asDocument({ type: "doc", version: 2, content: [node] }), JSON.stringify(node)).toBeNull();
     }
-    expect(asDocument({ type: "doc", version: 3, content: [] })).toBeNull();
+    expect(asDocument({ type: "doc", version: 4, content: [] })).toBeNull();
   });
 });
 

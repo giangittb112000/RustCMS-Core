@@ -16,6 +16,33 @@
         "api_token": {
           "state": "unset"
         },
+        "body": {
+          "content": [
+            {
+              "content": [
+                {
+                  "marks": [
+                    {
+                      "type": "underline"
+                    }
+                  ],
+                  "text": "Press",
+                  "type": "text"
+                },
+                {
+                  "attrs": {
+                    "keys": "Ctrl+S",
+                    "size": "m"
+                  },
+                  "type": "app.kbd"
+                }
+              ],
+              "type": "paragraph"
+            }
+          ],
+          "type": "doc",
+          "version": 3
+        },
         "category_id": 1,
         "colors": [
           "red"

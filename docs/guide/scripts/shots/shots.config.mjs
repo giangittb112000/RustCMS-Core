@@ -255,6 +255,36 @@ export const SHOTS = [
     site: 'local',
     path: '/r/posts/records/2/edit',
     element: '[role="toolbar"] >> xpath=..',
+    // Content showing the editor's nodes (written to the local demo, then shown).
+    actions: async (page) => {
+      await page.evaluate(async () => {
+        const text = (t, ...marks) => ({ type: 'text', text: t, ...(marks.length ? { marks: marks.map((type) => ({ type })) } : {}) })
+        const p = (...content) => ({ type: 'paragraph', content })
+        const cell = (type, t) => ({ type, content: [p(text(t))] })
+        const row = (type, a, b) => ({ type: 'tableRow', content: [cell(type, a), cell(type, b)] })
+        const content = {
+          type: 'doc',
+          version: 3,
+          content: [
+            { type: 'heading', attrs: { level: 2 }, content: [text('Release notes')] },
+            p(text('This release brings '), text('faster builds', 'bold'), text(' and a new '), text('import', 'underline'), text(' flow. Save with '),
+              { type: 'app.kbd', attrs: { keys: 'Ctrl+S' } }, text('; area in m'), text('2', 'superscript'), text('.')),
+            { type: 'table', content: [row('tableHeader', 'Feature', 'Status'), row('tableCell', 'CSV import', 'Ready'), row('tableCell', 'Scheduled posts', 'In review')] },
+            { type: 'embed', attrs: { provider: 'youtube', id: 'aqz-KE-bpKQ' } },
+            { type: 'callout', attrs: { tone: 'info' }, content: [p(text('Upgrade notes are in the guide.'))] },
+          ],
+        }
+        const { csrfToken } = await (await fetch('/admin/api/auth/csrf')).json()
+        const saved = await fetch('/admin/api/resources/posts/records/2', {
+          method: 'PATCH',
+          headers: { 'X-CSRF-Token': csrfToken, 'Content-Type': 'application/json' },
+          body: JSON.stringify({ content }),
+        })
+        if (!saved.ok) throw new Error(`saving the sample content: ${saved.status}`)
+      })
+      await page.reload()
+      await page.getByRole('textbox', { name: 'Content' }).locator('.demo-kbd').waitFor()
+    },
     settle: 1500,
   },
   // admin/import-export.md

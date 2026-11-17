@@ -33,6 +33,21 @@ impl<R: Resource> DynResource for ResourceAdapter<R> {
         &self.relations
     }
 
+    fn attach_rich_nodes(&self, nodes: &Arc<crate::rich_text::AppNodes>) {
+        for field in &self.fields {
+            for name in &field.rich_nodes {
+                assert!(
+                    nodes.get(name).is_some(),
+                    "resource `{}`: field `{}` accepts the rich text node `{name}`, which is not declared \
+                     (`AdminProvider::rich_text_node`)",
+                    R::SLUG,
+                    field.name
+                );
+            }
+        }
+        let _ = self.rich_nodes.set(nodes.clone());
+    }
+
     fn field_link(&self, name: &str) -> Option<(Option<&'static str>, &'static str)> {
         self.field(name).map(|f| (f.belongs_to, self.column(name).kind.name()))
     }

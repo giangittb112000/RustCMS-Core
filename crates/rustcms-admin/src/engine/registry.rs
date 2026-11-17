@@ -28,6 +28,11 @@ pub trait DynResource: Send + Sync {
     fn targets(&self) -> Vec<&'static str>;
     /// Has-many relations.
     fn relations(&self) -> &[Relation];
+    /// Gives the resource the panel's rich text nodes (once, at boot).
+    ///
+    /// # Panics
+    /// When a field accepts a node that is not declared.
+    fn attach_rich_nodes(&self, nodes: &Arc<crate::rich_text::AppNodes>);
     /// `belongs_to` slug and wire kind of field `name`, if it is a field.
     fn field_link(&self, name: &str) -> Option<(Option<&'static str>, &'static str)>;
     /// Wire kind of the primary key.
@@ -266,6 +271,10 @@ pub struct Registry {
     lock_order: HashMap<&'static str, usize>,
     /// The application's media hooks ([`crate::AdminProvider::media_hook`]).
     media_hooks: Vec<Arc<dyn crate::media::MediaHook>>,
+    /// The application's rich text nodes ([`crate::AdminProvider::rich_text_node`]).
+    rich_nodes: crate::rich_text::AppNodes,
+    /// The same, shared with the resources (set by [`Registry::finish`]).
+    rich_table: Arc<crate::rich_text::AppNodes>,
 }
 
 impl Registry {
@@ -278,6 +287,21 @@ impl Registry {
     pub fn media_hook(mut self, hook: impl crate::media::MediaHook) -> Self {
         self.media_hooks.push(Arc::new(hook));
         self
+    }
+
+    /// Declares a rich text node (see [`crate::rich_text::RichTextNode`]).
+    ///
+    /// # Panics
+    /// On an invalid declaration or a name declared twice.
+    pub fn rich_text_node(mut self, node: crate::rich_text::RichTextNode) -> Self {
+        self.rich_nodes.add(node);
+        self
+    }
+
+    /// The panel's rich text nodes (after [`Registry::finish`]): parse and
+    /// render documents with the declarations the panel checks them against.
+    pub fn rich_nodes(&self) -> &Arc<crate::rich_text::AppNodes> {
+        &self.rich_table
     }
 
     /// The media hooks, in registration order.
@@ -319,7 +343,12 @@ impl Registry {
     ///
     /// # Panics
     /// When a target slug is unknown.
-    pub fn finish(self) -> Arc<Self> {
+    pub fn finish(mut self) -> Arc<Self> {
+        let nodes = Arc::new(std::mem::take(&mut self.rich_nodes));
+        for resource in self.resources.values() {
+            resource.attach_rich_nodes(&nodes);
+        }
+        self.rich_table = nodes;
         // Pivot tables already used by a relation (one relation per pivot).
         let mut pivots = HashMap::new();
         for resource in self.resources.values() {

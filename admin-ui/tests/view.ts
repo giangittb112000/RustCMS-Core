@@ -16,7 +16,7 @@ function entryOf(input: InputSchema): EntrySchema | null {
   if ((input.type === "toggle" || input.type === "checkbox") && input.valueType === "bool") return as("boolean_entry");
   if (input.type === "key_value" && input.valueType === "json") return as("key_value_entry");
   if (input.type === "file_upload") return as("media_entry");
-  if (input.type === "rich_editor") return as("rich_text_entry");
+  if (input.type === "rich_editor") return as("rich_text_entry", { richNodes: input.richNodes });
   const options = input.options?.length ? input.options : undefined;
   const text = input.type === "text_input";
   return as("text_entry", {

@@ -27,7 +27,7 @@ import { Infolist } from "@/renderers/infolist";
  * props of v2 views. A bundle needs a level at most this one; removing
  * anything takes host API 3.
  */
-export const UI_VERSION = 3;
+export const UI_VERSION = 4;
 
 /** The panel's versions, for `requires`. */
 export const HOST_VERSIONS = Object.freeze({

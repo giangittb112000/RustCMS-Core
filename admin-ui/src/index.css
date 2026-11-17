@@ -170,6 +170,12 @@ body:has(dialog[open]) {
 .rich-embed { display: flex; flex-direction: column; gap: 0.125rem; border: 1px solid var(--color-border); border-radius: 0.375rem; background: var(--color-muted); padding: 0.5rem 0.75rem; font-size: 0.875rem; }
 .rich-embed-provider { font-weight: 600; }
 .rich-embed-url { color: var(--color-muted-foreground); overflow-wrap: anywhere; }
+/* Application nodes (rich text version 3): a placeholder when no extension draws them. */
+.rich-app-node { display: inline-block; vertical-align: baseline; white-space: normal; }
+.rich-app-block { display: block; margin: 0.5rem 0; }
+.rich-app-placeholder { display: inline-flex; align-items: center; border: 1px dashed var(--color-border); border-radius: 0.375rem; background: var(--color-muted); padding: 0 0.375rem; font-size: 0.8125rem; color: var(--color-muted-foreground); }
+.rich-app-block .rich-app-placeholder { display: flex; padding: 0.5rem 0.75rem; }
+.rich-app-placeholder[data-selected], .rich-app-view[data-selected] { outline: 2px solid var(--color-ring); outline-offset: 1px; }
 .rich-text figure.rich-embed.ProseMirror-selectednode { outline: 2px solid var(--color-ring); }
 .rich-text .rich-callout { border-left: 4px solid var(--color-ring); border-radius: 0.375rem; background: var(--color-muted); padding: 0.5rem 0.75rem; }
 .rich-text .rich-callout[data-tone="warn"] { border-left-color: var(--color-destructive); }

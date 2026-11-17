@@ -112,3 +112,8 @@ Following "format changes need a new version and a migration path":
   sent again after `Retry-After` with the same key.
 - Media references in settings (`SettingField::media`, `media_list`) are
   checked by the same `media::check_references` as resource fields.
+
+## Amendment (0.13): document version 3
+
+Underline, superscript, subscript and application nodes (`app.*`): see
+ADR 0042.

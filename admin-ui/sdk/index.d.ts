@@ -154,6 +154,35 @@ export declare function registerSlot<D, R>(name: string, component: React.Compon
 export declare function registerCell<V, R, P>(name: string, component: React.ComponentType<CellProps<V, R, P>>): void;
 export declare function registerEntry<V, R, P>(name: string, component: React.ComponentType<EntryProps<V, R, P>>): void;
 
+/** `ui` 4: what a rich text node's `view` gets (a copy: changing it changes nothing). */
+export interface RichNodeViewProps<A = Record<string, unknown>> {
+  /** The node's name (`app.…`). */
+  name: string;
+  /** Its attributes, checked against the declaration, defaults filled in. */
+  attrs: Readonly<A>;
+  /** Inside text, or a block. */
+  inline: boolean;
+  locale: string;
+  /** `text` in the panel's language (`registerTranslations` catalogs). */
+  t(text: string): string;
+}
+
+/** `ui` 4: what a rich text node's `edit` gets: the attributes being edited. */
+export interface RichNodeEditProps<A = Record<string, unknown>> {
+  name: string;
+  attrs: Readonly<A>;
+  /** Reports new attributes; applied when they fit the declaration. */
+  onChange(attrs: A): void;
+  locale: string;
+  t(text: string): string;
+}
+
+/** `ui` 4: how a rich text node (`AdminProvider::rich_text_node`) is shown and edited. */
+export declare function registerRichTextNode<A = Record<string, unknown>>(
+  name: `app.${string}`,
+  renderer: { view?: React.ComponentType<RichNodeViewProps<A>>; edit?: React.ComponentType<RichNodeEditProps<A>> },
+): void;
+
 export declare function queryPairs(query?: Query): Array<[string, string]>;
 export declare function adminKey(props: WithApi, path: string, query?: Query): unknown[];
 
@@ -178,8 +207,8 @@ export declare function useSocket(
   options?: { reconnect?: boolean },
 ): { send(data: string | ArrayBuffer | ArrayBufferView): boolean };
 
-/** The panel level this SDK is built for: declare `Requires { ui: 3, … }`. */
-export declare const SDK_UI: 3;
+/** The panel level this SDK is built for: declare `Requires { ui: 4, … }`. */
+export declare const SDK_UI: 4;
 
 /** Field errors of a refused write (422): `{ field: [messages] }`, `{}` otherwise. */
 export declare function fieldErrors(error: unknown): Record<string, string[]>;

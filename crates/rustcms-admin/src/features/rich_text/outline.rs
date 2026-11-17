@@ -25,7 +25,17 @@ pub struct Heading {
 /// [`slug`] of their text, `-2`, `-3`, … added to repeats (`section` for a
 /// heading without letters or digits). Ids depend only on the headings'
 /// texts and order, so they stay the same across renders.
+///
+/// Application nodes count with no text here: for a document holding some,
+/// use [`Html::outline`] with the same [`Html::nodes`] as the HTML, so the ids
+/// match those [`Html::render`] writes.
 pub fn outline(doc: &Document) -> Vec<Heading> {
+    outline_with(doc, None)
+}
+
+/// [`outline`], application nodes inside headings counting with their text
+/// (when declared in `nodes`).
+pub(super) fn outline_with(doc: &Document, nodes: Option<&AppNodes>) -> Vec<Heading> {
     let mut used = HashSet::new();
     // The last suffix tried for each base: every smaller one is taken (the
     // set only grows), so repeats cost the same however many there are.
@@ -37,6 +47,7 @@ pub fn outline(doc: &Document) -> Vec<Heading> {
         walk(children, &mut |inline| match inline {
             Node::Text(t, _) => text.push_str(t),
             Node::HardBreak => text.push(' '),
+            Node::App(node) => text.push_str(&super::html::app_text(node, nodes)),
             _ => {}
         });
         let text = text.trim().to_owned();
