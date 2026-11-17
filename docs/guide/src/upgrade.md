@@ -38,10 +38,11 @@ No migration. To roll back, install 0.13.0 again; no data changes shape.
   before, a `belongs_to` field's title links to the related record when the
   user may list it, and an encrypted field no longer shows whether it is set.
   A declared `infolist()` is unchanged.
-- **Schema (vocabulary 18).** `InfolistSchema` gains `fromForm`; a view
+- **Schema (vocabulary 19).** `InfolistSchema` gains `fromForm`; a view
   schema without `key` no longer carries `infolist` (a client drawing a
   record's view page passes `key`); `InputSchema` and rich text entries gain
-  `richNodes`.
+  `richNodes`, inputs gain `reacts` (form reactions, a new route
+  `form/react`).
 - **Rich text version 3** (underline, superscript, subscript, application
   elements). Documents are stored in the lowest version they need, so 0.13.0
   still reads every document without a version 3 part. **Rollback:** 0.13.0

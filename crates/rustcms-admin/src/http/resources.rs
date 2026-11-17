@@ -145,6 +145,49 @@ pub(super) async fn computed(
     Ok(Json(resource(&ctx, &slug)?.computed(&ctx, &key).await?))
 }
 
+/// Form reaction requests per user per minute (each runs application code
+/// while the user types).
+const REACTIONS_PER_MINUTE: u32 = 120;
+
+/// The changes a form's reaction asks for (ADR 0043), limited per user. Who
+/// may fill one of the resource's forms is checked, and the request counted,
+/// before the body is read (the same 403 whatever it holds).
+pub(super) async fn react(
+    State(app): State<AppState>,
+    AdminCtx(ctx): AdminCtx,
+    Path(slug): Path<String>,
+    request: axum::extract::Request,
+) -> AppResult<Json<crate::schema::FormReactResponse>> {
+    let target = resource(&ctx, &slug)?;
+    if !target.admits(&ctx, ability::CREATE).await && !target.admits(&ctx, ability::UPDATE).await {
+        return Err(AppError::Forbidden);
+    }
+    let auth =
+        app.service::<rustcms_auth::AuthState>().ok_or_else(|| AppError::internal("AuthProvider not registered"))?;
+    auth.limiter.reserve(&[(&format!("form-react:{}", ctx.principal.id), REACTIONS_PER_MINUTE)]).await?;
+    let request: crate::schema::FormReactRequest = super::extract::json_body(request, &app).await?;
+    // A create form opened through a relation: authorized as that create is
+    // (`relation_create`), the relation's key bound as the save binds it.
+    let ctx = match &request.via {
+        None => ctx,
+        Some(via) => {
+            let (parent, relation, _) = super::relations::relation_of(&ctx, &via.parent, &via.relation)?;
+            let (_, creatable) = target.field_access(&ctx, relation.field);
+            if relation.is_many()
+                || relation.target != slug
+                || request.operation != SchemaOperation::Create
+                || !creatable
+                || !parent.admits(&ctx, ability::VIEW).await
+            {
+                return Err(AppError::Forbidden);
+            }
+            let canonical = parent.visible_key(&ctx, &via.record).await?;
+            ctx.with_bound((format!("{}.{}", via.parent, via.relation), relation.field.to_owned(), canonical))
+        }
+    };
+    Ok(Json(target.react(&ctx, request).await?))
+}
+
 /// The request's `Idempotency-Key`, validated.
 pub(crate) fn idempotency_key(headers: &axum::http::HeaderMap) -> AppResult<Option<String>> {
     match headers.get(crate::idempotency::HEADER) {

@@ -166,6 +166,11 @@ impl Rows {
         self.min_items.filter(|n| *n > 0)
     }
 
+    /// Most rows, when declared.
+    pub(crate) fn max_items(&self) -> Option<usize> {
+        self.max_items
+    }
+
     /// The smallest row the server may store: each required input no
     /// condition can hide, with a sample value; every other input left out
     /// (as empty or hidden inputs are). Boot checks that a settings struct
@@ -227,8 +232,27 @@ impl Rows {
         if let Some(max) = self.max_items.filter(|max| rows.len() > *max) {
             errors.add(path, format!("may not have more than {max} items"));
         }
+        let out = self.check_each(path, 0, rows, errors);
+        (count(errors) == before).then_some(Value::Array(out))
+    }
+
+    /// Whether a list of `len` rows has the number of rows declared.
+    pub(crate) fn fits(&self, len: usize) -> bool {
+        self.min_items.is_none_or(|min| len >= min) && self.max_items.is_none_or(|max| len <= max)
+    }
+
+    /// Checks each of `rows`, numbered from `first` in `path`; returns them
+    /// as stored. The list's own bounds are the caller's.
+    pub(crate) fn check_each(
+        &self,
+        path: &str,
+        first: usize,
+        rows: &[Value],
+        errors: &mut ValidationErrors,
+    ) -> Vec<Value> {
         let mut out = Vec::with_capacity(rows.len());
         for (index, row) in rows.iter().enumerate() {
+            let index = first + index;
             let at = format!("{path}.{index}");
             let Some(row) = row.as_object() else {
                 errors.add(at.as_str(), "is invalid");
@@ -302,7 +326,7 @@ impl Rows {
             }
             out.push(Value::Object(kept));
         }
-        (count(errors) == before).then_some(Value::Array(out))
+        out
     }
 }
 
@@ -344,7 +368,12 @@ pub(crate) fn check_spec(here: &str, spec: &RepeaterSpec) {
                     layouts(here, &layout.children);
                 }
                 Component::Entry(_) => panic!("{here}: a row holds inputs, not entries"),
-                Component::Input(_) => {}
+                // Reactions belong to the form's own inputs (ADR 0041).
+                Component::Input(input) => assert!(
+                    input.reaction.is_none(),
+                    "{here}: row input `{}` cannot react (`.reacts()` is for the form's own inputs)",
+                    input.name
+                ),
             }
         }
     }
@@ -418,6 +447,7 @@ pub(crate) fn rows_schema(
                         integer: input.integer,
                         repeater: input.repeater.as_deref().map(|nested| Box::new(rows_schema(nested, t, disabled))),
                         rich_nodes: Vec::new(),
+                        reacts: false,
                     }))
                 }
             })

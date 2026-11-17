@@ -102,6 +102,8 @@ pub struct Input {
     pub(crate) clear_when_hidden: bool,
     /// Repeaters: their rows (boxed: most inputs are not repeaters).
     pub(crate) repeater: Option<Box<super::repeater::RepeaterSpec>>,
+    /// The input's reaction (ADR 0043; boxed: most inputs have none).
+    pub(crate) reaction: Option<Box<super::reactions::Reaction>>,
     /// JSON repeater rows: rules a field gives elsewhere.
     pub(crate) required: bool,
     pub(crate) max_length: Option<usize>,
@@ -131,6 +133,7 @@ impl Input {
             shown_when: None,
             clear_when_hidden: false,
             repeater: None,
+            reaction: None,
             required: false,
             max_length: None,
             integer: false,
@@ -225,6 +228,37 @@ impl Input {
     /// (instead of keeping the stored value). For inputs with a condition.
     pub fn clear_when_hidden(mut self) -> Self {
         self.clear_when_hidden = true;
+        self
+    }
+
+    /// Runs `react` on the server when the user changes this input (after a
+    /// short pause in typing), and applies the changes it answers with (ADR
+    /// 0041). It sees the fields the user may read; the changes are checked
+    /// as the user's own input would be, and the save is checked anyway.
+    ///
+    /// ```rust,ignore
+    /// TextInput::make("name").reacts(|_ctx, state| {
+    ///     let slug = slugify(state.text("name"));
+    ///     Box::pin(async move { Ok(vec![FormPatch::set_if_empty("slug", slug)]) })
+    /// })
+    /// ```
+    pub fn reacts<F>(mut self, react: F) -> Self
+    where
+        F: for<'a> Fn(
+                &'a crate::Ctx,
+                &'a super::FormState,
+            ) -> crate::BoxFuture<'a, rustcms_core::AppResult<Vec<super::FormPatch>>>
+            + Send
+            + Sync
+            + 'static,
+    {
+        self.reaction.get_or_insert_default().run = Some(std::sync::Arc::new(react));
+        self
+    }
+
+    /// How long the reaction may take (default 5 seconds, at most 30).
+    pub fn reaction_timeout(mut self, timeout: std::time::Duration) -> Self {
+        self.reaction.get_or_insert_default().timeout = timeout;
         self
     }
 

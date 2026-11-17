@@ -30,6 +30,7 @@ in runtime mode the page is rendered per request (static mode renders it once); 
 | GET | `/resources/{slug}/records?…` | `{data: [Envelope], meta}` |
 | POST | `/resources/{slug}/records` | 201 `{data: Envelope}` |
 | GET / PATCH / DELETE | `/resources/{slug}/records/{key}` | `{data: Envelope}` / `{data: Envelope}` / 204 |
+| POST | `/resources/{slug}/form/react` | `FormReactRequest` `{operation: "create" \| "edit", key?, changed, state, previous?, via?: {parent, record, relation}, seq}` → `FormReactResponse` `{seq, patches, failed?}`: the changes the reaction of input `changed` asks for (ADR 0043). Before the body is read: 403 unless the user may create or update records of the resource, and 120 requests per user per minute; then create: `create` (through `via`, as that relation creates), edit: `update` on the record, in scope; `view` is 422, as is an input without a reaction or a JSON repeater sent with more rows than it holds; 2 reactions at once per user and 8 in all (429 beyond) |
 | GET | `/resources/{slug}/records/{key}/computed` | `ComputedValues` `{data: {name: value}, failed: [name]}`: the computed values the view page's infolist shows, for a user who may view the record (ADR 0039); 60 requests per user per minute and 8 pages computing at once (429 beyond) |
 | POST | `/resources/{slug}/records/{key}/restore` | `{data: Envelope}` (soft deletes; trashed records only) |
 | DELETE | `/resources/{slug}/records/{key}/force` | 204 (soft deletes; trashed records only) |
@@ -203,6 +204,27 @@ older documents (`document_needs_version`) and more than 500 nodes
 (`max_app_nodes`). Clients of vocabulary 17 and below show version 3 documents
 read-only (they read versions 1 and 2 only). Extensions draw and edit nodes
 with `registerRichTextNode` (host `ui` 4).
+
+Vocabulary 19 adds form reactions (ADR 0043): inputs of create and edit
+forms may carry `reacts: true` (never on view schemas or repeater rows). After such an input
+changes and typing pauses (about 400 ms), clients post `form/react` with the
+form's values in wire format (as a save sends them, without secrets, links or
+relationship rows), the changed input's `previous` value (when the last
+answer was applied, or the form opened), `via` on a relation's create form,
+and an increasing `seq`, and apply the answer only if its
+`seq` is the latest and the form has not changed since. The server evaluates
+the reaction on what the user's form holds (ADR 0037: stored values only for
+a record the user may view, typed values only for fields they may write). Patches, tagged by
+`op`, apply in order (a row index refers to the rows as the previous patches
+left them): `set` and `set_if_empty` (`field`, `value`; the latter only when
+the field is `null`, `""` or `[]`), `add_row` (`field`, `row`, `index?`: the
+end when absent), `remove_row` (`field`, `index`), `move_row` (`field`,
+`from`, `to`), `flag_row` (`field`, `index`, `message`: a warning under the
+row until the next answer or a change of that repeater), `notice` (`message`). Row patches name JSON
+repeaters only. Values are canonical (as a save stores them); at most 200
+patches, messages of at most 500 characters. Patches do not trigger further
+reactions; network errors, 429 and `failed` are ignored. Saves never run
+reactions. Older clients never call them.
 
 Vocabulary 14 adds infolists (ADR 0039): the view schema of a record
 (`operation=view&key=…`) carries `infolist`, declared or, for a resource

@@ -153,6 +153,9 @@ export function RepeaterWidget({ id, input, ctx, value, onChange, onBlur, disabl
               </div>
               <div id={bodyId} hidden={isFolded} className="grid grid-cols-1 gap-4 p-4 md:grid-cols-2">
                 {problem(String(index)) && <p role="alert" className="col-span-full text-xs text-destructive">{problem(String(index))}</p>}
+                {(ctx.rowFlags?.[input.name]?.[index] ?? []).map((flag) => (
+                  <p key={flag} role="status" className="col-span-full text-xs text-warning">{flag}</p>
+                ))}
                 <RowComponents components={repeater.components} repeater={repeater} row={row} hidden={hiddenInRow(repeater, row)}
                   path={(name) => `${index}.${name}`} problem={problem} server={server} ctx={ctx} disabled={disabled}
                   idPrefix={bodyId} onChange={(next) => setRow(index, next)} />
@@ -224,7 +227,9 @@ function RowField({ input, row, path, problem, server, ctx, disabled, id, onChan
   const required = input.rules.some((r) => r.rule === "required");
   const describedBy = [input.help && `${id}-help`, error && `${id}-error`].filter(Boolean).join(" ") || undefined;
   // A nested repeater shows its rows' problems itself, below its own path.
-  const nestedCtx: FormContext = input.type === "repeater" ? { ...ctx, errors: nestedErrors(input.name, path, server) } : ctx;
+  // Reactions flag rows of the form's own repeaters only.
+  const nestedCtx: FormContext =
+    input.type === "repeater" ? { ...ctx, errors: nestedErrors(input.name, path, server), rowFlags: undefined } : ctx;
   return (
     <div className={cn("flex min-w-0 flex-col gap-2", span(input.columnSpan))}>
       {(input.type !== "checkbox" || isTriState(input)) && (

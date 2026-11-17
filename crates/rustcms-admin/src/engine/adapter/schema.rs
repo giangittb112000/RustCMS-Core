@@ -277,6 +277,8 @@ impl<R: Resource> ResourceAdapter<R> {
             integer: false,
             repeater: self.repeater_schema(ctx, input, disabled),
             rich_nodes: self.rich_node_schemas(ctx, &input.name),
+            // Never on view pages, nor for a user who cannot change the input (ADR 0043).
+            reacts: !disabled && op != SchemaOperation::View && input.reaction.is_some(),
         })
     }
 
@@ -362,6 +364,7 @@ impl<R: Resource> ResourceAdapter<R> {
             integer: false,
             repeater: None,
             rich_nodes: Vec::new(),
+            reacts: false,
         }
     }
 
@@ -495,6 +498,7 @@ impl<R: Resource> ResourceAdapter<R> {
             integer: false,
             repeater: None,
             rich_nodes: Vec::new(),
+            reacts: false,
         })
     }
 
@@ -721,5 +725,6 @@ fn pivot_input_schema(
         integer: false,
         repeater: None,
         rich_nodes: Vec::new(),
+        reacts: false,
     }
 }

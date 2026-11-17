@@ -135,6 +135,7 @@ impl SettingField {
     pub fn repeater(repeater: Input) -> Self {
         let spec = repeater.repeater.as_deref().expect("SettingField::repeater takes a `Repeater::make(…)`");
         assert!(!spec.relationship, "settings field `{}`: settings have no relationships", repeater.name);
+        assert!(repeater.reaction.is_none(), "settings field `{}`: settings inputs cannot react", repeater.name);
         assert!(
             !repeater.required && repeater.max_length.is_none() && !repeater.integer,
             "settings field `{}`: `required`, `max_length` and `integer` are for inputs of JSON repeater rows \
@@ -568,6 +569,8 @@ impl<T: SettingsPage> SettingsAdapter<T> {
             let compatible = input.kind == field.kind.input_type()
                 || (field.kind == SettingKind::Text && input.kind == InputType::Textarea);
             assert!(compatible, "settings `{group}`: input `{}` does not match its field's kind", input.name);
+            // Reactions are for resource forms (ADR 0041).
+            assert!(input.reaction.is_none(), "settings `{group}`: input `{}` cannot react", input.name);
             assert!(
                 !input.required && input.max_length.is_none() && !input.integer,
                 "settings `{group}`: input `{}`: `required`, `max_length` and `integer` are for inputs of JSON \

@@ -121,6 +121,14 @@ pub trait DynResource: Send + Sync {
     /// The computed values record `key`'s view page shows (ADR 0039), for a
     /// user who may view it.
     async fn computed(&self, ctx: &Ctx, key: &str) -> AppResult<crate::schema::ComputedValues>;
+
+    /// The changes the reaction of an input of the create or edit form asks
+    /// for (ADR 0041), for a user who may write that form.
+    async fn react(
+        &self,
+        ctx: &Ctx,
+        request: crate::schema::FormReactRequest,
+    ) -> AppResult<crate::schema::FormReactResponse>;
     /// Creates a record from client input.
     async fn create(&self, ctx: &Ctx, input: Data) -> AppResult<Envelope>;
     /// Updates a record from client input (PATCH semantics).

@@ -38,7 +38,17 @@ impl Resource for CategoryResource {
         Form::new().width(FormWidth::Full).schema(components![
             Split::make()
                 .main(components![
-                    TextInput::make("name"),
+                    // #region reacts
+                    // A form reaction: the slug follows the name while it is empty or
+                    // still the previous name's slug (until the user edits it).
+                    TextInput::make("name").reacts(|_ctx, state| {
+                        let before = state.previous().and_then(|v| v.as_str()).map(slugify).unwrap_or_default();
+                        let slug = state.text("slug");
+                        let follows = slug.is_empty() || slug == before;
+                        let next = slugify(state.text("name"));
+                        Box::pin(async move { Ok(if follows { vec![FormPatch::set("slug", next)] } else { vec![] }) })
+                    }),
+                    // #endregion reacts
                     TextInput::make("slug").prefix("/categories/"),
                     // #region posts-repeater
                     // The category's posts, edited in its form: each row is a post
@@ -118,3 +128,18 @@ impl Resource for CategoryResource {
     }
     // #endregion relations
 }
+
+// #region slugify
+/// `Hello, World!` → `hello-world`: ASCII letters and digits, the rest a dash.
+fn slugify(text: &str) -> String {
+    let mut slug = String::new();
+    for c in text.chars() {
+        if c.is_ascii_alphanumeric() {
+            slug.push(c.to_ascii_lowercase());
+        } else if !slug.is_empty() && !slug.ends_with('-') {
+            slug.push('-');
+        }
+    }
+    slug.trim_end_matches('-').chars().take(120).collect()
+}
+// #endregion slugify

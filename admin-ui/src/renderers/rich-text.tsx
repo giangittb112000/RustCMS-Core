@@ -109,6 +109,9 @@ export function RichEditorWidget({ id, label, value, onChange, disabled, invalid
   }, [uploads.busy, onBusy]);
   useEffect(() => () => onBusy?.(false), [onBusy]);
   const stored = value ? asDocument(JSON.parse(value), nodes) : null;
+  // The value the editor shows: what it emitted last, or what it opened with.
+  // Another value (a form reaction's patch) is drawn without emitting a change.
+  const shownValue = useRef(value);
   const editor = useEditor({
     injectCSS: false,
     editable: !disabled,
@@ -151,9 +154,19 @@ export function RichEditorWidget({ id, label, value, onChange, disabled, invalid
     onUpdate: ({ editor }) => {
       setRefused(false);
       const doc = toDocument(editor.getJSON() as DocNode, apiPath, nodes);
-      onChange(nullable && isEmptyDocument(doc) ? "" : JSON.stringify(doc));
+      const next = nullable && isEmptyDocument(doc) ? "" : JSON.stringify(doc);
+      shownValue.current = next;
+      onChange(next);
     },
   });
+  useEffect(() => {
+    if (!editor || editor.isDestroyed || value === shownValue.current) return;
+    const doc = value ? asDocument(JSON.parse(value), nodes) : { type: "doc" as const, version: 2 as const, content: [] };
+    // A value the editor cannot hold is shown read-only instead (below).
+    if (!doc) return;
+    shownValue.current = value;
+    editor.commands.setContent(toEditor(doc, apiPath), { emitUpdate: false });
+  }, [editor, value, nodes, apiPath]);
   useEffect(() => {
     // Not an edit: no update (it would mark the form changed).
     editor?.setEditable(!disabled, false);

@@ -26,6 +26,21 @@ All notable changes are documented here. The format follows
   `AppNodes::parse`). The server stores every document in the lowest version
   it needs (1, 2 or 3), whoever writes it. Demo: `app.kbd` and
   `app.note_ref` in posts.
+- Form reactions (vocabulary 19, ADR 0043; contributed by @giangittb112000):
+  `Input::reacts(|ctx, state| …)` runs on the server when the user changes
+  the input (`POST form/react`, after a pause in typing) and answers with
+  `FormPatch`es (`set`, `set_if_empty`, `add_row`, `remove_row`, `move_row`,
+  `flag_row`, `notice`) the panel applies while the form is unchanged. The
+  reaction reads what the user's form holds (ADR 0037: stored values only for
+  a record the user may view, typed values only for fields they may write,
+  the key a relation binds), `FormState::previous()` gives the changed
+  input's earlier value; patches the user could not make are dropped and
+  logged, the others sent canonical, conditions evaluated again after each;
+  at most 200 patches. Admission and the rate limit (120 a minute) come
+  before the body; 2 reactions at once per user. Resource forms only; saves
+  never run reactions (the contribution's `.strict()` is not kept). A rich
+  text editor draws a patched document. Demo: a category's slug follows its
+  name.
 
 ### Changed
 - `rich_text::Mark` is `#[non_exhaustive]` and has three new variants: an

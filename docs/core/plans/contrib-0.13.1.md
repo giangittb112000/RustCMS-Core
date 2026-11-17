@@ -1,6 +1,6 @@
 # Plan: 0.13.1 — PR #3's later parts (view page, rich text v3, form reactions)
 
-Status: draft v1 (2026-11-17). Owner decision: take all three, fixed by us, into 0.13.1.
+Status: implemented (2026-11-17), see "As built" at the end. Owner decision: take all three, fixed by us, into 0.13.1.
 Branch `review/pr3-0.13.1` (worktree `../RustCMS-pr3`) from `main` after v0.13.0.
 Source: contributor commits on `pr3-new` (PR #3 head): view page 06cbfad..de99250, reactions b0c1277,
 rich text 7705bb2. Reviews: three Claude agents + Codex (findings below, ids V*, R*, F*).
@@ -125,3 +125,17 @@ separately), Codex verify. At the end: `just ci`, `just test-matrix` (or CI when
 `just generated`, `just docs`, `just e2e`, `just test-cli`, `npm audit`. Release 0.13.1 per
 `docs/core/guides/releasing.md` (upgrade.md "From 0.13.0 to 0.13.1", release notes, SDK VERSION ×3), tag after CI
 green, notify RDockPanel, comment on PR #3 and close it.
+
+## As built
+
+- View page: `InfolistSchema.fromForm` (vocabulary 17) carries the generated/declared distinction the SPA
+  needs for V1; V2 uses the form's own projection (`wireValues(defaultValues(...))`).
+- Rich text: R5 is a removal button on the read-only fallback (`withoutUnknownElements`), not opaque editable
+  atoms: simpler, same outcome (the user removes what the field no longer accepts, then edits). The editor
+  now draws a value changed from outside (also needed by reactions, Codex 12). R1 counts defaults while
+  parsing (and caps them at 1 KiB per element at boot).
+- Reactions: `.strict()` removed; state from `condition_values` + typed values of writable inputs + bound
+  key (`via`); `FormState::previous()` for the demo's slug; admission and rate limit before the body;
+  2 per user / 8 in all; bounds (200 patches, 500-character messages, rows ≤ `max_items` or 1,000);
+  canonical patches; conditions re-evaluated after each patch; row flags cleared when the user changes the
+  repeater (no abort: `api.post` has no signal, `seq` + the per-user limit suffice).

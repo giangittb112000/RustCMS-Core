@@ -104,6 +104,7 @@ pub fn routes(admin_path: &str) -> Vec<(Method, String)> {
     vec![
         (Method::GET, format!("{base}/panel")),
         (Method::GET, format!("{resource}/schema")),
+        (Method::POST, format!("{resource}/form/react")),
         (Method::GET, format!("{resource}/records")),
         (Method::POST, format!("{resource}/records")),
         (Method::GET, format!("{resource}/records/{{key}}")),
@@ -144,6 +145,7 @@ pub(crate) fn router(router: Router<AppState>, admin_path: &str) -> Router<AppSt
     router
         .route(&format!("{base}/panel"), get(panel))
         .route(&format!("{resource}/schema"), get(schema))
+        .route(&format!("{resource}/form/react"), post(react))
         .route(&format!("{resource}/records"), get(list).post(create))
         .route(&format!("{resource}/records/{{key}}"), get(find).patch(update).delete(destroy))
         .route(&format!("{resource}/records/{{key}}/computed"), get(computed))

@@ -225,6 +225,8 @@ impl<R: Resource> DynResource for ResourceAdapter<R> {
                 .map(|c| match c {
                     Component::Input(input) => {
                         let mut input = input.clone();
+                        // Rows never run reactions (ADR 0043): no `reacts` in their schema.
+                        input.reaction = None;
                         if let Some(own) = form.iter().find(|i| i.name == input.name) {
                             if input.options.is_empty() {
                                 input.options = own.options.clone();
@@ -264,6 +266,14 @@ impl<R: Resource> DynResource for ResourceAdapter<R> {
 
     async fn computed(&self, ctx: &Ctx, key: &str) -> AppResult<crate::schema::ComputedValues> {
         self.computed_values(ctx, key).await
+    }
+
+    async fn react(
+        &self,
+        ctx: &Ctx,
+        request: crate::schema::FormReactRequest,
+    ) -> AppResult<crate::schema::FormReactResponse> {
+        ResourceAdapter::react(self, ctx, request).await
     }
 
     async fn lookup(&self, ctx: &Ctx, search: Option<&str>, keys: &[String]) -> AppResult<Vec<(String, String)>> {

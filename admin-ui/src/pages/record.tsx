@@ -20,6 +20,7 @@ import { Components, formWidthClass, gridCols } from "@/renderers/form";
 import { MEDIA_SLUG, MediaPreview } from "@/renderers/media-library";
 import { InfolistRenderer, hasComputed } from "@/renderers/infolist";
 import { ActionNoticeView, RecordActions, useActionRunner } from "@/components/actions";
+import { useFormReactions } from "@/api/reactions";
 import { type FormValues, defaultValues, hiddenNames, inputsOf, payloadOf, protectLossyJson, relabel, serverErrors } from "@/schema/form";
 import { errorText, show, type Text, useLocale, useT } from "@/i18n";
 import { editResolver } from "@/schema/resolver";
@@ -170,6 +171,16 @@ function RecordForm({
   }, []);
   // After a write with an unknown outcome, resubmitting could create a duplicate.
   const uncertain = useUncertain(slug);
+  // Reactions of the form (ADR 0043); what they change is sent as if typed.
+  const reactions = useFormReactions({
+    slug,
+    recordKey,
+    via,
+    inputs,
+    form,
+    paused: readOnly || save.isPending || uncertain,
+    onPatched: (name) => touched.current.add(name),
+  });
 
   // After a failed save, the first input with an error (in form order) gets the
   // focus, once enclosing tabs have opened it; only while this form is shown
@@ -304,7 +315,11 @@ function RecordForm({
               readOnly: readOnly || save.isPending || uncertain,
               submitCount: form.formState.submitCount,
               onBusy,
-              onUserChange: (name) => touched.current.add(name),
+              onUserChange: (name) => {
+                touched.current.add(name);
+                reactions.onUserChange(name);
+              },
+              rowFlags: reactions.flags,
             }}
           />
         </CardContent>

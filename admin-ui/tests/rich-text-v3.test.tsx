@@ -290,6 +290,25 @@ describe("the editor", () => {
     expect(withoutUnknownElements(stale as never, NODES)).toEqual(doc(3, para(text("a"))));
   });
 
+  it("draws a value changed from outside (a form reaction) without reporting a change", async () => {
+    const onChange = vi.fn();
+    const first = JSON.stringify(doc(1, para(text("Before"))));
+    const { rerender } = render(
+      <Providers>
+        <RichEditorWidget id="body" label="Body" value={first} onChange={onChange} invalid={false} nullable nodes={NODES} />
+      </Providers>,
+    );
+    const box = await screen.findByRole("textbox", { name: "Body" });
+    expect(box).toHaveTextContent("Before");
+    rerender(
+      <Providers>
+        <RichEditorWidget id="body" label="Body" value={JSON.stringify(doc(1, para(text("After"))))} onChange={onChange} invalid={false} nullable nodes={NODES} />
+      </Providers>,
+    );
+    await waitFor(() => expect(screen.getByRole("textbox", { name: "Body" })).toHaveTextContent("After"));
+    expect(onChange).not.toHaveBeenCalled();
+  });
+
   it.each([
     ["version 1", { content: [para(text("Hi"))], type: "doc", version: 1 }],
     ["version 3", { content: [para(text("Press", "underline"), kbd({ keys: "A", size: "m" }))], type: "doc", version: 3 }],

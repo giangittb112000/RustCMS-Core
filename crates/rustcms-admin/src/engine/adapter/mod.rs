@@ -11,6 +11,7 @@ mod input;
 mod many;
 mod operations;
 pub(crate) mod pivot;
+mod react;
 mod read;
 mod references;
 pub(crate) mod rows;
@@ -103,6 +104,8 @@ pub(crate) struct ResourceAdapter<R: Resource> {
     repeaters: HashMap<String, crate::engine::repeater::Rows>,
     /// Relationship repeaters (ADR 0040).
     row_repeaters: Vec<rows::RowRepeater>,
+    /// Inputs that react, in form order (ADR 0043).
+    reactions: Vec<react::InputReaction>,
     /// The record title (ADR 0038).
     title: Option<crate::engine::title::TitleTemplate>,
     /// The view page's entries, when declared (ADR 0039).
@@ -296,7 +299,7 @@ impl<R: Resource> ResourceAdapter<R> {
                     input.options.is_empty() && input.widget.is_none(),
                     "resource `{slug}`: BelongsToManySelect `{name}` takes its options from the relation"
                 );
-                // Media rows are locked last by every write (ADR 0041): links to media
+                // Media rows are locked last by every write (ADR 0043): links to media
                 // records would lock them in an earlier phase.
                 assert!(
                     relation.target != crate::media::SLUG,
@@ -327,6 +330,7 @@ impl<R: Resource> ResourceAdapter<R> {
         crate::engine::conditions::canonicalize(&mut form.components, &kind_of);
         let repeaters = input::json_repeaters(slug, &form, &columns);
         let row_repeaters = rows::row_repeaters(slug, &form, &relations);
+        let reactions = react::reactions(slug, &form, &fields);
         for input in form.inputs().into_iter().filter(|i| i.kind == InputType::Custom) {
             let widget = input.widget.as_deref().unwrap_or_default();
             assert!(crate::ui::valid_widget(widget), "resource `{slug}`: invalid widget name `{widget}`");
@@ -496,6 +500,7 @@ impl<R: Resource> ResourceAdapter<R> {
             conditions,
             repeaters,
             row_repeaters,
+            reactions,
             action_conditions,
             title,
             table_ui,

@@ -362,6 +362,11 @@ integer?: boolean,
  */
 repeater?: RepeaterSchema, 
 /**
+ * A change asks the server's reaction (`POST form/react`) for changes to
+ * the form (vocabulary 19, ADR 0043). Create and edit forms only.
+ */
+reacts?: boolean, 
+/**
  * Rich text: the application nodes the document may hold (vocabulary
  * 18, ADR 0042); absent when none.
  */
@@ -695,6 +700,132 @@ max?: number,
  * `one_of`: the values allowed.
  */
 options?: Array<string>, };
+
+export type FormPatch = { "op": "set", 
+/**
+ * The field.
+ */
+field: string, 
+/**
+ * Its new value, in wire format.
+ */
+value: JsonValue, } | { "op": "set_if_empty", 
+/**
+ * The field.
+ */
+field: string, 
+/**
+ * Its new value, in wire format.
+ */
+value: JsonValue, } | { "op": "add_row", 
+/**
+ * The repeater.
+ */
+field: string, 
+/**
+ * Where the row goes.
+ */
+index?: number, 
+/**
+ * The row's values.
+ */
+row: JsonValue, } | { "op": "remove_row", 
+/**
+ * The repeater.
+ */
+field: string, 
+/**
+ * The row.
+ */
+index: number, } | { "op": "move_row", 
+/**
+ * The repeater.
+ */
+field: string, 
+/**
+ * The row.
+ */
+from: number, 
+/**
+ * Its new place.
+ */
+to: number, } | { "op": "flag_row", 
+/**
+ * The repeater.
+ */
+field: string, 
+/**
+ * The row.
+ */
+index: number, 
+/**
+ * The warning (translated).
+ */
+message: string, } | { "op": "notice", 
+/**
+ * The message (translated).
+ */
+message: string, };
+
+export type FormReactRequest = { 
+/**
+ * `create` or `edit` (`view` is refused).
+ */
+operation: SchemaOperation, 
+/**
+ * The record's key (`edit` only).
+ */
+key?: string, 
+/**
+ * The input that changed (one with `reacts`).
+ */
+changed: string, 
+/**
+ * The form's values, in wire format (as a save sends them).
+ */
+state: Record<string, JsonValue>, 
+/**
+ * The changed input's value when the panel last applied an answer (or
+ * opened the form).
+ */
+previous?: JsonValue, 
+/**
+ * A create form opened through a relation of another record: the
+ * reaction sees the key that relation binds, as the save does.
+ */
+via?: FormReactVia, 
+/**
+ * Sent back unchanged: the panel applies only its latest request's answer.
+ */
+seq: number, };
+
+export type FormReactVia = { 
+/**
+ * The parent resource.
+ */
+parent: string, 
+/**
+ * The parent record's key.
+ */
+record: string, 
+/**
+ * The relation's name.
+ */
+relation: string, };
+
+export type FormReactResponse = { 
+/**
+ * The request's `seq`.
+ */
+seq: number, 
+/**
+ * The changes to apply, in order (messages translated).
+ */
+patches: Array<FormPatch>, 
+/**
+ * The reaction failed (error, timeout): nothing to apply.
+ */
+failed?: boolean, };
 
 export type ComponentSchema = InputSchema | LayoutSchema | EntrySchema;
 

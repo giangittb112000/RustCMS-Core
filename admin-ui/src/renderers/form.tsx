@@ -64,6 +64,8 @@ export interface FormContext {
    * field's options). Action forms and relation dialogs have their own.
    */
   optionsPath?: (field: string) => string;
+  /** Warnings under JSON repeater rows, from the form's reactions (ADR 0043). */
+  rowFlags?: import("@/schema/reactions").RowFlags;
 }
 
 export const KNOWN_LAYOUTS = new Set(["section", "grid", "tabs", "tab", "split", "pane"]);
