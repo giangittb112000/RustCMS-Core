@@ -98,4 +98,9 @@ it("checks a new row with the child's create inputs, a stored row with its edit 
     { ref: "n1", values: { title: "x" }, changed: [] },
     { key: "5", values: { title: "", note: "" }, changed: [] },
   ]))).toEqual(["1.note"]);
+  // The list's limits apply to every row together, not to each one.
+  const two = { ...repeater, minItems: 2 } as RepeaterSchema;
+  const rows = [{ ref: "n1", values: { title: "x" }, changed: [] }, { ref: "n2", values: { title: "y" }, changed: [] }];
+  expect(relationRowProblems(two, rows)).toEqual({});
+  expect(Object.keys(relationRowProblems(two, rows.slice(0, 1)))).toEqual([""]);
 });
