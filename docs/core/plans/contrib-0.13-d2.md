@@ -38,3 +38,61 @@ Design:
 1. Is requiring `lock_parent` (1) + the closure rule (2) + rank-ordered phases (3) enough to make every parent write lock in the global order? What else locks inside a row write (child hooks, media references, belongs-to checks with shared locks) that could still invert?
 2. Does one `locked_visible` call over all candidates (4) give correct semantics on MySQL and PostgreSQL (rows moved meanwhile cannot happen thanks to the parent lock — right?), and is skipping invisible rows safe for the two-pass reorder with a unique `(parent, position)`?
 3. Anything wrong in the history (3.7) and row-rule (3.11) choices?
+
+## v2 (after the Codex design review): a supported subset, refused otherwise
+
+Codex did not approve v1: ordering phase roots does not order whole phases, and rows take locks the graph does not show (belongs-to references, media references per row, hooks, cascades). v2 keeps the write path and **narrows what boots** so that a parent write locks only: its own parents (as today), its row, its links (as today), then the rows of its repeaters' children — nothing else.
+
+Boot refuses a relationship repeater unless:
+1. the child declares `lock_parent` through this relation's field (every child write — direct create, move, repeater row — locks the parent row first: writes to one parent's rows are serialized by that row);
+2. the row inputs are plain fields of the child: no `belongs_to` field (other than none: the parent key is set by the server), no media field, no rich text with media, no encrypted field, no belongs-to-many (row writes then take no lock on another resource through references);
+3. the child has no belongs-to-many relation and no `lock_parent` children of its own (its writes lock nothing below it);
+4. the parent's own belongs-to-many targets are not the child (no resource locked twice).
+Hooks of the child that write other resources, and database cascades from the child, are outside what is supported (guide, ADR 0040).
+
+Within that subset:
+- **One pass over the rows**: the named rows (updates, deletes) are pre-filtered by parent membership in the query, then, when `order` is sent, the parent's live children are discovered with `LIMIT 1001` (beyond 1000: 422 `row_order` before any lock). All candidates are locked once through `locked_visible` (key order, scope + view policy, recheck under the lock); rows not visible are not locked and keep their positions. Reorder uses the surviving locked rows plus the rows created by this write.
+- **Positions**: `MAX(order_column)` over all children (trashed included), after the creates, checked arithmetic within the column's range (`i32`/`i64`, read and written by its kind); overflow → 422.
+- **History** (`rows_changed`): counts only, keys never (fail closed).
+- **Rules**: row inputs inherit the child form's rules; boot refuses a row input that declares options, bounds, `required` or `max_length` of its own. `addable(false)`/`deletable(false)` are enforced by the server (422 at the relation), after admission.
+- **Refs**: new rows are named in `order` as `{"new": ref}` (tagged), so a ref never mixes with a key; `create` keeps `[ref, data]`. Contract change with the SPA.
+- **SPA**: rows render with the child's context (child slug, row key or none); new rows use the child's Create components and stored rows its Edit components (`rowCreate`/`rowEdit`, vocabulary 16).
+
+## Codex round 2 on v2 (2026-11-17): not approved
+
+Narrowing the repeater's configuration is not enough: deadlocks remain through paths the repeater does not own — the child's other references written by direct updates or restores, the parent's own references (e.g. a self-referencing FK while a child moves between parents), hooks adding references, database cascades, and repeater phases not ordered by `lock_rank` among link targets. A correct D2 needs a lock contract for the whole write path (every reference lock planned with the resource locks), not a repeater-local fix.
+
+Decision needed (owner): (a) design that lock contract (a Core change, its own ADR), then finish relationship repeaters on it; or (b) remove `.relationship()` from the integration and release JSON repeaters, counts and history first.
+
+## v3 (2026-11-17, after the owner chose to finish relationship repeaters): the contract Core already has
+
+Fact missed by v1/v2: Core does not order **implicit** locks anywhere. FK enforcement on INSERT/UPDATE, cascades and hook writes take locks no writer plans, on every write path today; the backstop is `From<DbErr> for AppError` (`crates/rustcms-core/src/error.rs:168`): deadlocks, lock-wait timeouts and serialization failures roll the write back and answer **409 `write_conflict`** (nothing applied, retryable). ADRs 0018/0020/0035 order the **explicit** locks (`lock_parent`, `lock_visible`, link targets, `media::check_references` shares). v3 makes relationship repeaters follow exactly that contract, instead of a stronger one no other write has.
+
+### Contract (ADR 0041)
+
+1. **Explicit locks in one order.** A write takes its explicit locks in `Registry::lock_rank` order of their resources, keys in key order within a resource, and never returns to a resource of lower rank. A parent write with repeaters: its parents (`lock_parents`, as today) → its row → then, by rank, each link-target resource (`lock_links`, filtered per phase) and each repeater child resource (one locking pass, below). Two repeaters on the same child resource are refused at boot (one phase per resource).
+2. **The family serializes on the parent row.** A repeater's child must declare `lock_parent` through that relation (boot): every child write (direct create, update that moves it, delete, restore, repeater row) locks the parent row before its own; parent writes lock it first too. Moves lock both parents in key order (`lock_parents`, as today).
+3. **No explicit lock outside the plan inside a row.** Row inputs may not be media fields, rich text (may hold media), belongs-to-many, encrypted, nor `belongs_to` fields (boot): a row write's only explicit locks are its own row (taken in phase) and the parent (already held). The parent key and the order column are set by the server.
+4. **Implicit locks**: FK checks by the database, cascades, hook writes — as everywhere in Core: not ordered; a cycle is detected by the database and answered 409 `write_conflict` (the parent and every row rolled back). Documented in ADR 0041 and the guide (hooks of a repeater's child should not write other resources).
+
+### Within the contract (unchanged from v1/v2, accepted by Codex)
+- One locking pass per child phase: named rows pre-filtered by parent membership in the query; with `order`, the parent's live children discovered with `LIMIT 1001` (beyond: 422 `row_order`), all candidates locked once by `locked_visible`; survivors = locked visible rows not deleted, plus rows created by this write.
+- Positions: `MAX(order_column)` over all children incl. trashed, taken after the creates (the parent lock excludes concurrent creates); temporary positions above it; checked arithmetic within the column's range; read/written by the column's kind (`i32`/`i64`); overflow → 422.
+- History `rows_changed`: counts only (fail closed).
+- Row rules inherit the child form's; boot refuses row inputs with their own options/bounds/required/max_length; `addable(false)`/`deletable(false)` enforced by the server after admission (422 at the relation).
+- Refs tagged in `order` (`{"new": ref}`): exact shape, refs unique and known, keys canonical, duplicates after resolution refused.
+- SPA: rows render with the child's context; `rowCreate`/`rowEdit` schemas (vocabulary 16).
+
+### Tests
+Boot refusals (no `lock_parent`, wrong relation, two repeaters on one child, each forbidden row input kind); concurrency on PostgreSQL and MySQL: a direct child create vs a repeater save with `max_items` (serialized on the parent: never more than max), a reorder vs a direct child update (no deadlock, both applied or one 409), a move between parents vs a repeater save; positions with i64 and overflow; tagged refs; history counts only; addable/deletable refused.
+
+## v4 (Codex round 3 on v3: direction accepted, gaps fixed)
+
+The contract is about **new explicit lock acquisitions** (re-entering a held parent lock is not one); implicit locks (database FK enforcement, cascades, hook DML) stay outside it, as everywhere in Core, behind 409 `write_conflict` (the error aborts the operation and the transaction is dropped/rolled back; MySQL lock-wait timeouts included).
+
+1. **Media locks last, on every create/update (a Core fix, not only repeaters).** `check_written` is split: reference reads (`check_relations`, no explicit locks) stay where they are; `media::check_references` (explicit shared locks on media rows) moves after every other explicit lock of the write: after `lock_links`, and for a parent with repeaters after its child phases. The media resource is outside the lock graph, so it ranks last (`lock_rank`), which makes "media last" the rank order. Applies to resources without repeaters too (parent → media → link targets was already out of order).
+2. **Link targets before repeater children.** For each relationship repeater (P, C) and each belongs-to-many target T of P, the lock graph gains an edge T → C. Then the parent write's order — parents, row (update: locked; create: prelocked links before the insert), link targets (`lock_links`, as today, before the row write), children (after the row write), media — is rank order. A cycle (e.g. C linking to T) is refused at boot by the existing cycle check. Repeaters of one parent run in rank order of their children; two repeaters on one child resource are refused.
+3. **Rows take no explicit lock but their own.** Boot refuses row inputs whose child field is media, rich text, encrypted, belongs-to-many or `belongs_to` (from the child's field metadata, exposed through `DynResource`). After the child's hooks, a row's data holding a media or rich-text field is refused (500 naming the hook: "hooks of a relationship repeater's child may not write media fields"), so no media lock is taken inside rows.
+4. `find_model_in(...).ok()` → only `NotFound` becomes "not one of the rows"; other errors propagate.
+5. **Bounds**: `min_items`/`max_items` hold for saves through the repeater (checked under the parent lock, so concurrent repeater saves cannot pass them). Direct child writes (relation section, API) are not bounded by the parent's repeater (guide, ADR); tests assert exactly that.
+6. Tests add: a parent with media and links and a repeater (order of phases), a hook adding media in a row (refused), SQLite busy → 409 (exists: `rustcms-migration/tests/databases.rs`), PostgreSQL/MySQL concurrency (repeater save vs direct child write/move: no hang; either both apply or one 409).
