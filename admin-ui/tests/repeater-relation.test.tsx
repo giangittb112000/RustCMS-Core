@@ -7,9 +7,10 @@ import { http, HttpResponse } from "msw";
 import { setupServer } from "msw/node";
 import { useForm } from "react-hook-form";
 import { SessionContext } from "@/api/context";
-import type { ComponentSchema } from "@/api/types";
+import type { ComponentSchema, InputSchema, RepeaterSchema } from "@/api/types";
 import { createSession } from "@/app/session";
 import { Components } from "@/renderers/form";
+import { relationRowProblems } from "@/schema/relation-rows";
 import { type FormValues, defaultValues, inputsOf, payloadOf } from "@/schema/form";
 import schema from "../../fixtures/contract/repeater-relation.schema.edit.json";
 import rows from "../../fixtures/contract/repeater-relation.rows.json";
@@ -78,4 +79,23 @@ it("shows the server's problems in their row, by key", async () => {
   act(() => form!.setError("lines", { type: "server", message: "Some rows need attention.", types: { "2.quantity": "is required" } }));
   expect(within(rowsShown()[1]!).getByRole("alert")).toHaveTextContent("is required");
   expect(within(rowsShown()[0]!).queryByRole("alert")).toBeNull();
+});
+
+it("checks a new row with the child's create inputs, a stored row with its edit inputs", () => {
+  const field = (name: string, required: boolean) =>
+    ({ name, label: name, type: "text_input", valueType: "string", nullable: !required, disabled: false, rules: required ? [{ rule: "required" }] : [], columnSpan: 1 }) as InputSchema;
+  const repeater = {
+    components: [field("title", false), field("note", true)],
+    createComponents: [field("title", true)],
+    addable: true,
+    deletable: true,
+  } as unknown as RepeaterSchema;
+  // A new row has no `note` (edit only): not required there; its `title` is.
+  expect(relationRowProblems(repeater, [{ ref: "n1", values: { title: "x" }, changed: [] }])).toEqual({});
+  expect(Object.keys(relationRowProblems(repeater, [{ ref: "n1", values: { title: "" }, changed: [] }]))).toEqual(["0.title"]);
+  // A stored row (second) is checked with the edit inputs.
+  expect(Object.keys(relationRowProblems(repeater, [
+    { ref: "n1", values: { title: "x" }, changed: [] },
+    { key: "5", values: { title: "", note: "" }, changed: [] },
+  ]))).toEqual(["1.note"]);
 });

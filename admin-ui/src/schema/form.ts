@@ -7,7 +7,7 @@ import { asDocument } from "@/lib/rich-text";
 import { widget } from "@/lib/widgets";
 import { checkText, fromText, toText, type WireKind } from "@/lib/wire";
 import { type WireValues, formConditions, hasConditions, hiddenFields } from "./conditions";
-import { changeOf, parseState, relationFormValue } from "./relation-rows";
+import { changeOf, parseState, relationFormValue, relationRowProblems } from "./relation-rows";
 import { parseRows, repeaterFormValue, rowProblems, wireRows } from "./repeater";
 import {
   isResourceSecret,
@@ -348,7 +348,7 @@ export function zodSchema(inputs: InputSchema[]) {
           if (input.repeater.relationship) {
             // Child records: each row's problems are shown in the row.
             const state = parseState(value);
-            if (state && Object.keys(rowProblems(input.repeater, state.rows.map((r) => r.values))).length) {
+            if (state && Object.keys(relationRowProblems(input.repeater, state.rows)).length) {
               ctx.addIssue({ code: "custom", message: t("repeater.rowErrors") });
             }
             return;

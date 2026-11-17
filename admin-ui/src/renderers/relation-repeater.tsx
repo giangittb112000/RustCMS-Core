@@ -8,8 +8,8 @@ import { useApi } from "@/api/context";
 import { Button } from "@/components/ui/button";
 import { useT } from "@/i18n";
 import { cn } from "@/lib/utils";
-import { type RelationRow, type RelationState, createView, newRef, parseState, stateOf } from "@/schema/relation-rows";
-import { type Row, hiddenInRow, itemLabel, rowOf, rowProblems } from "@/schema/repeater";
+import { type RelationRow, type RelationState, createView, newRef, parseState, relationRowProblems, stateOf } from "@/schema/relation-rows";
+import { type Row, hiddenInRow, itemLabel, rowOf } from "@/schema/repeater";
 import type { WidgetProps } from "./form";
 import { IconButton, RowComponents } from "./repeater";
 
@@ -40,7 +40,7 @@ export function RelationRepeaterWidget({ id, input, ctx, value, onChange, disabl
 
   const server = (ctx.errors[input.name] as { types?: Record<string, unknown> } | undefined)?.types ?? {};
   // The panel's problems are found by position; the server's by key or ref.
-  const local = ctx.submitCount ? rowProblems(repeater, state.rows.map((r) => r.values)) : {};
+  const local = ctx.submitCount ? relationRowProblems(repeater, state.rows) : {};
   const idOf = (row: RelationRow) => row.key ?? row.ref ?? "";
   const problem = (index: number) => (path: string) => {
     const id = idOf(state.rows[index]!);

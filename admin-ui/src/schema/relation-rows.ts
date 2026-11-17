@@ -4,7 +4,7 @@
 // added meanwhile, and rows the user cannot see, are never touched.
 import type { Envelope, InputSchema, JsonValue, RepeaterSchema } from "@/api/types";
 import { type FormValue, fromFormValue, inputsOf } from "./form";
-import { type Row, rowOf } from "./repeater";
+import { type Row, rowOf, rowProblems } from "./repeater";
 
 /** A row: a stored child (`key`) or a new one (`ref`), its form values and what changed. */
 export interface RelationRow {
@@ -114,4 +114,20 @@ export function changeOf(input: InputSchema, value: FormValue): JsonValue | unde
 /** The repeater as a new row sees it: the child's create inputs when the schema sends them. */
 export function createView(repeater: RepeaterSchema): RepeaterSchema {
   return repeater.createComponents ? { ...repeater, components: repeater.createComponents } : repeater;
+}
+
+/**
+ * The panel's problems of relationship rows, each row checked with its own
+ * inputs (a stored row the child's edit inputs, a new one its create inputs),
+ * keyed by the row's place (`2.quantity`).
+ */
+export function relationRowProblems(repeater: RepeaterSchema, rows: RelationRow[]): Record<string, unknown> {
+  const out: Record<string, unknown> = {};
+  rows.forEach((row, index) => {
+    const view = row.key ? repeater : createView(repeater);
+    for (const [path, problem] of Object.entries(rowProblems(view, [row.values]))) {
+      out[path.replace(/^0(?=\.|$)/, String(index))] = problem;
+    }
+  });
+  return out;
 }
