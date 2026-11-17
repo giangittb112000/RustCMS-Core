@@ -29,7 +29,8 @@ pub fn make_model(project: &Project, name: &str, migration: bool) -> anyhow::Res
     write_new(&file, &render(MODEL, json!({ "table": table }))?)?;
     register(&project.src("models/mod.rs"), layout::MODELS.anchor, &format!("pub mod {module};"))?;
     if migration {
-        make_migration(project, &format!("create_{table}_table"))?;
+        // The migration's own exit code adds nothing: it succeeded or `?` returned.
+        let _ = make_migration(project, &format!("create_{table}_table"))?;
     }
     Ok(ExitCode::SUCCESS)
 }
@@ -189,7 +190,7 @@ mod tests {
     #[test]
     fn model_with_migration_registers_both() {
         let (dir, project) = project();
-        make_model(&project, "BlogPost", true).unwrap();
+        let _ = make_model(&project, "BlogPost", true).unwrap();
         let model = std::fs::read_to_string(dir.path().join("src/models/blog_post.rs")).unwrap();
         assert!(model.contains("table_name = \"blog_posts\""));
         assert_eq!(
@@ -215,7 +216,7 @@ mod tests {
     fn test_stub_uses_the_crate_name() {
         let (dir, project) = project();
         let project = Project { package: "my-blog".into(), ..project };
-        make_test(&project, "PostAdminTest").unwrap();
+        let _ = make_test(&project, "PostAdminTest").unwrap();
         let test = std::fs::read_to_string(dir.path().join("tests/feature/post_admin_test.rs")).unwrap();
         assert!(test.contains("use my_blog::database::migrations::Migrator;"), "{test}");
         assert!(test.contains("db_test!(post_admin_test,"));
@@ -229,13 +230,13 @@ mod tests {
     #[test]
     fn widget_stub_registers_the_widget() {
         let (dir, project) = project();
-        make_widget(&project, "acme/color").unwrap();
+        let _ = make_widget(&project, "acme/color").unwrap();
         let script = std::fs::read_to_string(dir.path().join("resources/admin/js/acme/color.js")).unwrap();
         assert!(script.contains("window.rustcms.registerWidget(\"acme/color\", {"));
         assert!(script.contains("apiVersion: 1,"));
         assert!(make_widget(&project, "acme/color").is_err(), "never overwrites");
         // The longest names fit; names that only differ by where the `/` is get distinct extensions.
-        make_widget(&project, &format!("{}/{}", "v".repeat(32), "n".repeat(32))).unwrap();
+        let _ = make_widget(&project, &format!("{}/{}", "v".repeat(32), "n".repeat(32))).unwrap();
         assert_eq!(extension_name(&format!("{}/{}", "v".repeat(32), "n".repeat(32))).len(), 64);
         assert_ne!(extension_name("acme/color-picker"), extension_name("acme-color/picker"));
         assert!(extension_name("acme/color").starts_with("acme-color-"));

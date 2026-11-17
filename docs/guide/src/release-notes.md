@@ -35,6 +35,9 @@ media library. No migration. Most of this release was contributed by
 - A create leaving out a column that may not be null answers `is required`
   (422) instead of a server error; actions that move records under
   `lock_parent` lock the destination parent.
+- **Security**: bundled SQLite 3.54.1 (RUSTSEC-2026-0459) through a patched
+  sqlx; existing applications add the patch
+  ([upgrade guide](upgrade.md#from-0121-to-0130)). ammonia 4.2.5.
 
 ## 0.12.1
 

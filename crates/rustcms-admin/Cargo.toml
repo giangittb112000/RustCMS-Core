@@ -47,7 +47,6 @@ tokio.workspace = true
 futures-util.workspace = true
 rust-embed.workspace = true
 ammonia.workspace = true
-csv.workspace = true
 minijinja = { workspace = true, features = ["fuel"] }
 unicode-normalization.workspace = true
 ts-rs = { workspace = true, optional = true }

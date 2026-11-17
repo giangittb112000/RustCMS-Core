@@ -208,7 +208,7 @@ mod tests {
     #[test]
     fn writes_a_module_and_registers_it_once() {
         let (dir, project) = project();
-        make_api(&project, "BlogPost").unwrap();
+        let _ = make_api(&project, "BlogPost").unwrap();
         let read = |path: &str| std::fs::read_to_string(dir.path().join(path)).unwrap();
         let routes = read("src/routes/api.rs");
         assert!(
@@ -256,7 +256,7 @@ pub struct Model {
 "##,
         )
         .unwrap();
-        make_api(&project, "Item").unwrap();
+        let _ = make_api(&project, "Item").unwrap();
         let read = |path: &str| std::fs::read_to_string(dir.path().join(path)).unwrap();
         let routes = read("src/routes/api.rs");
         assert!(
@@ -277,7 +277,7 @@ pub struct Model {
         assert!(handlers.contains("Path<u32>") && handlers.contains("Column::Code)"), "{handlers}");
         assert!(handlers.contains("highest key first") && !handlers.contains("CreatedAt"), "{handlers}");
         // The default model sorts by creation time, then key.
-        make_api(&project, "BlogPost").unwrap();
+        let _ = make_api(&project, "BlogPost").unwrap();
         let handlers = read("src/http/controllers/blog_post_controller.rs");
         assert!(
             handlers.contains(

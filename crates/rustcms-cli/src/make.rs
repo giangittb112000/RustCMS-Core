@@ -360,18 +360,18 @@ mod tests {
     #[test]
     fn each_generator_writes_and_registers_once() {
         let (dir, project) = project();
-        make_service(&project, "EnrollmentService").unwrap();
+        let _ = make_service(&project, "EnrollmentService").unwrap();
         assert!(read(&dir, "src/lib.rs").contains("pub mod services;\n// rustcms:mods"));
         assert!(read(&dir, "src/services/mod.rs").contains("pub mod enrollment_service;"));
 
-        make_job(&project, "SendWelcome").unwrap();
+        let _ = make_job(&project, "SendWelcome").unwrap();
         assert!(read(&dir, "src/jobs/send_welcome.rs").contains("const KIND: &'static str = \"send_welcome\";"));
         assert!(
             read(&dir, "src/providers/app_service_provider.rs")
                 .contains("app.job::<crate::jobs::send_welcome::SendWelcome>();")
         );
 
-        make_seeder(&project, "CourseSeeder").unwrap();
+        let _ = make_seeder(&project, "CourseSeeder").unwrap();
         assert!(read(&dir, "src/database/seeders/course_seeder.rs").contains("\"course\""));
         assert!(read(&dir, "src/database/seeders/mod.rs").contains("pub mod course_seeder;"));
         assert!(read(&dir, "src/database/seeders/mod.rs").contains("&course_seeder::CourseSeeder,"));
@@ -380,12 +380,12 @@ mod tests {
                 .contains("app.seeder(crate::database::seeders::course_seeder::CourseSeeder);")
         );
 
-        make_factory(&project, "Course").unwrap();
+        let _ = make_factory(&project, "Course").unwrap();
         assert!(read(&dir, "src/database/mod.rs").contains("pub mod factories;\n// rustcms:database-mods"));
         assert!(read(&dir, "src/database/factories/course_factory.rs").contains("pub struct CourseFactory;"));
         assert!(make_factory(&project, "Lesson").is_err(), "the model must exist");
 
-        make_settings(&project, "SchoolSettings").unwrap();
+        let _ = make_settings(&project, "SchoolSettings").unwrap();
         assert!(read(&dir, "src/settings/school_settings.rs").contains("const GROUP: &'static str = \"school\";"));
         assert!(read(&dir, "src/admin/pages/school_settings_page.rs").contains("impl SettingsPage for SchoolSettings"));
         assert!(
@@ -393,7 +393,7 @@ mod tests {
                 .contains(".settings::<crate::settings::school_settings::SchoolSettings>()")
         );
 
-        make_page(&project, "SeatOverviewPage", PageKind::Template).unwrap();
+        let _ = make_page(&project, "SeatOverviewPage", PageKind::Template).unwrap();
         let page = read(&dir, "src/admin/pages/seat_overview_page.rs");
         assert!(
             page.contains("const SLUG: &'static str = \"seat-overview\";")
@@ -405,7 +405,7 @@ mod tests {
             read(&dir, "src/providers/admin_panel_provider.rs")
                 .contains(".page::<crate::admin::pages::seat_overview_page::SeatOverviewPage>()")
         );
-        make_page(&project, "ProgressPage", PageKind::Script).unwrap();
+        let _ = make_page(&project, "ProgressPage", PageKind::Script).unwrap();
         assert!(read(&dir, "src/admin/pages/progress_page.rs").contains("PageView::Script(\"lms/progress\")"));
         assert!(read(&dir, "resources/admin/js/lms/progress.js").contains("registerPage(\"lms/progress\""));
         assert!(read(&dir, "src/providers/admin_panel_provider.rs").contains("/resources/admin/js/lms/progress.js"));
@@ -426,7 +426,7 @@ mod tests {
         assert!(!dir.path().join("src/admin/pages/board_page.rs").exists());
         assert!(make_page(&project, "ProgressPage", PageKind::React).is_err(), "never twice");
         // A React page: the source, placeholders for the build, the setup once.
-        make_page(&project, "StatsPage", PageKind::React).unwrap();
+        let _ = make_page(&project, "StatsPage", PageKind::React).unwrap();
         assert!(read(&dir, "src/admin/pages/stats_page.rs").contains("PageView::Script(\"lms/stats\")"));
         assert!(read(&dir, "resources/admin/src/lms/stats.tsx").contains("registerPage(\"lms/stats\", StatsPage)"));
         assert!(dir.path().join("resources/admin/js/lms/stats.js").exists());
@@ -437,14 +437,14 @@ mod tests {
         assert!(provider.contains("/resources/admin/css/lms/stats.css"));
         // A second page leaves the setup (even edited) and the first page alone.
         std::fs::write(dir.path().join("resources/admin/package.json"), "{\"edited\": true}").unwrap();
-        make_page(&project, "ChartsPage", PageKind::React).unwrap();
+        let _ = make_page(&project, "ChartsPage", PageKind::React).unwrap();
         assert_eq!(read(&dir, "resources/admin/package.json"), "{\"edited\": true}");
         assert!(dir.path().join("resources/admin/src/lms/stats.tsx").exists());
         assert!(make_page(&project, "StatsPage", PageKind::React).is_err(), "never twice");
         let upper = Project { root: dir.path().to_path_buf(), package: "My_Lms".into() };
         assert!(make_page(&upper, "CalendarPage", PageKind::Script).is_err(), "the vendor comes from the package name");
 
-        make_command(&project, "lms:report").unwrap();
+        let _ = make_command(&project, "lms:report").unwrap();
         for own in ["doctor", "upgrade", "self-update", "docs", "new"] {
             assert!(make_command(&project, own).is_err(), "{own} is a rustcms command");
         }

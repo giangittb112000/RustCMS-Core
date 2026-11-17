@@ -129,6 +129,13 @@ All notable changes are documented here. The format follows
 - Admin panel: the arrow of native selects sat against the right border, at a
   different inset per browser; it is now drawn inset like the text.
 
+### Security
+- SQLite 3.54.1 (libsqlite3-sys 0.39.1; RUSTSEC-2026-0459, uninitialized
+  memory read when a database is opened with a crafted `-wal` file). No sqlx
+  release allows it yet: Core and new applications patch sqlx to an
+  unreleased commit (`[patch.crates-io]`, rev `10462fa4`), removed once a
+  release does. ammonia 4.2.5 (RUSTSEC-2026-0533).
+
 ## [0.12.1] — 2026-11-05
 
 ### Fixed

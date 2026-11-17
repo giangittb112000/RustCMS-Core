@@ -105,7 +105,7 @@ rustcms = { git = "https://github.com/irisvn/RustCMS-Core", tag = "v0.13.0" }
 |---|---|
 | `--path <dir>` | the parent directory (default: the current one) |
 | `--no-fetch` | do not resolve the dependencies now (offline); Cargo does it on the first build |
-| `--in-workspace` | do not declare a standalone `[workspace]`, for an application inside another Cargo workspace (dependencies are not resolved either) |
+| `--in-workspace` | do not declare a standalone `[workspace]`, for an application inside another Cargo workspace (dependencies are not resolved either; add the workspace's `[patch.crates-io]` for sqlx to its root, see the [upgrade guide](../upgrade.md#from-0121-to-0130)) |
 
 A tag that does not exist, or dependencies that do not resolve, fail the
 command; the project is left in place to inspect. The first build compiles

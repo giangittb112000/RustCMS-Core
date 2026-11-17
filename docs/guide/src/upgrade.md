@@ -33,6 +33,28 @@
 
 No migration. To roll back, install 0.12.1 again; no data changes shape.
 
+- **SQLite 3.54 (security, RUSTSEC-2026-0459).** No sqlx release bundles it
+  yet, and a `[patch.crates-io]` in RustCMS does not reach an application:
+  add the section below to the `Cargo.toml` at your workspace's root (the
+  application's own, or the parent workspace's for an application inside
+  one), then run `cargo update -p libsqlite3-sys`. `rustcms new` writes it
+  for new applications, except with `--in-workspace`: add it to the parent
+  workspace's root. A later release says when to remove it.
+
+  ```toml
+  [patch.crates-io]
+  sqlx = { git = "https://github.com/launchbadge/sqlx", rev = "10462fa4414c6c7f1ed1d39bb31678e3b726878c" }
+  sqlx-core = { git = "https://github.com/launchbadge/sqlx", rev = "10462fa4414c6c7f1ed1d39bb31678e3b726878c" }
+  sqlx-macros = { git = "https://github.com/launchbadge/sqlx", rev = "10462fa4414c6c7f1ed1d39bb31678e3b726878c" }
+  sqlx-macros-core = { git = "https://github.com/launchbadge/sqlx", rev = "10462fa4414c6c7f1ed1d39bb31678e3b726878c" }
+  sqlx-mysql = { git = "https://github.com/launchbadge/sqlx", rev = "10462fa4414c6c7f1ed1d39bb31678e3b726878c" }
+  sqlx-postgres = { git = "https://github.com/launchbadge/sqlx", rev = "10462fa4414c6c7f1ed1d39bb31678e3b726878c" }
+  sqlx-sqlite = { git = "https://github.com/launchbadge/sqlx", rev = "10462fa4414c6c7f1ed1d39bb31678e3b726878c" }
+  ```
+
+  Only a process that opens a database file (with its `-wal`) written by a
+  less trusted party is exposed; PostgreSQL and MySQL applications are not.
+
 - **New schema vocabulary.** The panel and the server move together (the
   admin panel is embedded): nothing to do, unless an application builds
   `InputSchema` or `LayoutSchema` by hand (new members `number`,

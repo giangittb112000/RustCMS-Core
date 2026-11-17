@@ -2,7 +2,7 @@
 //!
 //! ```rust,ignore
 //! TextInput::make("url").shown_when(when("link_type").eq("external")),
-//! Section::make("Discount").shown_when(when("on_sale").is_true()).schema(components![…]),
+//! Section::make("Discount").shown_when(when("on_sale").is_true()).schema(components![/* … */]),
 //! TextInput::make("code").shown_when(Condition::any([when("a").filled(), when("b").is_true()])),
 //! ```
 //!

@@ -534,7 +534,7 @@ impl ActiveModelBehavior for ActiveModel {}
     #[test]
     fn writes_registers_once_and_validates_input() {
         let (dir, project) = project();
-        make_resource(&project, "Post", true, &["category_id=categories".into()]).unwrap();
+        let _ = make_resource(&project, "Post", true, &["category_id=categories".into()]).unwrap();
         let provider = || std::fs::read_to_string(dir.path().join("src/providers/admin_panel_provider.rs")).unwrap();
         assert_eq!(
             provider().matches(".resource::<crate::admin::resources::post_resource::PostResource>()").count(),
@@ -547,7 +547,7 @@ impl ActiveModelBehavior for ActiveModel {}
         assert!(std::fs::read_to_string(&file).unwrap().contains(".plural(\"Posts\")"));
         // Regenerating after deleting the file does not register twice.
         std::fs::remove_file(&file).unwrap();
-        make_resource(&project, "Post", true, &[]).unwrap();
+        let _ = make_resource(&project, "Post", true, &[]).unwrap();
         assert_eq!(provider().matches("PostResource").count(), 1);
         let index = std::fs::read_to_string(dir.path().join("src/admin/resources/mod.rs")).unwrap();
         assert_eq!(index.matches("pub mod post_resource;").count(), 1);
@@ -565,7 +565,7 @@ impl ActiveModelBehavior for ActiveModel {}
     #[test]
     fn policy_names() {
         let (dir, project) = project();
-        make_policy(&project, "PostPolicy").unwrap();
+        let _ = make_policy(&project, "PostPolicy").unwrap();
         let policy = std::fs::read_to_string(dir.path().join("src/policies/post_policy.rs")).unwrap();
         assert!(policy.contains("format!(\"posts.{ability}\")") && policy.contains("use rustcms::async_trait;"));
         for bad in ["Policy", "Post", "bad"] {

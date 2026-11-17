@@ -200,7 +200,7 @@ mod tests {
     /// The generated manifest, parsed.
     fn manifest(rustcms_path: Option<&str>) -> toml::Table {
         let dir = tempfile::tempdir().unwrap();
-        new_app("blog", dir.path(), &NewOptions { rustcms_path, in_workspace: false, fetch: false }).unwrap();
+        let _ = new_app("blog", dir.path(), &NewOptions { rustcms_path, in_workspace: false, fetch: false }).unwrap();
         std::fs::read_to_string(dir.path().join("blog/Cargo.toml")).unwrap().parse().unwrap()
     }
 
@@ -231,7 +231,8 @@ mod tests {
     #[test]
     fn writes_the_application_ci() {
         let dir = tempfile::tempdir().unwrap();
-        new_app("blog", dir.path(), &NewOptions { rustcms_path: None, in_workspace: false, fetch: false }).unwrap();
+        let _ =
+            new_app("blog", dir.path(), &NewOptions { rustcms_path: None, in_workspace: false, fetch: false }).unwrap();
         let ci = std::fs::read_to_string(dir.path().join("blog/.github/workflows/ci.yml")).unwrap();
         assert!(ci.contains("cargo test --locked"), "{ci}");
         assert!(ci.contains("${{ runner.os }}"), "GitHub expressions kept: {ci}");
@@ -243,7 +244,8 @@ mod tests {
     fn a_new_application_is_formatted() {
         let dir = tempfile::tempdir().unwrap();
         for name in ["blog", "bootstrap", "a-much-longer-application-name-than-most"] {
-            new_app(name, dir.path(), &NewOptions { rustcms_path: None, in_workspace: false, fetch: false }).unwrap();
+            let _ = new_app(name, dir.path(), &NewOptions { rustcms_path: None, in_workspace: false, fetch: false })
+                .unwrap();
             let app = dir.path().join(name);
             assert!(app.join("rustfmt.toml").is_file());
             let out =
