@@ -98,7 +98,7 @@ then resolves its dependencies (`Cargo.lock`). Its `Cargo.toml` depends on the
 RustCMS-Core tag of the command's version:
 
 ```toml
-rustcms = { git = "https://github.com/irisvn/RustCMS-Core", tag = "v0.12.1" }
+rustcms = { git = "https://github.com/irisvn/RustCMS-Core", tag = "v0.13.0" }
 ```
 
 | Option | |

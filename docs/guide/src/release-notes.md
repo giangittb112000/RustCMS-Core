@@ -1,7 +1,40 @@
 # Release notes
 
-RustCMS is in pre-release. The current version is **0.12.1**; 0.1.0-alpha.0
+RustCMS is in pre-release. The current version is **0.13.0**; 0.1.0-alpha.0
 was the first published one.
+
+## 0.13.0
+
+Read the [upgrade guide](upgrade.md#from-0121-to-0130) first: new schema
+vocabulary, a few Rust API additions, and `lock_parent` may not target the
+media library. No migration. Most of this release was contributed by
+@giangittb112000.
+
+- **Number bounds**: `NumberInput::make(…).min(n).max(n).step(n)` (and on
+  integer settings), checked by the server on every write
+  ([Forms](admin/forms.md#number-bounds)).
+- **Inputs shown under conditions**: `.shown_when(when("x").eq(v))` on
+  inputs, layouts, tabs, settings and action forms, evaluated live in the
+  panel and again by the server on what the user's form holds;
+  `.clear_when_hidden()` ([Forms](admin/forms.md#showing-inputs-under-conditions)).
+- **Titles from several fields**: `ResourceMeta::title_template("{name}
+  (grade {grade})")`, searched word by word ([Resources](admin/resources.md)).
+- **Infolists**: `infolist()` shows a record's view page with entries (text,
+  badges, relations, media, rich text, custom entries), `computed()` values
+  computed when the page opens, `PageView::Infolist` for panel pages; SDK
+  `ui` 3 ([Infolists](admin/infolists.md)).
+- **Repeaters**: `Repeater::make("faq").schema(…)` stores rows in a JSON
+  column; with `.relationship()`, the rows are the child records of a
+  has-many relation, edited in the parent's form (the child locks its
+  parent); count columns `count()` / `counts("posts")`; row-level history
+  ([Forms](admin/forms.md#repeaters), [Tables](admin/tables.md#counts)).
+- **`rustcms serve --watch`** (macOS, Linux): rebuilds on changes and
+  replaces the server once the build succeeds; a failed build keeps the
+  running server
+  ([Installation](getting-started/installation.md#rebuilding-on-changes)).
+- A create leaving out a column that may not be null answers `is required`
+  (422) instead of a server error; actions that move records under
+  `lock_parent` lock the destination parent.
 
 ## 0.12.1
 

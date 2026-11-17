@@ -6,6 +6,8 @@ All notable changes are documented here. The format follows
 
 ## [Unreleased]
 
+## [0.13.0] — 2026-11-17
+
 ### Added
 - `rustcms serve --watch` (macOS and Linux; first written by
   @giangittb112000): builds and runs `serve` through `cargo run`, then
