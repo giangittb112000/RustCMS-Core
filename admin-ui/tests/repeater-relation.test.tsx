@@ -64,11 +64,12 @@ it("sends only the change: updated fields, removed rows, new rows and the order"
   fireEvent.change(within(rowsShown()[2]!).getByLabelText(/^Product/), { target: { value: "d" } });
   fireEvent.change(within(rowsShown()[2]!).getByLabelText(/^Quantity/), { target: { value: "4" } });
   fireEvent.click(within(rowsShown()[2]!).getByRole("button", { name: "Move up" }));
-  const change = sent() as { create: { ref: string; data: unknown }[]; update: unknown; delete: unknown; order: string[] };
+  const change = sent() as { create: { ref: string; data: unknown }[]; update: unknown; delete: unknown; order: unknown[] };
   expect(change.update).toEqual([{ key: "2", data: { quantity: 20 } }]);
   expect(change.delete).toEqual(["1"]);
   expect(change.create).toEqual([{ ref: change.create[0]!.ref, data: { product: "d", quantity: 4 } }]);
-  expect(change.order).toEqual(["2", change.create[0]!.ref, "3"]);
+  // New rows are tagged in the order: a reference never reads as a key.
+  expect(change.order).toEqual(["2", { new: change.create[0]!.ref }, "3"]);
 });
 
 it("shows the server's problems in their row, by key", async () => {

@@ -14,8 +14,18 @@ pub(crate) struct RowChange {
     pub(crate) update: Vec<(String, Data)>,
     /// Removed rows (to the trash with soft deletes).
     pub(crate) delete: Vec<String>,
-    /// Every row the user sees after the change, keys and refs, in order.
-    pub(crate) order: Option<Vec<String>>,
+    /// Every row the user sees after the change, in order: stored rows by
+    /// key, new rows by their reference (`{"new": ref}` on the wire).
+    pub(crate) order: Option<Vec<RowId>>,
+}
+
+/// A row named in a change's order.
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+pub(crate) enum RowId {
+    /// A stored row, by its (canonical) key.
+    Key(String),
+    /// A row this change creates, by its reference.
+    New(String),
 }
 
 /// Where the rows belong.
@@ -33,6 +43,9 @@ pub(crate) struct RowTarget<'a> {
     /// The repeater's bounds on the parent's rows (checked when rows are added or removed).
     pub(crate) min_items: Option<u32>,
     pub(crate) max_items: Option<u32>,
+    /// Whether rows may be added and removed (`addable`, `deletable`).
+    pub(crate) addable: bool,
+    pub(crate) deletable: bool,
 }
 
 /// What changed, for the parent's history.
@@ -70,6 +83,22 @@ fn below(relation: &str, id: &str, err: AppError) -> AppError {
 }
 
 impl<R: Resource> ResourceAdapter<R> {
+    /// Refuses a row whose data (after the child's hooks) holds a media or
+    /// rich-text field: checking it would lock media rows inside a row write,
+    /// out of the parent write's lock order (ADR 0041). Row inputs never are
+    /// such fields (boot); only a hook can add one.
+    fn refuse_row_media(&self, data: &Data) -> AppResult<()> {
+        let media = self.fields.iter().find(|f| (f.media.is_some() || f.rich_text) && data.contains_key(&f.name));
+        match media {
+            Some(field) => Err(AppError::internal(format!(
+                "`{}`: hooks of a relationship repeater's child may not write media or rich-text fields (`{}`)",
+                R::SLUG,
+                field.name
+            ))),
+            None => Ok(()),
+        }
+    }
+
     /// Writes `change` to the children of `target`, in `txn` (the parent's
     /// write, `ctx` its context). Rows named by key are locked in key order
     /// through the child's scope and view policy (re-checked under the lock);
@@ -92,17 +121,59 @@ impl<R: Resource> ResourceAdapter<R> {
             }
         }
         undeclared.into_result()?;
+        // Declared options, checked after admission and before any key is read.
+        if !target.addable && !change.create.is_empty() {
+            return Err(ValidationErrors::field(relation, "rows cannot be added here").into());
+        }
+        if !target.deletable && !change.delete.is_empty() {
+            return Err(ValidationErrors::field(relation, "rows cannot be removed here").into());
+        }
         let parent_value = self.fk_value(target.field, target.parent_key);
+        let parent_filter = self.parent_filter(&target, &parent_value)?;
         let mut named: Vec<String> =
             change.update.iter().map(|(k, _)| k.clone()).chain(change.delete.clone()).collect();
         named.sort();
         named.dedup();
-        let visible = self.locked_visible(ctx, txn, &named, &[]).await?;
+        // One locking pass over this parent's rows (ADR 0041): the named rows that
+        // are its children, and with an order every live child (bounded first).
+        let mut candidates: Vec<String> = if named.is_empty() {
+            Vec::new()
+        } else {
+            Entity::<R>::find()
+                .filter(parent_filter.clone())
+                .filter(self.pk.is_in(self.decode_keys(&named)?))
+                .all(txn.as_ref())
+                .await?
+                .iter()
+                .map(|m| self.key_of(m))
+                .collect()
+        };
+        let ordering = target.order_column.is_some() && change.order.is_some();
+        if ordering {
+            let live = self
+                .live_rows(&target, &parent_value)?
+                .order_by_asc(self.pk)
+                .limit(MAX_ORDERED_ROWS as u64 + 1)
+                .all(txn.as_ref())
+                .await?;
+            if live.len() > MAX_ORDERED_ROWS {
+                return Err(ValidationErrors::field(relation, "has too many rows to order here").into());
+            }
+            candidates.extend(live.iter().map(|m| self.key_of(m)));
+        }
+        candidates.sort();
+        candidates.dedup();
+        let locked = self.locked_visible(ctx, txn, &candidates, &[]).await?;
         let mut errors = ValidationErrors::new();
         let mut models = HashMap::new();
         for key in &named {
-            let found = if visible.contains(key) {
-                self.find_model_in(ctx, txn.as_ref(), key, Trashed::Without).await.ok()
+            let found = if locked.contains(key) {
+                // Gone meanwhile: not one of the rows; any other error is the database's.
+                match self.find_model_in(ctx, txn.as_ref(), key, Trashed::Without).await {
+                    Ok(model) => Some(model),
+                    Err(AppError::NotFound) => None,
+                    Err(err) => return Err(err),
+                }
             } else {
                 None
             };
@@ -149,7 +220,9 @@ impl<R: Resource> ResourceAdapter<R> {
         }
         // New rows go after every row of the parent (an order may move them next).
         let mut next = match target.order_column {
-            Some(column) => self.largest_position(txn, &target, column, &parent_value).await? + 1,
+            Some(column) => {
+                self.next_position(relation, column, self.largest_position(txn, &target, column, &parent_value).await?)?
+            }
             None => 0,
         };
         for (reference, mut data) in change.create {
@@ -157,10 +230,14 @@ impl<R: Resource> ResourceAdapter<R> {
                 return Err(ValidationErrors::field(format!("{relation}.{reference}"), "is not allowed").into());
             }
             data.insert(target.field.to_owned(), parent_value.clone());
-            let position = target.order_column.map(|column| {
-                next += 1;
-                (column, next - 1)
-            });
+            let position = match target.order_column {
+                Some(column) => {
+                    let at = next;
+                    next = self.next_position(relation, column, next)?;
+                    Some((column, at))
+                }
+                None => None,
+            };
             let key = self.create_row(&bound, txn, data, position).await.map_err(|e| below(relation, &reference, e))?;
             refs.insert(reference, key.clone());
             outcome.created.push(key);
@@ -178,7 +255,10 @@ impl<R: Resource> ResourceAdapter<R> {
             }
         }
         if let (Some(column), Some(order)) = (target.order_column, change.order) {
-            outcome.reordered = self.reorder_rows(ctx, txn, &target, column, &parent_value, &order, &refs).await?;
+            let deleted: HashSet<&String> = outcome.deleted.iter().collect();
+            let survivors: HashSet<String> = locked.iter().filter(|k| !deleted.contains(k)).cloned().collect();
+            outcome.reordered =
+                self.reorder_rows(ctx, txn, &target, column, &parent_value, &order, &refs, &survivors).await?;
         }
         Ok(outcome)
     }
@@ -226,7 +306,9 @@ impl<R: Resource> ResourceAdapter<R> {
         if data.get(parent_field).is_some_and(|v| self.record(&model).get(parent_field) != Some(v)) {
             return Err(AppError::internal(format!("`{}`: a hook changed the relation key `{parent_field}`", R::SLUG)));
         }
-        self.check_written(ctx, txn, &data).await?;
+        // A row takes no explicit lock but its own (ADR 0041): no media.
+        self.refuse_row_media(&data)?;
+        self.check_relations(ctx, txn, &data).await?;
         if data.is_empty() {
             return Ok(false);
         }
@@ -262,7 +344,9 @@ impl<R: Resource> ResourceAdapter<R> {
         if data.get(&field) != parent_value.as_ref() {
             return Err(AppError::internal(format!("`{}`: a hook changed the relation key `{field}`", R::SLUG)));
         }
-        self.check_written(ctx, txn, &data).await?;
+        // A row takes no explicit lock but its own (ADR 0041): no media.
+        self.refuse_row_media(&data)?;
+        self.check_relations(ctx, txn, &data).await?;
         let mut active = <<Entity<R> as EntityTrait>::ActiveModel as ActiveModelBehavior>::new();
         self.apply(ctx, &mut active, &data, Operation::Create, None)?;
         self.set_marker(&mut active, false)?;
@@ -310,7 +394,7 @@ impl<R: Resource> ResourceAdapter<R> {
     }
 
     /// The largest position among the parent's rows (trashed ones included:
-    /// their places stay taken), 0 for none.
+    /// their places stay taken), 0 for none: one `MAX`, read by the column's kind.
     async fn largest_position(
         &self,
         txn: &Arc<sea_orm::DatabaseTransaction>,
@@ -318,20 +402,54 @@ impl<R: Resource> ResourceAdapter<R> {
         column: &str,
         parent_value: &serde_json::Value,
     ) -> AppResult<i64> {
+        let position = self.column(column);
+        let query = Entity::<R>::find().filter(self.parent_filter(target, parent_value)?).select_only().expr_as(
+            sea_orm::sea_query::Func::max(sea_orm::sea_query::Expr::col((Entity::<R>::default(), position.column))),
+            "largest",
+        );
+        let largest = match position.kind {
+            FieldKind::I64 => query.into_tuple::<Option<i64>>().one(txn.as_ref()).await?.flatten(),
+            _ => query.into_tuple::<Option<i32>>().one(txn.as_ref()).await?.flatten().map(i64::from),
+        };
+        Ok(largest.unwrap_or(0))
+    }
+
+    /// The position after `position` in the order column, within its range
+    /// (`i32` or `i64`); 422 once the positions are used up.
+    fn next_position(&self, relation: &str, column: &str, position: i64) -> AppResult<i64> {
+        let limit = match self.column(column).kind {
+            FieldKind::I64 => i64::MAX,
+            _ => i64::from(i32::MAX),
+        };
+        position
+            .checked_add(1)
+            .filter(|next| *next <= limit)
+            .ok_or_else(|| ValidationErrors::field(relation, "has no positions left; renumber the rows").into())
+    }
+
+    /// A position as the order column's kind travels (an `i64` as a string).
+    fn position_value(&self, column: &str, position: i64) -> serde_json::Value {
+        match self.column(column).kind {
+            FieldKind::I64 => serde_json::Value::String(position.to_string()),
+            _ => serde_json::Value::from(position),
+        }
+    }
+
+    /// The position a stored row holds.
+    fn held_position(&self, column: &str, model: &Model<R>) -> Option<i64> {
         let position = self.column(column).column;
-        let rows = Entity::<R>::find().filter(self.parent_filter(target, parent_value)?).all(txn.as_ref()).await?;
-        Ok(rows
-            .iter()
-            .filter_map(|m| encode_column(position.def().get_column_type(), &m.get(position)).as_i64())
-            .max()
-            .unwrap_or(0))
+        match encode_column(position.def().get_column_type(), &model.get(position)) {
+            serde_json::Value::String(text) => text.parse().ok(),
+            other => other.as_i64(),
+        }
     }
 
     /// Writes the positions `order` sets (ADR 0040): the rows the user sees
     /// take, in that order, the positions those rows held (new rows the ones
-    /// after the largest); rows the user cannot see keep theirs. Two passes,
-    /// so a unique `(parent, position)` holds throughout. Whether a position
-    /// changed.
+    /// after the largest); rows the user cannot see keep theirs. `survivors`:
+    /// the rows locked visible in this write's locking pass and not deleted
+    /// (no row is locked here). Two passes, so a unique `(parent, position)`
+    /// holds throughout. Whether a position changed.
     #[allow(clippy::too_many_arguments)]
     async fn reorder_rows(
         &self,
@@ -340,55 +458,79 @@ impl<R: Resource> ResourceAdapter<R> {
         target: &RowTarget<'_>,
         column: &str,
         parent_value: &serde_json::Value,
-        order: &[String],
+        order: &[RowId],
         refs: &HashMap<String, String>,
+        survivors: &HashSet<String>,
     ) -> AppResult<bool> {
         let relation = target.relation;
         let position = self.column(column).column;
         let decode = |kind: FieldKind, value: &serde_json::Value| -> AppResult<Vec<Value>> {
             kind.decode(value).map_err(|e| AppError::internal(e.0))
         };
-        // Every row of the parent (locked), and those the user sees now.
-        let query = self.live_rows(target, parent_value)?;
-        let all: Vec<Model<R>> = query.order_by_asc(self.pk).lock_exclusive().all(txn.as_ref()).await?;
-        let keys: Vec<String> = all.iter().map(|m| self.key_of(m)).collect();
-        let visible = self.locked_visible(ctx, txn, &keys, &[]).await?;
+        // The rows ordered: the survivors and the rows created by this write.
+        let created: HashSet<&String> = refs.values().collect();
+        let mut keys: Vec<String> = survivors.iter().cloned().chain(refs.values().cloned()).collect();
+        keys.sort();
+        keys.dedup();
+        let rows: Vec<Model<R>> = if keys.is_empty() {
+            Vec::new()
+        } else {
+            self.live_rows(target, parent_value)?
+                .filter(self.pk.is_in(self.decode_keys(&keys)?))
+                .all(txn.as_ref())
+                .await?
+        };
+        let shown: HashSet<String> = rows.iter().map(|m| self.key_of(m)).collect();
         let mut wanted: Vec<String> = Vec::with_capacity(order.len());
         let mut errors = ValidationErrors::new();
         for id in order {
-            let key = refs.get(id).cloned().unwrap_or_else(|| id.clone());
-            if !visible.contains(&key) || wanted.contains(&key) {
-                errors.add(relation, "must list every row once");
-                break;
+            let key = match id {
+                RowId::Key(key) => Some(key.clone()),
+                RowId::New(reference) => refs.get(reference).cloned(),
+            };
+            match key {
+                Some(key) if shown.contains(&key) && !wanted.contains(&key) => wanted.push(key),
+                _ => {
+                    errors.add(relation, "must list every row once");
+                    break;
+                }
             }
-            wanted.push(key);
         }
-        if wanted.len() != visible.len() {
+        if wanted.len() != shown.len() {
             errors.add(relation, "must list every row once");
         }
         errors.into_result()?;
-        let held = |m: &Model<R>| encode_column(position.def().get_column_type(), &m.get(position)).as_i64();
-        // The places the visible rows hold (new rows were given the ones after the largest).
-        let mut slots: Vec<i64> = all.iter().filter(|m| visible.contains(&self.key_of(m))).filter_map(held).collect();
+        // The places the stored visible rows hold (new rows took the ones after the largest).
+        let mut slots: Vec<i64> = rows
+            .iter()
+            .filter(|m| !created.contains(&self.key_of(m)))
+            .filter_map(|m| self.held_position(column, m))
+            .collect();
         slots.sort_unstable();
-        // Trashed rows keep their places: the moves go above them too.
+        // Every position in use (hidden, trashed, new rows included) is below this.
         let mut largest = self.largest_position(txn, target, column, parent_value).await?;
+        let created_slots: Vec<i64> = rows
+            .iter()
+            .filter(|m| created.contains(&self.key_of(m)))
+            .filter_map(|m| self.held_position(column, m))
+            .collect();
+        slots.extend(created_slots);
+        slots.sort_unstable();
         while slots.len() < wanted.len() {
-            largest += 1;
+            largest = self.next_position(relation, column, largest)?;
             slots.push(largest);
         }
-        let by_key: HashMap<String, &Model<R>> = all.iter().map(|m| (self.key_of(m), m)).collect();
+        let by_key: HashMap<String, &Model<R>> = rows.iter().map(|m| (self.key_of(m), m)).collect();
         let moves: Vec<(&Model<R>, i64)> = wanted
             .iter()
             .zip(slots)
             .filter_map(|(key, slot)| by_key.get(key).map(|m| (*m, slot)))
-            .filter(|(m, slot)| held(m) != Some(*slot))
+            .filter(|(m, slot)| self.held_position(column, m) != Some(*slot))
             .collect();
         if moves.is_empty() {
             return Ok(false);
         }
         // Moving a stored row writes it: `update` on the child and on each row (new rows are the user's).
-        let created: HashSet<&String> = refs.values().collect();
         let stored: Vec<&Model<R>> =
             moves.iter().map(|(m, _)| *m).filter(|m| !created.contains(&self.key_of(m))).collect();
         if !stored.is_empty() && !self.policy.admits(ctx, ability::UPDATE).await {
@@ -400,13 +542,18 @@ impl<R: Resource> ResourceAdapter<R> {
             }
         }
         // Out of the way first (above every position in use), then in place.
-        let offset = largest + 1;
         let kind = self.column(column).kind;
+        let mut offset = largest;
+        let mut temporary = Vec::with_capacity(moves.len());
+        for _ in &moves {
+            offset = self.next_position(relation, column, offset)?;
+            temporary.push(offset);
+        }
         for pass in [true, false] {
             for (index, (model, slot)) in moves.iter().enumerate() {
-                let value = if pass { offset + index as i64 } else { *slot };
+                let value = if pass { temporary[index] } else { *slot };
                 let mut active = (*model).clone().into_active_model();
-                let candidates = decode(kind, &serde_json::Value::from(value))?;
+                let candidates = decode(kind, &self.position_value(column, value))?;
                 if !candidates.into_iter().any(|v| active.try_set(position, v).is_ok()) {
                     return Err(AppError::internal(format!("`{}`: cannot write the order column `{column}`", R::SLUG)));
                 }
@@ -416,6 +563,10 @@ impl<R: Resource> ResourceAdapter<R> {
         Ok(true)
     }
 }
+
+/// Most rows a change may order (the parent's live children, discovered
+/// before any lock).
+const MAX_ORDERED_ROWS: usize = 1000;
 
 /// Most entries of one part of a relationship repeater's change.
 const MAX_ROW_ITEMS: usize = 100;
@@ -437,15 +588,6 @@ pub(crate) struct RowRepeater {
 /// The relationship repeaters of `form`; panics on what cannot hold here
 /// (the child's fields are checked by `Registry::finish`).
 pub(super) fn row_repeaters(slug: &str, form: &Form, relations: &[Relation]) -> Vec<RowRepeater> {
-    // Not in this release: their writes do not hold one lock order with every
-    // other writer yet (docs/core/plans/contrib-0.13-d2.md).
-    if let Some(input) = form.inputs().into_iter().find(|i| i.repeater.as_deref().is_some_and(|s| s.relationship)) {
-        panic!(
-            "resource `{slug}`: repeater `{}`: relationship repeaters are not available in this release; edit the \
-             records of a has-many relation through its relation section",
-            input.name
-        );
-    }
     let mut out = Vec::new();
     for input in form.inputs() {
         let Some(spec) = input.repeater.as_deref().filter(|s| s.relationship) else { continue };
@@ -482,6 +624,12 @@ pub(super) fn row_repeaters(slug: &str, form: &Form, relations: &[Relation]) -> 
                 !row.required && row.max_length.is_none() && !row.integer,
                 "{here}: `{row_name}`: in relationship rows the child's field decides `required`, `max_length` and \
                  integers"
+            );
+            // Rows are checked with the child's rules: options and bounds of their own
+            // would show rules the server does not hold (ADR 0041).
+            assert!(
+                row.options.is_empty() && row.number.is_none(),
+                "{here}: `{row_name}`: in relationship rows the child's form decides options and number bounds"
             );
             assert!(!inputs.iter().any(|n| n == row_name), "{here}: input `{row_name}` appears twice in a row");
             inputs.push(row_name.to_owned());
@@ -572,6 +720,9 @@ impl<R: Resource> ResourceAdapter<R> {
     ) -> AppResult<Vec<(&'static str, RowsOutcome)>> {
         let key = self.key_of(model);
         let mut out = Vec::new();
+        // One phase per child resource, in lock order (ADR 0041).
+        let mut changes = changes;
+        changes.sort_by_cached_key(|(index, _)| ctx.registry.lock_rank(self.row_repeaters[*index].target));
         for (index, change) in changes {
             let repeater = &self.row_repeaters[index];
             let child = ctx.registry.get(repeater.target).ok_or(AppError::NotFound)?;
@@ -584,6 +735,8 @@ impl<R: Resource> ResourceAdapter<R> {
                 inputs: &repeater.inputs,
                 min_items: repeater.spec.min_items,
                 max_items: repeater.spec.max_items,
+                addable: repeater.spec.addable,
+                deletable: repeater.spec.deletable,
             };
             out.push((repeater.name, child.write_rows(ctx, txn, target, change).await?));
         }
@@ -609,9 +762,11 @@ impl<R: Resource> ResourceAdapter<R> {
             .map(|(relation, o)| {
                 rustcms_core::audit::AuditEntry::new("rows_changed", R::SLUG).key(&key).meta(serde_json::json!({
                     "relation": relation,
-                    "created": o.created,
-                    "updated": o.updated,
-                    "deleted": o.deleted,
+                    // Counts only (ADR 0041): which child rows changed is the child's
+                    // own history, read with the child's permissions.
+                    "created": o.created.len(),
+                    "updated": o.updated.len(),
+                    "deleted": o.deleted.len(),
                     "reordered": o.reordered,
                 }))
             })
@@ -667,11 +822,26 @@ fn parse_change(value: serde_json::Value, op: Operation, child: &dyn DynResource
         change.delete.push(key);
     }
     if let Some(order) = object.get("order") {
-        let items = order.as_array().filter(|a| a.len() <= 10 * MAX_ROW_ITEMS)?;
+        let items = order.as_array().filter(|a| a.len() <= MAX_ORDERED_ROWS)?;
         let mut ids = Vec::with_capacity(items.len());
+        let mut seen = HashSet::new();
         for item in items {
-            let id = item.as_str()?;
-            ids.push(if refs.contains(id) { id.to_owned() } else { child.canonical_key(id)? });
+            // A stored row by its key; a new row as `{"new": ref}`, a ref of this change.
+            let id = match item {
+                serde_json::Value::String(key) => RowId::Key(child.canonical_key(key)?),
+                serde_json::Value::Object(tag) if tag.len() == 1 => {
+                    let reference = tag.get("new")?.as_str()?;
+                    if !refs.contains(reference) {
+                        return None;
+                    }
+                    RowId::New(reference.to_owned())
+                }
+                _ => return None,
+            };
+            if !seen.insert(id.clone()) {
+                return None;
+            }
+            ids.push(id);
         }
         change.order = Some(ids);
     }

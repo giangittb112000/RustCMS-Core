@@ -37,6 +37,10 @@ impl<R: Resource> DynResource for ResourceAdapter<R> {
         self.field(name).map(|f| (f.belongs_to, self.column(name).kind.name()))
     }
 
+    fn field_locks_media_or_secret(&self, name: &str) -> bool {
+        self.field(name).is_some_and(|f| f.media.is_some() || f.rich_text || f.secret.is_some())
+    }
+
     fn key_kind(&self) -> &'static str {
         self.pk_kind.name()
     }
@@ -197,7 +201,35 @@ impl<R: Resource> DynResource for ResourceAdapter<R> {
     }
 
     fn row_schema(&self, ctx: &Ctx, components: &[Component], op: SchemaOperation) -> Vec<ComponentSchema> {
-        self.components(ctx, components, op, &HashMap::new())
+        // Rows are checked with this resource's rules: its form's options and
+        // number bounds show in the rows (ADR 0041).
+        fn inherit(components: &[Component], form: &[&crate::ui::Input]) -> Vec<Component> {
+            components
+                .iter()
+                .map(|c| match c {
+                    Component::Input(input) => {
+                        let mut input = input.clone();
+                        if let Some(own) = form.iter().find(|i| i.name == input.name) {
+                            if input.options.is_empty() {
+                                input.options = own.options.clone();
+                            }
+                            if input.number.is_none() {
+                                input.number = own.number.clone();
+                            }
+                        }
+                        Component::Input(input)
+                    }
+                    Component::Layout(layout) => {
+                        let mut layout = layout.clone();
+                        layout.children = inherit(&layout.children, form);
+                        Component::Layout(layout)
+                    }
+                    other => other.clone(),
+                })
+                .collect()
+        }
+        let rows = inherit(components, &self.form.inputs());
+        self.components(ctx, &rows, op, &HashMap::new())
     }
 
     fn row_repeater_fields(&self) -> Vec<(&'static str, &'static str, Vec<String>, Option<String>)> {
@@ -472,8 +504,9 @@ impl<R: Resource> DynResource for ResourceAdapter<R> {
         {
             return Err(AppError::internal(format!("`{}`: a hook changed the relation key `{field}`", R::SLUG)));
         }
-        // What is written, hooks included: references are checked last.
-        self.check_written(&wctx, &txn, &data).await?;
+        // What is written, hooks included: references are read here; media
+        // references (explicit shared locks) are checked last (ADR 0041).
+        self.check_relations(&wctx, &txn, &data).await?;
         // Link targets, before the row's foreign keys lock what they reference.
         let links = self.lock_links(&wctx, &txn, links, &data).await?;
 
@@ -496,6 +529,8 @@ impl<R: Resource> DynResource for ResourceAdapter<R> {
         let link_audits = self.write_links(&wctx, &txn, &model, links).await?;
         // The children, once the parent is written (locked after it); `after_save` sees them.
         let row_outcomes = self.write_row_changes(&wctx, &txn, &model, rows).await?;
+        // Media last: the media resource ranks after every other (ADR 0041).
+        self.check_media(&wctx, &txn, &data).await?;
         R::after_save(&wctx, &txn, &model).await?;
         // As stored once the hooks ran.
         self.audit_outcome(&wctx, &txn, "created", None, &model, false, true).await?;
@@ -552,7 +587,7 @@ impl<R: Resource> DynResource for ResourceAdapter<R> {
         self.apply_conditions(&wctx, Operation::Update, &mut input, Some((&record, viewable)), None)?;
         let data = R::mutate_before_update(&wctx, &txn, &model, input).await?;
         self.check_parent_written(&wctx, &data, &parents)?;
-        self.check_written(&wctx, &txn, &data).await?;
+        self.check_relations(&wctx, &txn, &data).await?;
         // Link targets, before the row's foreign keys lock what they reference.
         let links = self.lock_links(&wctx, &txn, links, &data).await?;
         let model = if data.is_empty() {
@@ -567,6 +602,8 @@ impl<R: Resource> DynResource for ResourceAdapter<R> {
         let link_audits = self.write_links(&wctx, &txn, &model, links).await?;
         // The children, once the parent is written (locked after it); `after_save` sees them.
         let row_outcomes = self.write_row_changes(&wctx, &txn, &model, rows).await?;
+        // Media last: the media resource ranks after every other (ADR 0041).
+        self.check_media(&wctx, &txn, &data).await?;
         R::after_save(&wctx, &txn, &model).await?;
         // Nothing changed: nothing to record.
         self.audit_outcome(&wctx, &txn, "updated", Some(&before), &model, false, false).await?;

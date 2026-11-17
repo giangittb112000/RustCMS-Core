@@ -106,6 +106,10 @@ keeps it complete.
 | `conflicts` | `conflicts with existing data` |
 | `missing_reference` | `references a missing or protected record` |
 | `incomplete` | `is incomplete` (a column the form does not set may not be empty: the application must set it, e.g. in a hook) |
+| `rows_not_addable` | `rows cannot be added here` (a relationship repeater with `addable(false)`) |
+| `rows_not_deletable` | `rows cannot be removed here` (`deletable(false)`) |
+| `too_many_rows` | `has too many rows to order here` (more than 1,000 rows of one parent) |
+| `positions_exhausted` | `has no positions left; renumber the rows` (the order column reached its type's largest value) |
 | `stale` | `This was changed by someone else meanwhile. Reload and try again.` |
 | `last_super_admin` | At least one active super admin is required for the `{guard}` guard. |
 | `no_super_admin_role` | no super_admin role for guard `{guard}` |

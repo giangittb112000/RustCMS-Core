@@ -262,6 +262,9 @@
   "password_for_email": [
     "is required to change your email"
   ],
+  "positions_exhausted": [
+    "has no positions left; renumber the rows"
+  ],
   "positive_integer": [
     "must be a positive integer"
   ],
@@ -270,6 +273,12 @@
   ],
   "row_order": [
     "must list every row once"
+  ],
+  "rows_not_addable": [
+    "rows cannot be added here"
+  ],
+  "rows_not_deletable": [
+    "rows cannot be removed here"
   ],
   "search_too_broad": [
     "matches too many records to check; refine the search"
@@ -321,6 +330,9 @@
   ],
   "too_many_roles": [
     "has too many roles"
+  ],
+  "too_many_rows": [
+    "has too many rows to order here"
   ],
   "too_many_to_export": [
     "More than {max} records to export; narrow the search or filters."

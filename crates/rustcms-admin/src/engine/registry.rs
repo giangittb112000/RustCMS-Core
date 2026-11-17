@@ -30,6 +30,11 @@ pub trait DynResource: Send + Sync {
     fn relations(&self) -> &[Relation];
     /// `belongs_to` slug and wire kind of field `name`, if it is a field.
     fn field_link(&self, name: &str) -> Option<(Option<&'static str>, &'static str)>;
+    /// Whether field `name` references media (a media field, or rich text
+    /// that may hold images) or is encrypted: what a relationship repeater's
+    /// rows may not edit (ADR 0041).
+    #[doc(hidden)]
+    fn field_locks_media_or_secret(&self, name: &str) -> bool;
     /// Wire kind of the primary key.
     fn key_kind(&self) -> &'static str;
     /// `key` in canonical form (`01` → `1`), if it is a valid key.
@@ -325,6 +330,11 @@ impl Registry {
                     .get(target)
                     .unwrap_or_else(|| panic!("resource `{slug}`: lock_parent targets unknown `{target}`"));
                 assert!(*target != slug, "resource `{slug}`: lock_parent cannot target itself");
+                // Media rows are locked last by every write (ADR 0041).
+                assert!(
+                    *target != crate::media::SLUG,
+                    "resource `{slug}`: lock_parent cannot target the media library (media rows are locked last)"
+                );
                 assert!(
                     matches!(resource.field_link(field), Some((Some(linked), _)) if linked == *target),
                     "resource `{slug}`: lock_parent needs `{field}` to be a field with `belongs_to(\"{target}\")`"
@@ -372,21 +382,40 @@ impl Registry {
             let slug = resource.slug();
             for (name, target, inputs, order) in resource.row_repeater_fields() {
                 let child = &self.resources[target];
-                // Rows are written under the parent's lock; a child locking another
-                // parent would take that lock after its own rows (ADR 0035 order).
-                if let Some((field, locked)) = &child.meta().parent_lock {
-                    let relation = resource.relations().iter().find(|r| r.name == name).map(|r| r.field);
-                    assert!(
+                let here = format!("resource `{slug}`: repeater `{name}`");
+                // The family serializes on the parent row: every write of a child
+                // locks its parent first, through this relation (ADR 0041).
+                let relation = resource.relations().iter().find(|r| r.name == name).map(|r| r.field);
+                match &child.meta().parent_lock {
+                    Some((field, locked)) => assert!(
                         *locked == slug && relation == Some(field.as_str()),
-                        "resource `{slug}`: repeater `{name}`: `{target}` locks its parent `{locked}` through `{field}`, \
-                         not through this relation"
-                    );
+                        "{here}: `{target}` locks its parent `{locked}` through `{field}`, not through this relation"
+                    ),
+                    None => panic!(
+                        "{here}: `{target}` must lock its parent: `ResourceMeta::lock_parent(\"{}\", \"{slug}\")`",
+                        relation.unwrap_or_default()
+                    ),
                 }
+                // One locking phase per child resource.
+                assert!(
+                    resource.row_repeater_fields().iter().filter(|(_, t, _, _)| *t == target).count() == 1,
+                    "{here}: `{target}` is edited by another repeater of `{slug}` (one repeater per child resource)"
+                );
+                // The parent's media locks come last; linking media would lock them earlier.
+                assert!(
+                    !resource.relations().iter().any(|r| r.is_many() && r.target == crate::media::SLUG),
+                    "{here}: a resource with relationship repeaters cannot link media records (belongs-to-many)"
+                );
                 for input in &inputs {
-                    assert!(
-                        child.field_link(input).is_some(),
-                        "resource `{slug}`: repeater `{name}`: row input `{input}` is not a field of `{target}`"
-                    );
+                    // A row takes no explicit lock but its own: no references edited in rows.
+                    match child.field_link(input) {
+                        None => panic!("{here}: row input `{input}` is not a field of `{target}`"),
+                        Some((Some(_), _)) => panic!("{here}: row input `{input}` is a belongs_to field (not in rows)"),
+                        Some((None, _)) => assert!(
+                            !child.field_locks_media_or_secret(input),
+                            "{here}: row input `{input}` is a media, rich-text or encrypted field (not in rows)"
+                        ),
+                    }
                 }
                 if let Some(column) = order {
                     assert!(
@@ -409,6 +438,11 @@ impl Registry {
     /// resources outside the graph last, by slug.
     #[doc(hidden)]
     pub fn lock_rank(&self, slug: &str) -> (usize, String) {
+        // Media rows are locked last by every write (references are checked
+        // after every other lock, ADR 0041): a rank after all others.
+        if slug == crate::media::SLUG {
+            return (usize::MAX, char::MAX.to_string());
+        }
         (self.lock_order.get(slug).copied().unwrap_or(usize::MAX), slug.to_owned())
     }
 }
@@ -428,6 +462,13 @@ impl Registry {
             }
             for relation in resource.relations().iter().filter(|r| r.is_many()) {
                 edges.entry(resource.slug()).or_default().push(relation.target);
+            }
+            // A parent write with relationship repeaters locks its link targets
+            // (before its row) before the rows of its children (after it).
+            for (_, child, _, _) in resource.row_repeater_fields() {
+                for relation in resource.relations().iter().filter(|r| r.is_many()) {
+                    edges.entry(relation.target).or_default().push(child);
+                }
             }
         }
         // The same order on every instance, whatever the maps' iteration order.

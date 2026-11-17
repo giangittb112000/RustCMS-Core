@@ -98,8 +98,10 @@ export function RelationRepeaterWidget({ id, input, ctx, value, onChange, disabl
               </div>
               <div id={bodyId} className="grid grid-cols-1 gap-4 p-4 md:grid-cols-2">
                 {typeof server[rowId] === "string" && <p role="alert" className="col-span-full text-xs text-destructive">{String(server[rowId])}</p>}
-                <RowComponents components={repeater.components} repeater={repeater} row={row.values} hidden={hiddenInRow(repeater, row.values)}
-                  path={(name) => `${index}.${name}`} problem={problem(index)} server={{}} ctx={ctx} disabled={!editable}
+                <RowComponents components={row.key ? repeater.components : (repeater.createComponents ?? repeater.components)}
+                  repeater={repeater} row={row.values} hidden={hiddenInRow(repeater, row.values)}
+                  path={(name) => `${index}.${name}`} problem={problem(index)} server={{}}
+                  ctx={{ ...ctx, slug: repeater.relationship?.resource ?? ctx.slug, record: row.key }} disabled={!editable}
                   idPrefix={bodyId} onChange={(next) => setRow(index, next)} />
               </div>
             </li>

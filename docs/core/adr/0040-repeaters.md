@@ -3,7 +3,7 @@
 - Status: accepted (unreleased, vocabulary 15)
 - Date: 2026-11-15
 
-> **0.13 status:** relationship repeaters (part 2) are refused at boot in this release; see `docs/core/plans/contrib-0.13-d2.md` (their writes need a lock contract for the whole write path).
+> **0.13:** relationship repeaters (part 2) follow the lock contract of ADR 0041 (child `lock_parent` required, one locking pass, rows without references or media, counts-only history, tagged refs).
 
 ## Context
 

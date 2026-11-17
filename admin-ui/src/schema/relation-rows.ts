@@ -88,11 +88,14 @@ export function changeOf(input: InputSchema, value: FormValue): JsonValue | unde
     return out;
   };
   const change: Record<string, JsonValue> = {};
-  const create = state.rows.filter((r) => !r.key).map((r) => ({ ref: r.ref ?? newRef(), data: wire(r) }));
+  // One reference per new row, used by `create` and `order` alike.
+  const refs = new Map(state.rows.filter((r) => !r.key).map((r) => [r, r.ref ?? newRef()] as const));
+  const create = state.rows.filter((r) => !r.key).map((r) => ({ ref: refs.get(r)!, data: wire(r) }));
   const update = state.rows.filter((r) => r.key && r.changed.length > 0).map((r) => ({ key: r.key!, data: wire(r, r.changed) }));
   if (create.length) change.create = create;
   if (update.length) change.update = update;
   if (state.deleted.length) change.delete = state.deleted;
-  if (repeater.reorderable && state.reordered) change.order = state.rows.map((r) => r.key ?? r.ref!);
+  // Stored rows by key, new rows tagged (`{"new": ref}`): a ref never reads as a key.
+  if (repeater.reorderable && state.reordered) change.order = state.rows.map((r) => (r.key ? r.key : { new: refs.get(r)! }));
   return change;
 }

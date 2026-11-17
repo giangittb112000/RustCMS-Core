@@ -49,6 +49,8 @@ No migration. To roll back, install 0.12.1 again; no data changes shape.
   infolists), `ComponentSchema::Entry`, `PageView::Infolist`. An exhaustive
   `match` on one of these enums needs an arm for it (or `_`). Code
   implementing `DynResource` itself (not through `Resource`) adds `computed`.
+- **`lock_parent` cannot target the media library** (boot refuses it): media
+  rows are locked after every other record of a write.
 - **Name clash.** `rustcms_admin::Condition` (form conditions) can clash with
   `sea_orm::Condition` when an application glob-imports both
   (`use rustcms_admin::*; use sea_orm::*;`): import the one you use by name.

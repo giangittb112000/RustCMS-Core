@@ -13,7 +13,7 @@ use crate::ui::{
 /// Version of the schema structure.
 pub const SCHEMA_VERSION: u32 = 2;
 /// Version of the component, column and filter vocabulary.
-pub const VOCABULARY_VERSION: u32 = 15;
+pub const VOCABULARY_VERSION: u32 = 16;
 
 /// Navigation entry and identity of a resource.
 #[derive(Debug, Clone, PartialEq, Serialize)]
@@ -213,6 +213,12 @@ pub struct InputSchema {
 pub struct RepeaterSchema {
     /// The row's inputs and layouts.
     pub components: Vec<ComponentSchema>,
+    /// Relationship repeaters on an edit page: the inputs of a new row (the
+    /// child's create form); `components` are those of a stored row
+    /// (vocabulary 16).
+    #[cfg_attr(feature = "ts", ts(optional))]
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub create_components: Option<Vec<ComponentSchema>>,
     /// Fewest rows.
     #[cfg_attr(feature = "ts", ts(optional))]
     #[serde(skip_serializing_if = "Option::is_none")]

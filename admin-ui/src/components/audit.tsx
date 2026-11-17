@@ -54,10 +54,10 @@ export function rowChanges(field: string, before: unknown, after: unknown): [str
   return out.length > 0 ? out : null;
 }
 
-/** A relationship repeater's change on the parent (`rows_changed`): which child rows, by key. */
+/** A relationship repeater's change on the parent (`rows_changed`): how many child rows (each row has its own history). */
 function RowsChanged({ meta }: { meta: Record<string, unknown> }) {
   const t = useT();
-  const keys = (v: unknown) => (Array.isArray(v) ? v.map((k) => `#${String(k)}`).join(", ") : "");
+  const keys = (v: unknown) => (typeof v === "number" && v > 0 ? String(v) : "");
   const parts: [string, string][] = [
     [t("audit.rows.relation"), String(meta.relation ?? "")],
     [t("audit.rows.created"), keys(meta.created)],

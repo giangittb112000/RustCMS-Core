@@ -432,6 +432,7 @@ pub(crate) fn options_schema(
     relationship: Option<crate::schema::RepeaterRelationship>,
 ) -> crate::schema::RepeaterSchema {
     crate::schema::RepeaterSchema {
+        create_components: None,
         components,
         min_items: spec.min_items,
         max_items: spec.max_items,

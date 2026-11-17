@@ -524,6 +524,12 @@ export type RepeaterSchema = {
  */
 components: Array<ComponentSchema>, 
 /**
+ * Relationship repeaters on an edit page: the inputs of a new row (the
+ * child's create form); `components` are those of a stored row
+ * (vocabulary 16).
+ */
+createComponents?: Array<ComponentSchema>, 
+/**
  * Fewest rows.
  */
 minItems?: number, 

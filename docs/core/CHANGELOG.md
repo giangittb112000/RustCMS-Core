@@ -38,10 +38,18 @@ All notable changes are documented here. The format follows
   by the row's conditions, and refuses media, rich text and secrets in rows.
   `SettingField::repeater` for settings pages; `RepeatableEntry` on view
   pages; issue code `min_items`. Demo: footer links on the site settings.
-- Relationship repeaters (`Repeater::make(…).relationship()`, ADR 0040 part 2;
-  contributed by @giangittb112000) are not available in this release: boot
-  refuses them until their writes hold one lock order with every other writer
-  (docs/core/plans/contrib-0.13-d2.md). Their code is kept, unused.
+- Relationship repeaters (ADR 0040 part 2, ADR 0041; contributed by
+  @giangittb112000): `Repeater::make("lines").relationship().order_column("position")`
+  edits the children of a has-many relation in the parent's form. A save sends
+  a change (create, update, delete, order; new rows tagged `{"new": ref}`),
+  written in the parent's transaction with the child's checks; the child must
+  lock its parent (`lock_parent`), rows inherit the child form's rules and may
+  not hold references, media, rich text or secrets; one locking pass per
+  child, positions by `MAX` typed by the order column; the parent's history
+  counts rows; `addable`/`deletable` enforced; new rows use the child's create
+  inputs (`createComponents`, vocabulary 16). Issue codes `not_a_row`,
+  `row_order`, `rows_not_addable`, `rows_not_deletable`, `too_many_rows`,
+  `positions_exhausted`.
 - Count columns and row history (ADR 0040, part 3; contributed by @giangittb112000): `TextColumn::make("faq")
   .count()` shows how many items a JSON field holds;
   `TextColumn::make("posts_count").counts("posts")` how many records of a
@@ -51,7 +59,7 @@ All notable changes are documented here. The format follows
   change line by row and input (`faq › 2 › question`). CSV exports write rows
   as JSON text and imports check them as forms do. Demo: categories count
   their posts in the list (posts are edited in the category's relation
-  section).
+  section; the demo's categories also edit their posts in the form).
 - Infolists for record view pages (vocabulary 14, ADR 0039; contributed by @giangittb112000):
   `Resource::infolist()` replaces the read-only form on the view page with
   entries in the form's layouts: `TextEntry` (`badge`/`color`, `copyable`,
@@ -105,6 +113,10 @@ All notable changes are documented here. The format follows
   still never quoted back.
 
 ### Fixed
+- Writes check media references after every other lock (links, and a parent's
+  repeater rows), and media rows rank after every resource: lock order of
+  writes that link records and reference media (ADR 0041). `lock_parent` may
+  not target the media library.
 - A create leaving out a column that may not be null (not declared
   `required`, no default) answered 500: it is now that field's
   `is required` (422), or the form error `is incomplete` for a column outside

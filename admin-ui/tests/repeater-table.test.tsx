@@ -48,13 +48,14 @@ it("shows the history of rows in place of raw values", async () => {
   render(
     <AuditEntries showSubject={false} entries={[
       entry({ id: "1", event: "updated", changes: { faq: [[{ q: "a" }], [{ q: "b" }]] } }),
-      entry({ id: "2", event: "rows_changed", meta: { relation: "lines", created: ["4"], updated: [], deleted: ["2", "3"], reordered: true } }),
+      entry({ id: "2", event: "rows_changed", meta: { relation: "lines", created: 1, updated: 0, deleted: 2, reordered: true } }),
     ]} />,
   );
   for (const button of screen.getAllByRole("button")) await userEvent.click(button);
   expect(screen.getByText("faq › 1 › q")).toBeInTheDocument();
-  expect(screen.getByText("#4")).toBeInTheDocument();
-  expect(screen.getByText("#2, #3")).toBeInTheDocument();
+  // Counts only: which rows is the child's own history.
+  expect(screen.getByText("1")).toBeInTheDocument();
+  expect(screen.getByText("2")).toBeInTheDocument();
   expect(screen.getByText("Moved")).toBeInTheDocument();
   expect(screen.queryByText("Changed")).toBeNull();
   expect(screen.queryByText(/"relation"/)).toBeNull();

@@ -357,6 +357,11 @@ impl<R: Resource> ResourceAdapter<R> {
                     }
                     // Without an order column an order is never stored: no reordering offered.
                     schema.reorderable = repeater.order_column.is_some();
+                    // On an edit page, new rows are the child's creates: its create form's inputs.
+                    if op == SchemaOperation::Edit && create {
+                        schema.create_components =
+                            Some(child.row_schema(ctx, &repeater.spec.components, SchemaOperation::Create));
+                    }
                     input.repeater = Some(Box::new(schema));
                     out.push(ComponentSchema::Input(input));
                 }

@@ -66,6 +66,40 @@
               "valueType": "i32"
             }
           ],
+          "createComponents": [
+            {
+              "columnSpan": 1,
+              "disabled": false,
+              "label": "Product",
+              "name": "product",
+              "nullable": false,
+              "rules": [
+                {
+                  "rule": "required"
+                },
+                {
+                  "rule": "max_length",
+                  "value": 20
+                }
+              ],
+              "type": "text_input",
+              "valueType": "string"
+            },
+            {
+              "columnSpan": 1,
+              "disabled": false,
+              "label": "Quantity",
+              "name": "quantity",
+              "nullable": false,
+              "rules": [
+                {
+                  "rule": "required"
+                }
+              ],
+              "type": "number_input",
+              "valueType": "i32"
+            }
+          ],
           "deletable": true,
           "itemLabel": "{product}",
           "maxItems": 4,
@@ -124,5 +158,5 @@
     ],
     "searchable": false
   },
-  "vocabularyVersion": 15
+  "vocabularyVersion": 16
 }

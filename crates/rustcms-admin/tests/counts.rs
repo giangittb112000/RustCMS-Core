@@ -2,8 +2,7 @@
 //! children the user may list (scope, trash, view policy), one grouped query
 //! per page when the policy decides once, a bounded scan when it decides per
 //! record; the column is left out for users who may not list the relation.
-//! Relationship repeaters are not available in this release: boot refuses
-//! them. SQLite, PostgreSQL, MySQL.
+//! SQLite, PostgreSQL, MySQL.
 
 use axum::http::StatusCode;
 use rustcms_admin::*;
@@ -338,9 +337,11 @@ impl Resource for RepeatedLines {
     }
 }
 
+/// A relationship repeater whose child does not lock its parent is refused
+/// (ADR 0041: the family serializes on the parent row).
 #[test]
-#[should_panic(expected = "relationship repeaters are not available in this release")]
-fn relationship_repeaters_are_refused_at_boot() {
+#[should_panic(expected = "`order_lines` must lock its parent")]
+fn a_relationship_repeater_needs_its_child_to_lock_the_parent() {
     Registry::new().register::<RepeatedLines>().register::<LineResource>().finish();
 }
 

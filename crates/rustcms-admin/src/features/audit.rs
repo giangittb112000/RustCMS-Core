@@ -407,6 +407,11 @@ async fn history(
                                         "relation" | "created" | "updated" | "deleted" | "reordered"
                                     )
                         })
+                        // Rows by count only: keys of child rows never reach the parent's readers.
+                        .map(|(k, v)| match v {
+                            Value::Array(items) if rows => (k, Value::from(items.len())),
+                            other => (k, other),
+                        })
                         .collect();
                     (!kept.is_empty()).then_some(kept)
                 })

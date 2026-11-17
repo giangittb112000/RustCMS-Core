@@ -22,7 +22,15 @@ impl Resource for PostResource {
     // #region intro-post
     // #region meta
     fn meta() -> ResourceMeta {
-        ResourceMeta::new("Post").title("title").icon("file-text").group("Content").soft_deletes().exportable()
+        ResourceMeta::new("Post")
+            .title("title")
+            .icon("file-text")
+            .group("Content")
+            .soft_deletes()
+            .exportable()
+            // Categories edit their posts in their form (a relationship repeater):
+            // every write of a post locks its category first.
+            .lock_parent("category_id", "categories")
     }
     // #endregion meta
 
