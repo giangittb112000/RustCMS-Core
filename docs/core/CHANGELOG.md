@@ -6,6 +6,8 @@ All notable changes are documented here. The format follows
 
 ## [Unreleased]
 
+## [0.13.1] — 2026-11-17
+
 ### Added
 - Rich text document version 3 (vocabulary 18, ADR 0042; contributed by
   @giangittb112000): underline, superscript and subscript marks (`<u>`,

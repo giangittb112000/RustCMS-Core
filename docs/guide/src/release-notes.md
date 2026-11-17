@@ -1,7 +1,28 @@
 # Release notes
 
-RustCMS is in pre-release. The current version is **0.13.0**; 0.1.0-alpha.0
+RustCMS is in pre-release. The current version is **0.13.1**; 0.1.0-alpha.0
 was the first published one.
+
+## 0.13.1
+
+Read the [upgrade guide](upgrade.md#from-0130-to-0131) first: new schema
+vocabulary (19), SDK `ui` 4, a few Rust API additions. No migration. The
+three features of this release were contributed by @giangittb112000 and
+reworked after review.
+
+- **Default view page**: a resource without `infolist()` shows its records
+  with entries made from its form (relation titles as links, encrypted fields
+  never shown); conditions read fields as the edit form does
+  ([Infolists](admin/infolists.md#the-default-view-page)).
+- **Rich text version 3**: underline, superscript and subscript, and your
+  own elements in documents (`RichTextNode` atoms with typed attributes,
+  accepted per field, drawn by an extension or a placeholder); documents are
+  stored in the lowest version they need, so older readers keep working
+  ([Media and rich text](admin/media.md#application-elements)).
+- **Form reactions**: `.reacts(…)` runs on the server as the user types and
+  answers with changes to the form (a slug that follows the name, totals of
+  rows), reading only what the user's form holds
+  ([Forms](admin/forms.md#reacting-to-changes)).
 
 ## 0.13.0
 
