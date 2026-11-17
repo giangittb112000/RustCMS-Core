@@ -198,6 +198,23 @@ their reaction still has changes (issue `not_up_to_date`) or fails
 (`not_checked`), on every write path. Older clients never call reactions;
 strict ones still hold when they save.
 
+Vocabulary 17 adds rich text document version 3 (ADR 0042): marks
+`underline`, `superscript` and `subscript` (never both of the last two on one
+text), and application nodes (`app.…`, atoms with `attrs` only). A
+`rich_editor` input, and a `rich_text_entry`, carry `richNodes` when the
+field accepts application nodes: `[{name, label, inline, attrs: [{name, kind,
+required, default?, min?, max?, options?}]}]`, `kind` one of `text` (`min`,
+`max` characters), `integer` (`min`, `max`, within ±(2^53 − 1)), `boolean`,
+`one_of` (`options`), `uuid`. Clients write the lowest version a document
+needs, keep only the declared nodes with attributes that fit, and show a
+document holding anything else read-only (never rewritten); an unknown node
+is shown as a placeholder, never as JSON. The server fills in defaults before
+storing and refuses undeclared nodes (`document_element`), version 3 parts in
+older documents (`document_needs_version`) and more than 500 nodes
+(`max_app_nodes`). Clients of vocabulary 16 show version 3 documents
+read-only (they read versions 1 and 2 only). Extensions draw and edit nodes
+with `registerRichTextNode` (host `ui` 4).
+
 Vocabulary 14 adds infolists (ADR 0039): the view schema of a record
 (`operation=view&key=…`) carries `infolist`, declared or, for a resource
 without one, made from the form (plan branch 4); a view schema without a key

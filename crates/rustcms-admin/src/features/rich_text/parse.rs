@@ -22,8 +22,9 @@ pub const MAX_TABLE_ROWS: usize = 50;
 /// Most columns of a table.
 pub const MAX_TABLE_COLUMNS: usize = 20;
 
-/// Marks on one text (each kind at most once).
-pub(super) const MAX_MARKS: usize = 5;
+/// Marks on one text (each kind at most once, superscript and subscript
+/// never together).
+pub(super) const MAX_MARKS: usize = 7;
 
 pub(super) fn err(message: impl Into<String>) -> DocumentError {
     DocumentError(message.into())
@@ -55,8 +56,11 @@ pub(super) struct RawMark {
     attrs: Option<serde_json::Map<String, Value>>,
 }
 
-pub(super) struct Budget {
+pub(super) struct Budget<'a> {
     version: u64,
+    /// Application nodes the document may hold.
+    accepts: Option<Accepts<'a>>,
+    app_nodes: usize,
     /// Inside a callout: no table or callout.
     in_callout: bool,
     nodes: usize,
@@ -64,15 +68,26 @@ pub(super) struct Budget {
     embeds: usize,
 }
 
-impl Budget {
+impl Budget<'_> {
     /// Refuses a version 2 part (`message`) in a version 1 document.
     fn needs_v2(&self, message: &'static str) -> Result<(), DocumentError> {
         if self.version >= 2 { Ok(()) } else { Err(err(message)) }
     }
+
+    /// Refuses a version 3 part (`message`) in an older document.
+    fn needs_v3(&self, message: impl FnOnce() -> String) -> Result<(), DocumentError> {
+        if self.version >= 3 { Ok(()) } else { Err(err(message())) }
+    }
 }
 
-/// Parses and validates a stored or submitted document (version 1 or 2).
+/// Parses and validates a stored or submitted document (version 1 to 3).
+/// Application nodes (`app.*`) are refused: see [`AppNodes::parse`].
 pub fn parse(value: &Value) -> Result<Document, DocumentError> {
+    parse_with(value, None)
+}
+
+/// Parses a document that may hold the application nodes `accepts` names.
+pub(crate) fn parse_with(value: &Value, accepts: Option<Accepts<'_>>) -> Result<Document, DocumentError> {
     // Bounded before any deep work.
     let bytes = serde_json::to_vec(value).map_err(|_| err("is not a document"))?.len();
     if bytes > MAX_BYTES {
@@ -87,9 +102,9 @@ pub fn parse(value: &Value) -> Result<Document, DocumentError> {
     let (Some(version), "doc", None, None, None) =
         (version, raw.kind.as_str(), raw.attrs.as_ref(), raw.text.as_ref(), raw.marks.as_ref())
     else {
-        return Err(err("is not a valid document (version 1 or 2)"));
+        return Err(err("is not a valid document (version 1 to 3)"));
     };
-    let mut budget = Budget { version, in_callout: false, nodes: 0, images: 0, embeds: 0 };
+    let mut budget = Budget { version, accepts, app_nodes: 0, in_callout: false, nodes: 0, images: 0, embeds: 0 };
     let content = raw.content.unwrap_or_default();
     // List items only inside lists (as the editor's schema requires).
     if content.iter().any(|n| n.kind == "listItem") {
@@ -108,7 +123,7 @@ pub(super) fn depth(value: &Value, level: usize) -> usize {
     }
 }
 
-pub(super) fn count(budget: &mut Budget, level: usize) -> Result<(), DocumentError> {
+pub(super) fn count(budget: &mut Budget<'_>, level: usize) -> Result<(), DocumentError> {
     budget.nodes += 1;
     if budget.nodes > MAX_NODES {
         return Err(err(format!("may not have more than {MAX_NODES} elements")));
@@ -143,14 +158,14 @@ fn only_attrs(
     if attrs.keys().all(|k| allowed.contains(&k.as_str())) { Ok(()) } else { Err(err(message)) }
 }
 
-pub(super) fn blocks(raw: Vec<RawNode>, budget: &mut Budget, level: usize) -> Result<Vec<Node>, DocumentError> {
+pub(super) fn blocks(raw: Vec<RawNode>, budget: &mut Budget<'_>, level: usize) -> Result<Vec<Node>, DocumentError> {
     raw.into_iter().map(|node| block(node, budget, level)).collect()
 }
 
 /// At least one paragraph, nothing else (table cells; else `message`).
 fn paragraphs(
     raw: Option<Vec<RawNode>>,
-    budget: &mut Budget,
+    budget: &mut Budget<'_>,
     level: usize,
     message: &'static str,
 ) -> Result<Vec<Node>, DocumentError> {
@@ -161,7 +176,7 @@ fn paragraphs(
     blocks(items, budget, level)
 }
 
-pub(super) fn block(raw: RawNode, budget: &mut Budget, level: usize) -> Result<Node, DocumentError> {
+pub(super) fn block(raw: RawNode, budget: &mut Budget<'_>, level: usize) -> Result<Node, DocumentError> {
     count(budget, level)?;
     if budget.in_callout && (raw.kind == "table" || raw.kind == "callout") {
         return Err(err("has a callout holding a table or a callout"));
@@ -244,11 +259,31 @@ pub(super) fn block(raw: RawNode, budget: &mut Budget, level: usize) -> Result<N
             budget.in_callout = false;
             Node::Callout(tone, items?)
         }
+        other if other.starts_with("app.") => app_node(raw, budget, false)?,
         other => return Err(err(format!("has an unknown block `{}`", other.escape_debug()))),
     })
 }
 
-pub(super) fn image(raw: RawNode, budget: &mut Budget) -> Result<Node, DocumentError> {
+/// An application node, where a block (`inline: false`) or an inline goes.
+pub(super) fn app_node(raw: RawNode, budget: &mut Budget<'_>, inline: bool) -> Result<Node, DocumentError> {
+    let name = raw.kind.escape_debug().to_string();
+    let Some(decl) = budget.accepts.and_then(|a| a.get(&raw.kind)) else {
+        return Err(err(format!("has an unknown element `{name}`")));
+    };
+    budget.needs_v3(|| format!("has the element `{name}`, which needs document version 3"))?;
+    if decl.is_inline() != inline {
+        return Err(err(format!("has an element `{name}` out of place")));
+    }
+    no_extras(&raw, true, false, false, false)?;
+    budget.app_nodes += 1;
+    if budget.app_nodes > MAX_APP_NODES {
+        return Err(err(format!("may not have more than {MAX_APP_NODES} application elements")));
+    }
+    let attrs = decl.accept(&raw.attrs.unwrap_or_default())?;
+    Ok(Node::App(AppNode { name: raw.kind, inline, attrs }))
+}
+
+pub(super) fn image(raw: RawNode, budget: &mut Budget<'_>) -> Result<Node, DocumentError> {
     no_extras(&raw, true, false, false, false)?;
     budget.images += 1;
     if budget.images > MAX_IMAGES {
@@ -284,7 +319,7 @@ pub(super) fn image(raw: RawNode, budget: &mut Budget) -> Result<Node, DocumentE
     Ok(Node::Image(Image { media, alt, caption, width }))
 }
 
-pub(super) fn table(raw: RawNode, budget: &mut Budget, level: usize) -> Result<Node, DocumentError> {
+pub(super) fn table(raw: RawNode, budget: &mut Budget<'_>, level: usize) -> Result<Node, DocumentError> {
     budget.needs_v2("has a table, which needs document version 2")?;
     no_extras(&raw, false, false, false, true)?;
     let rows = raw.content.unwrap_or_default();
@@ -325,7 +360,7 @@ pub(super) fn table(raw: RawNode, budget: &mut Budget, level: usize) -> Result<N
     Ok(Node::Table(Table { header, rows: out }))
 }
 
-pub(super) fn embed(raw: RawNode, budget: &mut Budget) -> Result<Node, DocumentError> {
+pub(super) fn embed(raw: RawNode, budget: &mut Budget<'_>) -> Result<Node, DocumentError> {
     budget.needs_v2("has an embed, which needs document version 2")?;
     no_extras(&raw, true, false, false, false)?;
     budget.embeds += 1;
@@ -346,7 +381,7 @@ pub(super) fn embed(raw: RawNode, budget: &mut Budget) -> Result<Node, DocumentE
     Ok(Node::Embed(Embed { provider, id: id.to_owned() }))
 }
 
-pub(super) fn inlines(raw: Vec<RawNode>, budget: &mut Budget, level: usize) -> Result<Vec<Node>, DocumentError> {
+pub(super) fn inlines(raw: Vec<RawNode>, budget: &mut Budget<'_>, level: usize) -> Result<Vec<Node>, DocumentError> {
     let mut out = Vec::with_capacity(raw.len());
     for node in raw {
         count(budget, level)?;
@@ -361,10 +396,13 @@ pub(super) fn inlines(raw: Vec<RawNode>, budget: &mut Budget, level: usize) -> R
                 if raw_marks.len() > MAX_MARKS {
                     return Err(err("has a text with too many marks"));
                 }
-                let marks: Vec<Mark> = raw_marks.into_iter().map(mark).collect::<Result<_, _>>()?;
+                let marks: Vec<Mark> = raw_marks.into_iter().map(|m| mark(m, budget)).collect::<Result<_, _>>()?;
                 let kinds: std::collections::HashSet<_> = marks.iter().map(std::mem::discriminant).collect();
                 if kinds.len() != marks.len() {
                     return Err(err("has a text with the same mark twice"));
+                }
+                if marks.contains(&Mark::Superscript) && marks.contains(&Mark::Subscript) {
+                    return Err(err("has a text both superscript and subscript"));
                 }
                 Node::Text(text, marks)
             }
@@ -372,6 +410,7 @@ pub(super) fn inlines(raw: Vec<RawNode>, budget: &mut Budget, level: usize) -> R
                 no_extras(&node, false, false, false, false)?;
                 Node::HardBreak
             }
+            other if other.starts_with("app.") => app_node(node, budget, true)?,
             // Images are blocks (the editor's schema): never inside text.
             other => return Err(err(format!("has an unknown inline `{}`", other.escape_debug()))),
         });
@@ -379,13 +418,20 @@ pub(super) fn inlines(raw: Vec<RawNode>, budget: &mut Budget, level: usize) -> R
     Ok(out)
 }
 
-pub(super) fn mark(raw: RawMark) -> Result<Mark, DocumentError> {
+pub(super) fn mark(raw: RawMark, budget: &Budget<'_>) -> Result<Mark, DocumentError> {
     let plain = |mark: Mark| if raw.attrs.is_none() { Ok(mark) } else { Err(err("has a mark with attributes")) };
+    let v3 = |mark: Mark| {
+        budget.needs_v3(|| format!("has the mark `{}`, which needs document version 3", raw.kind))?;
+        plain(mark)
+    };
     match raw.kind.as_str() {
         "bold" => plain(Mark::Bold),
         "italic" => plain(Mark::Italic),
         "strike" => plain(Mark::Strike),
         "code" => plain(Mark::Code),
+        "underline" => v3(Mark::Underline),
+        "superscript" => v3(Mark::Superscript),
+        "subscript" => v3(Mark::Subscript),
         "link" => {
             let attrs = raw.attrs.unwrap_or_default();
             if attrs.keys().any(|k| k != "href") {

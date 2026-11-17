@@ -24,7 +24,7 @@ impl<R: Resource> ResourceAdapter<R> {
         let mut wanted: Vec<(&str, &crate::field::MediaRule, Vec<uuid::Uuid>)> = Vec::new();
         for field in self.fields.iter().filter(|f| f.rich_text) {
             let Some(value) = data.get(&field.name).filter(|v| !v.is_null()) else { continue };
-            match crate::rich_text::parse(value) {
+            match crate::rich_text::parse_with(value, self.accepts(field)) {
                 Ok(doc) => {
                     let ids = crate::rich_text::media_ids(&doc);
                     if !ids.is_empty() {

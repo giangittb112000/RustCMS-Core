@@ -38,9 +38,17 @@ impl<R: Resource> ResourceAdapter<R> {
             max_length: field.and_then(|f| f.max_length),
             key_value: self.key_values.get(name).copied(),
             rich_text: field.is_some_and(|f| f.rich_text),
+            rich_nodes: field.and_then(|f| self.accepts(f)),
             options: None,
             bounds: None,
         }
+    }
+
+    /// The application nodes rich text field `field` accepts, if any.
+    pub(super) fn accepts<'a>(&'a self, field: &'a crate::field::Field) -> Option<crate::rich_text::Accepts<'a>> {
+        let nodes = self.rich_nodes.get()?;
+        (field.rich_text && !field.rich_nodes.is_empty())
+            .then(|| crate::rich_text::Accepts { nodes, only: Some(&field.rich_nodes) })
     }
 
     /// The static options client input of field `name` must match, if any.
@@ -210,9 +218,18 @@ impl<R: Resource> ResourceAdapter<R> {
                 continue;
             }
             // Hooks may change values: limits hold for what is actually written.
-            if !check_written(name, &self.rule(name, false), value, &mut errors) {
+            let rule = self.rule(name, false);
+            if !check_written(name, &rule, value, &mut errors) {
                 continue;
             }
+            // Application nodes stored complete (defaults filled in), whoever wrote
+            // the document (client input and hooks alike); copied only when it holds some.
+            let filled = rule.rich_nodes.filter(|a| a.nodes.holds(value)).map(|accepts| {
+                let mut filled = value.clone();
+                accepts.nodes.fill(&mut filled);
+                filled
+            });
+            let value = filled.as_ref().unwrap_or(value);
             let Ok(candidates) = column.kind.decode(value) else { continue };
             if !candidates.into_iter().any(|v| model.try_set(column.column, v).is_ok()) {
                 // Only a number too large for an `f32` column (see `FieldKind::decode`).

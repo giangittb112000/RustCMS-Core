@@ -40,6 +40,8 @@ pub struct Field {
     pub(crate) key_value: bool,
     pub(crate) media: Option<MediaRule>,
     pub(crate) rich_text: bool,
+    /// Application nodes a rich text field accepts (`app.*`).
+    pub(crate) rich_nodes: Vec<String>,
     pub(crate) label: Option<String>,
     pub(crate) audit_redact: bool,
     pub(crate) secret: Option<SecretKind>,
@@ -73,6 +75,7 @@ impl Field {
             key_value: false,
             media: None,
             rich_text: false,
+            rich_nodes: Vec::new(),
             label: None,
             audit_redact: false,
             secret: None,
@@ -222,6 +225,17 @@ impl Field {
     /// validated on every write; its images must be visible media items.
     pub fn rich_text(mut self) -> Self {
         self.rich_text = true;
+        self
+    }
+
+    /// The application nodes a rich text field accepts, by name (declared
+    /// with [`crate::AdminProvider::rich_text_node`]); none by default.
+    ///
+    /// # Panics
+    /// At boot, on a field that is not rich text, or a name that is not
+    /// declared.
+    pub fn nodes<S: Into<String>>(mut self, names: impl IntoIterator<Item = S>) -> Self {
+        self.rich_nodes.extend(names.into_iter().map(Into::into));
         self
     }
 

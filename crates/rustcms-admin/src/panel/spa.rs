@@ -82,15 +82,16 @@ pub struct Extension {
 /// (the panel must have the same major and at least that minor), `ui` the
 /// panel level it needs (the panel must have at least that one: 2 adds
 /// `props.resources`, `props.toast` and more UI components; 3 adds
-/// `registerEntry` and the `Infolist` component). The host API
-/// version is 2.
+/// `registerEntry` and the `Infolist` component; 4 adds
+/// `registerRichTextNode`). An SDK of level N registers only for scripts
+/// declaring at least N. The host API version is 2.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct Requires {
     /// React, `"19.3"`.
     pub react: &'static str,
     /// React Query, `"5.104"`.
     pub react_query: &'static str,
-    /// The panel level, `1` to `3` (`rustcms make:page --react` writes the latest).
+    /// The panel level, `1` to `4` (`rustcms make:page --react` writes the latest).
     pub ui: u32,
 }
 

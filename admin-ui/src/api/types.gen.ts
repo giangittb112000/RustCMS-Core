@@ -365,7 +365,12 @@ repeater?: RepeaterSchema,
  * A change asks the server's reaction (`POST form/react`) for changes to
  * the form (vocabulary 16, ADR 0041). Create and edit forms only.
  */
-reacts?: boolean, };
+reacts?: boolean, 
+/**
+ * Rich text: the application nodes the document may hold (vocabulary
+ * 17, ADR 0042); absent when none.
+ */
+richNodes?: Array<RichNodeSchema>, };
 
 export type LayoutSchema = { 
 /**
@@ -498,6 +503,11 @@ gallery?: boolean,
  * The document's headings as an outline.
  */
 outline?: boolean, 
+/**
+ * Rich text entries: the application nodes the document may hold
+ * (vocabulary 17).
+ */
+richNodes?: Array<RichNodeSchema>, 
 /**
  * Related resource (relation entries; the title is the record's `labels[name]`).
  */
@@ -728,6 +738,54 @@ patches: Array<FormPatch>,
  * The reaction failed (error, timeout): nothing to apply.
  */
 failed?: boolean, };
+
+export type RichNodeSchema = { 
+/**
+ * Its name (`app.…`).
+ */
+name: string, 
+/**
+ * Label (translated).
+ */
+label: string, 
+/**
+ * Inside text, or a block.
+ */
+inline: boolean, 
+/**
+ * Its attributes, in declaration order.
+ */
+attrs: Array<RichAttrSchema>, };
+
+export type RichAttrSchema = { 
+/**
+ * Its name.
+ */
+name: string, 
+/**
+ * `text`, `integer`, `boolean`, `one_of` or `uuid`.
+ */
+kind: string, 
+/**
+ * Without a default: the document must give it.
+ */
+required: boolean, 
+/**
+ * The value when left out.
+ */
+default?: JsonValue, 
+/**
+ * Text: fewest characters; integer: smallest value.
+ */
+min?: number, 
+/**
+ * Text: most characters; integer: largest value.
+ */
+max?: number, 
+/**
+ * `one_of`: the values allowed.
+ */
+options?: Array<string>, };
 
 export type ComponentSchema = InputSchema | LayoutSchema | EntrySchema;
 

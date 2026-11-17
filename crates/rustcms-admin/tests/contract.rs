@@ -42,6 +42,7 @@ pub mod gadget {
         pub secret: String,
         pub deleted_at: Option<DateTimeUtc>,
         pub specs: Option<Json>,
+        pub body: Option<Json>,
         pub photo: Option<Uuid>,
         pub accent: Option<String>,
         #[sea_orm(column_type = "Text", nullable)]
@@ -88,6 +89,8 @@ impl Resource for GadgetResource {
             Field::column(C::Secret).readable(|_| false),
             Field::column(C::DeletedAt).guarded().readable(|_| true),
             Field::column(C::Specs).max_items(5).max_length(40),
+            // Rich text with an application node (document version 3, vocabulary 17).
+            Field::column(C::Body).rich_text().nodes(["app.kbd"]),
             Field::column(C::Photo).media().accept(&["image/*"]).max_size(1_000_000),
             Field::column(C::Accent).max_length(7),
             Field::column(C::ApiToken).encrypted(),
@@ -133,6 +136,7 @@ impl Resource for GadgetResource {
                         ]),
                         Tab::make("Specs").schema(components![
                             KeyValue::make("specs"),
+                            RichEditor::make("body"),
                             FileUpload::make("photo"),
                             CustomInput::make("accent", "acme/color").props(json!({"palette": ["#ff0000", "#00ff00"]})),
                         ]),
@@ -208,6 +212,12 @@ async fn registry(db: &TestDb) -> Arc<Registry> {
         db.conn().execute(&statement).await.unwrap();
     }
     Registry::new()
+        .rich_text_node(
+            rustcms_admin::rich_text::RichTextNode::inline_atom("app.kbd")
+                .label("Shortcut")
+                .attr("keys", rustcms_admin::rich_text::Attr::text().min(1).max(40))
+                .attr("size", rustcms_admin::rich_text::Attr::one_of(["s", "m"]).default("m")),
+        )
         .register::<CategoryResource>()
         .register::<GadgetResource>()
         .register::<rustcms_admin::media::MediaResource>()
@@ -240,6 +250,10 @@ db_test!(kitchen_sink_contract, |db: TestDb| async move {
         "token": "0199d3a4-1b2c-7d3e-8f40-123456789abc",
         "secret": "hunter2",
         "specs": {"size": "M", "material": "steel"},
+        "body": {"type": "doc", "version": 3, "content": [{"type": "paragraph", "content": [
+            {"type": "text", "text": "Press", "marks": [{"type": "underline"}]},
+            {"type": "app.kbd", "attrs": {"keys": "Ctrl+S"}}
+        ]}]},
     });
     let created = gadgets.create(&ctx, input.as_object().unwrap().clone()).await.unwrap();
 

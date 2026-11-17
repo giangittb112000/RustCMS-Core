@@ -128,6 +128,7 @@ impl<R: Resource> ResourceAdapter<R> {
                 max_length: field.max_length,
                 key_value: None,
                 rich_text: false,
+                rich_nodes: None,
                 options: None,
                 bounds: None,
             };

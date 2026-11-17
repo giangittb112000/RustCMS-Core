@@ -235,6 +235,20 @@ impl AdminProvider {
         self
     }
 
+    /// Declares a node rich text documents may hold (document version 3),
+    /// for the fields that accept it ([`crate::Field::nodes`]).
+    ///
+    /// # Panics
+    /// On an invalid declaration or a name declared twice.
+    pub fn rich_text_node(self, node: crate::rich_text::RichTextNode) -> Self {
+        {
+            let mut registry = self.registry.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
+            let current = registry.take().unwrap_or_default();
+            *registry = Some(current.rich_text_node(node));
+        }
+        self
+    }
+
     /// Adds a resource.
     ///
     /// # Panics

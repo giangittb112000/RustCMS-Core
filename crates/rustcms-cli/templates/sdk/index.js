@@ -11,7 +11,7 @@ function host() {
 }
 
 /** The panel level this SDK is built for (`Requires.ui` must be at least this). */
-export const SDK_UI = 3;
+export const SDK_UI = 4;
 
 function registering(kind) {
   return (name, component) => {
@@ -33,6 +33,13 @@ export const registerSlot = registering("slot");
 export const registerCell = registering("cell");
 /** Registers an infolist entry component (`CustomEntry::make(field, name)`; `ui` 3). */
 export const registerEntry = registering("entry");
+/**
+ * Registers how the rich text node `name` (`app.…`, declared with
+ * `AdminProvider::rich_text_node`) is shown (`view`) and edited (`edit`;
+ * `ui` 4). Either may be left out: the panel then shows a placeholder, or a
+ * form made from the attributes' kinds.
+ */
+export const registerRichTextNode = registering("richTextNode");
 
 /** `query` as sorted `[name, value]` pairs (duplicates kept): the key part and what is sent. */
 export function queryPairs(query) {

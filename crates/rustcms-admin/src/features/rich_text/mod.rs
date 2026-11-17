@@ -15,17 +15,25 @@
 //! ]}
 //! ```
 //!
-//! Versions: version 1 (0.2–0.9) is a subset of version 2 (0.10). Both are
-//! read as they are; tables, embeds, callouts, image captions and image
-//! widths are only valid in version 2. [`upgrade_value`] turns a stored
-//! version 1 document into the same document in version 2 (only the version
-//! changes).
+//! Versions: version 1 (0.2–0.9) is a subset of version 2 (0.10), itself a
+//! subset of version 3. All are read as they are; tables, embeds, callouts,
+//! image captions and image widths need version 2; underline, superscript,
+//! subscript and application nodes ([`RichTextNode`], `app.*`) need version
+//! 3. [`upgrade_value`] turns a stored version 1 document into the same
+//! document in version 2 (only the version changes); nothing lifts a document
+//! to version 3, which only what uses version 3 parts needs (older readers
+//! refuse it).
+//!
+//! [`parse`] knows no application node: [`AppNodes::parse`] accepts them.
 
 mod html;
+mod nodes;
 mod outline;
 mod parse;
+pub(crate) use parse::parse_with;
 
 pub use html::*;
+pub use nodes::*;
 pub use outline::*;
 pub use parse::*;
 
@@ -33,8 +41,9 @@ use serde::Deserialize;
 use serde_json::Value;
 
 /// Current document format version (the panel's editor saves the lowest
-/// version a document needs: version 1 without version 2 parts).
-pub const VERSION: u64 = 2;
+/// version a document needs: version 1 without version 2 parts, version 2
+/// without version 3 parts).
+pub const VERSION: u64 = 3;
 /// Oldest document format version still read (as it is).
 pub const OLDEST_VERSION: u64 = 1;
 /// Largest stored document (bytes of JSON).
@@ -81,6 +90,9 @@ pub enum Node {
     Callout(CalloutTone, Vec<Node>),
     /// Text with marks.
     Text(String, Vec<Mark>),
+    /// A node the application declares (version 3): an atom, inline or a
+    /// block.
+    App(AppNode),
 }
 
 /// An image block.
@@ -265,6 +277,7 @@ impl CalloutTone {
 
 /// Inline formatting.
 #[derive(Debug, Clone, PartialEq)]
+#[non_exhaustive]
 pub enum Mark {
     /// Bold.
     Bold,
@@ -276,6 +289,12 @@ pub enum Mark {
     Code,
     /// Link (`http`, `https` or `mailto`).
     Link(String),
+    /// Underline (version 3).
+    Underline,
+    /// Superscript, never with subscript (version 3).
+    Superscript,
+    /// Subscript, never with superscript (version 3).
+    Subscript,
 }
 
 /// Why a document was refused (a field error message).
@@ -327,19 +346,19 @@ pub fn media_ids(doc: &Document) -> Vec<uuid::Uuid> {
     out
 }
 
-/// A stored value in the current format [`VERSION`], for rewriting stored
-/// documents: version 1 is a subset of version 2 (no node or attribute
-/// changes shape), so a version 1 document comes back as version 2 with only
-/// `version` changed; anything else
-/// (a current document, a value that is not a document) as it is. It does not
-/// validate: [`parse`] the result.
+/// A stored version 1 document as version 2, for rewriting stored documents:
+/// version 1 is a subset of version 2 (no node or attribute changes shape),
+/// so it comes back with only `version` changed; anything else (a version 2
+/// or 3 document, a value that is not a document) as it is. Never to version
+/// 3: a document is written in the lowest version it needs, so readers of
+/// 0.10 to 0.12 keep reading it. It does not validate: [`parse`] the result.
 pub fn upgrade_value(value: &Value) -> Value {
     let mut out = value.clone();
     if let Value::Object(map) = &mut out
         && map.get("type").and_then(Value::as_str) == Some("doc")
         && map.get("version").and_then(Value::as_u64) == Some(1)
     {
-        map.insert("version".into(), Value::from(VERSION));
+        map.insert("version".into(), Value::from(2));
     }
     out
 }

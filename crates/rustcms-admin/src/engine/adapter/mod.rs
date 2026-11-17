@@ -114,6 +114,8 @@ pub(crate) struct ResourceAdapter<R: Resource> {
     computed: Vec<crate::ui::Computed<Entity<R>>>,
     table_ui: Table,
     limits: Limits,
+    /// The panel's rich text nodes (set at boot by the registry).
+    rich_nodes: std::sync::OnceLock<Arc<crate::rich_text::AppNodes>>,
     _resource: PhantomData<fn() -> R>,
 }
 
@@ -156,6 +158,17 @@ impl<R: Resource> ResourceAdapter<R> {
                 field.name
             );
             assert!(seen.insert(field.name.as_str()), "resource `{slug}`: field `{}` declared twice", field.name);
+            assert!(
+                field.rich_nodes.is_empty() || field.rich_text,
+                "resource `{slug}`: field `{}` accepts rich text nodes but is not `rich_text()`",
+                field.name
+            );
+            let unique: HashSet<_> = field.rich_nodes.iter().collect();
+            assert!(
+                unique.len() == field.rich_nodes.len(),
+                "resource `{slug}`: field `{}` names a rich text node twice",
+                field.name
+            );
         }
         // The audit log names resources and actions as they are declared.
         assert!(slug.len() <= 64, "resource `{slug}`: slugs are at most 64 bytes");
@@ -477,6 +490,7 @@ impl<R: Resource> ResourceAdapter<R> {
             title,
             table_ui,
             limits: Limits::default(),
+            rich_nodes: std::sync::OnceLock::new(),
             _resource: PhantomData,
         }
     }

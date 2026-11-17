@@ -7,6 +7,19 @@ All notable changes are documented here. The format follows
 ## [Unreleased]
 
 ### Added
+- Rich text document version 3 (vocabulary 17, ADR 0042): underline,
+  superscript and subscript marks (`<u>`, `<sup>`, `<sub>` in HTML), and
+  application elements: `AdminProvider::rich_text_node(RichTextNode::inline_atom("app.kbd").attr("keys", Attr::text()))`
+  declares an atom with typed attributes (`text`, `integer`, `boolean`,
+  `one_of`, `uuid`; defaults filled in before storing), and
+  `Field::rich_text().nodes([...])` names the ones a field accepts (none by
+  default). Checked on every write; at most 500 per document. The editor
+  inserts them from an *Insert an element* menu; an extension draws and edits
+  them with `registerRichTextNode(name, { view, edit })` (SDK `ui` 4), else a
+  placeholder and a generated form. Exported HTML writes them as
+  `<span|div data-node data-{attr}>` with the declaration's `.text`
+  (`rich_text::Html`, `AppNodes::parse`). The editor writes the lowest version
+  a document needs (1, 2 or 3). Demo: `app.kbd` and `app.note_ref` in posts.
 - Form reactions (vocabulary 16, ADR 0041): `Input::reacts(|ctx, state| …)`
   runs on the server when the user changes the input (after a pause in
   typing, `POST form/react`) and answers with `FormPatch`es (`set`,
@@ -97,6 +110,14 @@ All notable changes are documented here. The format follows
   stay text.
 
 ### Changed
+- `rich_text::Mark` is `#[non_exhaustive]` and has three new variants:
+  an exhaustive `match` needs a `_` arm. `rich_text::VERSION` is 3
+  (`upgrade_value` still only lifts version 1 to 2); `rich_text::parse` refuses
+  application elements (use `AppNodes::parse`). The SDK is `ui` 4: extensions
+  rebuilt with it declare `Requires { ui: 4, … }` (`rustcms make:sdk` lists
+  the registrations to update).
+- Admin panel: a rich text view whose value is not a document says it cannot
+  be shown instead of showing its JSON.
 - Admin panel: a record's view page without `infolist()` is drawn by an
   infolist made from its form (plan branch 4), one read-only renderer instead
   of two; values look as before. A `belongs_to` field's title comes with the
@@ -113,6 +134,8 @@ All notable changes are documented here. The format follows
   still never quoted back.
 
 ### Fixed
+- Admin panel: opening a rich text editor reported a change (TipTap's
+  `setEditable`), so a form could count as edited before any edit.
 - Admin panel: a record's History card had no space under its "Show history"
   button when closed (the header has no bottom padding), and its entries were
   inset less than the header.

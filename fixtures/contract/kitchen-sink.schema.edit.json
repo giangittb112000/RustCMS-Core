@@ -228,6 +228,42 @@
                       {
                         "columnSpan": 1,
                         "disabled": false,
+                        "label": "Body",
+                        "name": "body",
+                        "nullable": true,
+                        "richNodes": [
+                          {
+                            "attrs": [
+                              {
+                                "kind": "text",
+                                "max": 40,
+                                "min": 1,
+                                "name": "keys",
+                                "required": true
+                              },
+                              {
+                                "default": "m",
+                                "kind": "one_of",
+                                "name": "size",
+                                "options": [
+                                  "s",
+                                  "m"
+                                ],
+                                "required": false
+                              }
+                            ],
+                            "inline": true,
+                            "label": "Shortcut",
+                            "name": "app.kbd"
+                          }
+                        ],
+                        "rules": [],
+                        "type": "rich_editor",
+                        "valueType": "json"
+                      },
+                      {
+                        "columnSpan": 1,
+                        "disabled": false,
                         "label": "Photo",
                         "media": {
                           "accept": [
@@ -570,5 +606,5 @@
     "searchable": true,
     "softDeletes": true
   },
-  "vocabularyVersion": 16
+  "vocabularyVersion": 17
 }

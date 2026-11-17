@@ -248,11 +248,19 @@ RichEditor::make("content"),
 
 Rich text is stored as a **document** (JSON), not HTML. The schema is closed
 and versioned. The panel's editor writes the **lowest version a document
-needs**: version 1 unless the document holds a table, an embed, a callout, or
-an image with a caption or a width; version 2 otherwise. Version 1 documents
-stay valid and are read as they are (version 1 is a subset of version 2:
-nothing to migrate), so documents edited without the version 2 nodes stay
-readable by 0.9 (a rollback, an older reader of the same database).
+needs**:
+
+- version 1 by default;
+- version 2 when the document holds a table, an embed, a callout, or an image
+  with a caption or a width;
+- version 3 when it holds underline, superscript, subscript or an
+  [application element](#application-elements).
+
+Older versions stay valid and are read as they are (1 ⊂ 2 ⊂ 3: nothing to
+migrate). A document edited without the newer parts stays readable by older
+releases (a rollback, an older reader of the same database): 0.9 reads
+version 1, 0.10 to 0.12 read versions 1 and 2. An older panel shows a newer
+document read-only and never rewrites it.
 
 ```json
 {"type": "doc", "version": 2, "content": [
@@ -277,10 +285,18 @@ readable by 0.9 (a rollback, an older reader of the same database).
 | `table` | 2 | `tableRow`s of `tableHeader` or `tableCell`; every row as long as the first (rectangular); header cells make up the first row (the header row) or nothing; cells hold paragraphs of text with marks only; no `colspan`, `rowspan`, widths or styles; at most 50 rows × 20 columns (1,000 cells) |
 | `embed` | 2 | `provider` (`youtube` or `vimeo`) and `id` matching that provider (YouTube `[A-Za-z0-9_-]{11}`, Vimeo `[1-9][0-9]{0,14}`); never a URL or HTML |
 | `callout` | 2 | `tone` (`info` or `warn`), paragraphs and lists; never a table or a callout inside, at any depth |
+| `app.…` | 3 | an [application element](#application-elements): `attrs` only, as declared |
 
-Marks: bold, italic, strike, code and link (`http`, `https`, `mailto`; at
-most 2,048 bytes). Anything else is refused (422), and so are version 2 nodes
-and attributes in a version 1 document.
+Marks:
+
+- version 1: bold, italic, strike, code and link (`http`, `https`, `mailto`;
+  at most 2,048 bytes);
+- version 3: `underline`, `superscript` and `subscript`. Superscript and
+  subscript never go on the same text.
+
+Each mark goes at most once on a text (at most 7). Anything else is refused
+(422), and so are nodes, marks and attributes of a newer version than the
+document's.
 
 | Limit (`rustcms::admin::rich_text::…`) | Value |
 |---|---|
@@ -289,24 +305,28 @@ and attributes in a version 1 document.
 | `MAX_DEPTH` | 16 levels |
 | `MAX_IMAGES` | 100 |
 | `MAX_EMBEDS` | 50 |
+| `MAX_APP_NODES` | 500 application elements |
 | `MAX_TABLE_ROWS`, `MAX_TABLE_COLUMNS` | 50 rows (the header row included), 20 columns |
 | `MAX_ALT`, `MAX_CAPTION` | 500 and 1,000 characters (plain text, no marks) |
 | `MAX_HREF` | 2,048 bytes |
 
 The server's validator (`rich_text::parse`) owns every bound; the editor only
 follows them. Images follow the media rules above (images only). The issue
-codes of refused documents (`document_*`, `max_images`, `max_embeds`) are
-listed in [Error codes](../reference/error-codes.md).
+codes of refused documents (`document_*`, `max_images`, `max_embeds`,
+`max_app_nodes`) are listed in [Error codes](../reference/error-codes.md).
 
 ### In the panel
 
-![The rich text editor: toolbar, a table, an embed card and a callout](/img/admin/rich-text-editor.webp)
+![The rich text editor: toolbar, underline, superscript, a keyboard shortcut element, a table, an embed card and a callout](/img/admin/rich-text-editor.webp)
 *The RustCMS demo app (examples/demo): the post editor.*
 
 The editor is TipTap. It injects no styles and its nodes render no `style`
 attribute, so the panel's Content Security Policy is unchanged. Its toolbar
-has headings 2–4, lists, quote, code block, horizontal rule, info and warning
-callouts, links, images, image details, tables and embeds.
+has bold, italic, strike, underline (`Mod-U`), superscript (`Mod-.`),
+subscript (`Mod-,`), headings 2–4, lists, quote, code block, horizontal rule,
+info and warning callouts, links, images, image details, tables and embeds,
+and **Insert an element** when the field accepts
+[application elements](#application-elements).
 
 - **Images**: *Insert image* opens the media library picker (below) to
   choose images or upload several at once. Image files dropped on the
@@ -337,6 +357,71 @@ callouts, links, images, image details, tables and embeds.
   table button is off inside a callout.
 
 The read-only view renders the same nodes with React elements.
+
+### Application elements
+
+An application can declare its own elements: a blank in a fill-in-the-blank
+question, a product card, a keyboard shortcut. An element is an **atom**: it
+holds no text, only attributes of declared kinds, checked by the server on
+every write like the rest of the document. It is never HTML.
+
+Declare the elements in the admin provider, then name the ones each rich
+text field accepts (none by default):
+
+<<< @/../../../examples/demo/src/providers/admin_panel_provider.rs#rich-text-nodes [src/providers/admin_panel_provider.rs]
+
+```rust
+Field::column(post::Column::Content).rich_text().nodes(["app.kbd", "app.note_ref"]),
+```
+
+- **Names** are `app.` then `[a-z][a-z0-9_]{0,31}`; the framework's own nodes
+  never start with `app.`.
+- `RichTextNode::inline_atom(name)` goes inside text (paragraphs, headings,
+  table cells, callouts; never code blocks). `block_atom(name)` goes where
+  any block goes: the top level, list items and quotes; never in a table
+  cell or a callout.
+- `.label(text)` names it in the editor's menu and on placeholders
+  (translated like labels; `lang:missing` lists it).
+- `.text(|attrs| …)` gives its plain text, for exported HTML and heading ids
+  (below). Keep it fast and pure: it runs while rendering.
+- **Attributes** (at most 16 per element, names `[a-z][a-z0-9_]{0,31}`):
+
+  | `Attr::…` | JSON value | Options |
+  |---|---|---|
+  | `text()` | string | `.min(n)`, `.max(n)` characters (default at most 1,000; up to 10,000) |
+  | `integer()` | number | `.range(a..=b)` (within ±(2^53 − 1)) |
+  | `boolean()` | `true`/`false` | |
+  | `one_of(["a", "b"])` | string | 1 to 50 options |
+  | `uuid()` | string | stored in lower case |
+
+  An attribute is required unless it has `.default(value)`. The server fills
+  in missing defaults before storing a document, so changing a default later
+  never changes stored documents.
+- **Boot fails** on a malformed or repeated name or attribute, a default or
+  bounds that do not fit, `.nodes(...)` on a field that is not rich text, or a
+  name no `rich_text_node` declares.
+
+In a document an element is `{"type": "app.kbd", "attrs": {"keys": "Ctrl+S"}}`
+(version 3). The server refuses (422) an element the field does not accept, an
+unknown, missing or ill-typed attribute, an element out of place, `content`,
+`text` or `marks` on it, and more than 500 elements.
+
+**In the panel**, *Insert an element* lists the field's elements. Without an
+extension, an element shows as a labelled placeholder, and its dialog is a
+form made from the attribute kinds. A React extension can draw and edit it
+(SDK `ui` 4; see [React pages](react-pages.md)):
+
+<<< @/../../../examples/demo/resources/admin/src/demo/react.tsx#rich-text-node [resources/admin/src/demo/react.tsx]
+
+- `view` gets `{ name, attrs, inline, locale, t }`; `edit` gets
+  `{ name, attrs, onChange, locale, t }`. Both receive copies. The panel
+  applies the attributes `edit` reports only when they fit the declaration.
+- A view that throws shows the placeholder. Double-click an element, or select
+  it and use *Edit the element*, to change it.
+- A document holding an element the field no longer accepts opens read-only
+  in the form (the editor never drops it), its view page shows *Unknown
+  element*, and saving it again is refused until the element is removed.
+  Keep a declaration while documents still use it.
 
 ### The media library picker
 
@@ -370,7 +455,7 @@ use std::collections::HashMap;
 use rustcms::admin::rich_text::{self, ImageInfo};
 use uuid::Uuid;
 
-let doc = rich_text::parse(&post.content)?;                 // version 1 or 2
+let doc = rich_text::parse(&post.content)?;                 // version 1 to 3, no application element
 // The media rows of rich_text::media_ids(&doc), loaded by your app (its own scope),
 // from `rustcms::admin::media::entity`, so browsers reserve the space.
 let images: HashMap<Uuid, ImageInfo> = rows
@@ -423,23 +508,49 @@ The only built-in route for files is the authorized
   built from `data-embed` and `data-id`, which are checked formats, e.g.
   `https://www.youtube-nocookie.com/embed/ID` or
   `https://player.vimeo.com/video/ID`), with its own CSP for that provider;
-- callouts: `<aside class="callout" data-tone="info">`.
+- callouts: `<aside class="callout" data-tone="info">`;
+- underline, superscript, subscript: `<u>`, `<sup>`, `<sub>`;
+- application elements: `<span data-node="app.kbd" data-keys="Ctrl+S"></span>`
+  (a `div` for block elements), one `data-{attribute}` per attribute, every
+  value escaped. A frontend may replace the element with its own rendering.
 
 No attribute outside this closed set is written. `to_html(&doc, &|id|
 Some(url))` keeps its 0.9 signature (figures without sizes).
+
+Documents with application elements: `rich_text::parse` refuses them (it knows
+none). Parse with the panel's own table, `registry.rich_nodes()` (the
+`AdminPanel` service), or, in a separate program, an `AppNodes` built from the
+same declarations as the provider (keep them in one function). Render with
+`Html` to get each element's `.text` inside it and in heading ids:
+
+```rust
+use rustcms::admin::rich_text::{AppNodes, Html};
+
+let panel = state.service::<rustcms::admin::AdminPanel>().expect("the admin provider");
+let nodes = panel.registry.rich_nodes();                    // or AppNodes::new(my_rich_text_nodes())
+let doc = nodes.parse(&post.content)?;                      // or nodes.parse_for(&value, &["app.kbd"])
+let page = Html::new(&doc).images(&images).nodes(&nodes);
+let html = page.render();   // <span data-node="app.kbd" data-keys="Ctrl+S">Ctrl+S</span>
+let toc = page.outline();   // heading ids count the elements' texts
+```
+
+`AppNodes::complete(&value)` returns a document with the defaults filled in,
+as the panel stores it.
 
 Other public items of `rustcms::admin::rich_text`:
 
 | Item | Use |
 |---|---|
-| `VERSION`, `OLDEST_VERSION` | the newest (2) and oldest (1) document versions the server reads |
+| `VERSION`, `OLDEST_VERSION` | the newest (3) and oldest (1) document versions the server reads |
 | `media_ids(&doc)` | the media ids a document references |
-| `upgrade_value(&value)` | rewrites a stored version 1 document as version 2 (only `version` changes). Never needed to read one |
+| `upgrade_value(&value)` | rewrites a stored version 1 document as version 2 (only `version` changes; never to version 3, which older releases cannot read). Never needed to read one |
+| `RichTextNode`, `Attr`, `AttrKind`, `AppNodes`, `AppNode`, `NodeAttrs` | application elements: declarations, the parsed element and its attributes |
+| `Html` | renders with images and application elements (`to_html_with` is `Html::new(&doc).images(&images).render()`) |
 | `safe_href(href)` | whether a link address is allowed (`http`, `https`, `mailto`) |
 | `Embed::from_url(url)`, `Embed::url()` | parse a provider address; the canonical address of an embed |
 | `EmbedProvider::{as_str, from_name, valid_id}` | provider names and id formats |
 | `CalloutTone`, `DocumentError` | a callout's tone; the error `parse` returns |
-| `Node` | the parsed tree. It is `#[non_exhaustive]`: a `match` needs a `_` arm, since later versions add nodes |
+| `Node`, `Mark` | the parsed tree and its marks. Both are `#[non_exhaustive]`: a `match` needs a `_` arm, since later versions add nodes and marks |
 
 ## Limits and operations
 

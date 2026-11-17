@@ -49,6 +49,8 @@ fn bindings() -> String {
         rustcms_admin::ui::FormPatch::decl(&cfg),
         FormReactRequest::decl(&cfg),
         FormReactResponse::decl(&cfg),
+        RichNodeSchema::decl(&cfg),
+        RichAttrSchema::decl(&cfg),
         ComponentSchema::decl(&cfg),
         FormSchema::decl(&cfg),
         ColumnSchema::decl(&cfg),
