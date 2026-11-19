@@ -260,6 +260,51 @@ impl<R: Resource> ResourceAdapter<R> {
         Ok((hidden_before, hidden))
     }
 
+    /// The rules over the rows of the form's JSON repeaters (ADR 0044, part D),
+    /// on `data` as the save writes it (after the hooks), the record being
+    /// `stored` (on update) with `data` over it: each repeater not `hidden`
+    /// whose value is written, and on create every shown one.
+    pub(super) fn check_json_rows(
+        &self,
+        ctx: &Ctx,
+        op: Operation,
+        stored: Option<&Data>,
+        data: &Data,
+        hidden: &BTreeSet<String>,
+    ) -> AppResult<()> {
+        let mut parent: Option<Data> = None;
+        let mut errors = ValidationErrors::new();
+        for (name, rows) in &self.repeaters {
+            let Some(rule) = rows.validate() else { continue };
+            if hidden.contains(name) || (op == Operation::Update && !data.contains_key(name)) {
+                continue;
+            }
+            let parent = parent.get_or_insert_with(|| {
+                let mut values = stored.cloned().unwrap_or_default();
+                values.extend(data.iter().map(|(k, v)| (k.clone(), v.clone())));
+                values.retain(|name, _| self.field(name).is_none_or(|f| f.secret.is_none()));
+                values
+            });
+            let list = data.get(name).and_then(serde_json::Value::as_array).map_or(&[][..], Vec::as_slice);
+            let check = crate::ui::RowsCheck {
+                operation: op,
+                parent: parent.clone(),
+                rows: list
+                    .iter()
+                    .enumerate()
+                    .map(|(index, row)| crate::ui::CheckedRow {
+                        id: index.to_string(),
+                        values: row.as_object().cloned().unwrap_or_default(),
+                    })
+                    .collect(),
+            };
+            if let Err(refused) = rule(ctx, &check) {
+                refused.add_at(name, &mut errors);
+            }
+        }
+        errors.into_result()
+    }
+
     /// The values conditions read (ADR 0037): what the user's form for `op`
     /// holds before their changes, as the panel builds it. Only fields with an
     /// input of that form; on create, the declared defaults of fields the user

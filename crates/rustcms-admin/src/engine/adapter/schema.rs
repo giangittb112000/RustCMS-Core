@@ -376,7 +376,8 @@ impl<R: Resource> ResourceAdapter<R> {
             integer: false,
             repeater: None,
             rich_nodes: Vec::new(),
-            reacts: false,
+            // Its rows may react (ADR 0044, part D); left out when the user can change nothing.
+            reacts: input.reaction.is_some(),
             toolbar: None,
         }
     }
@@ -778,6 +779,7 @@ fn fill_rows<'a>(
                         order_column: repeater.order_column.clone(),
                     };
                     input.disabled = !(create || update || delete);
+                    input.reacts &= !input.disabled;
                     let mut schema =
                         crate::engine::repeater::options_schema(&repeater.spec, rows, &t, Some(relationship));
                     // Empty rows to start with are for new records only.

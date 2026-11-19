@@ -49,12 +49,15 @@ db_test!(a_question_switched_to_blanks_loses_its_options, migrate = Migrator, |d
         .send(
             Method::PATCH,
             &record(&app, "quiz_questions", &question),
-            Some(&json!({"kind": "fill_blank", "blanks": {"create": [{"ref": "b1", "data": {"label": "first"}}]}})),
+            Some(&json!({"kind": "fill_blank", "blanks": {"create": [{"ref": "b1", "data": {"label": "first", "choices": {
+                "create": [{"ref": "c1", "data": {"content": "4", "correct": true, "hint": "Count"}}],
+            }}}]}})),
         )
         .await;
     blank.assert_status(StatusCode::OK);
     // The switch removed the options; the blank is there.
-    assert_eq!(quiz_option::Entity::find().filter(of_question()).all(app.state().db()).await.unwrap().len(), 0);
+    let options = quiz_option::Entity::find().filter(of_question()).filter(quiz_option::Column::BlankId.is_null());
+    assert_eq!(options.all(app.state().db()).await.unwrap().len(), 0);
     let blanks = admin.get(&format!("{}/relations/blanks", record(&app, "quiz_questions", &question))).await.json();
     assert_eq!(blanks["data"][0]["data"]["label"], json!("first"));
     // A choice of that blank, stored meanwhile, is not one of the options.
@@ -175,6 +178,53 @@ db_test!(a_blank_question_is_written_with_its_choices, migrate = Migrator, |db: 
     let moved = json!({"blank_id": null});
     let refused = admin.send(Method::PATCH, &record(&app, "quiz_options", left[0].id), Some(&moved)).await;
     assert!(errors(&refused).contains("blank_id"), "{}", refused.text());
+});
+
+db_test!(a_single_answer_question_has_exactly_one_correct_option, migrate = Migrator, |db: TestDb| async move {
+    let app = seeded(db).await;
+    let admin = as_user(&app, "admin@example.test").await;
+    let lesson = first_lesson(&app).await;
+    let question = |options: serde_json::Value| json!({"lesson_id": lesson.to_string(), "kind": "single", "prompt": "Pick one", "options": {"create": options}});
+    // Two correct options, or none: refused at the options, nothing saved.
+    let two = json!([
+        {"ref": "n1", "data": {"content": "a", "correct": true}},
+        {"ref": "n2", "data": {"content": "b", "correct": true}},
+    ]);
+    let refused = admin.post_json(&records(&app, "quiz_questions"), &question(two)).await;
+    assert!(errors(&refused).contains("must have exactly one correct option"), "{}", refused.text());
+    let refused = admin.post_json(&records(&app, "quiz_questions"), &question(json!([]))).await;
+    assert!(errors(&refused).contains("options"), "{}", refused.text());
+    let one = json!([
+        {"ref": "n1", "data": {"content": "a", "correct": true}},
+        {"ref": "n2", "data": {"content": "b", "correct": false}},
+    ]);
+    admin.post_json(&records(&app, "quiz_questions"), &question(one)).await.assert_status(StatusCode::CREATED);
+    // A blank without a correct choice is refused at that blank.
+    let blank = json!({"lesson_id": lesson.to_string(), "kind": "fill_blank", "prompt": "___", "blanks": {"create": [
+        {"ref": "b1", "data": {"label": "it", "choices": {"create": [{"ref": "c1", "data": {"content": "x"}}]}}},
+    ]}});
+    let refused = admin.post_json(&records(&app, "quiz_questions"), &blank).await;
+    assert!(errors(&refused).contains("blanks.b1.choices"), "{}", refused.text());
+});
+
+db_test!(the_prompt_keeps_the_blanks_in_step, migrate = Migrator, |db: TestDb| async move {
+    let app = seeded(db).await;
+    let admin = as_user(&app, "admin@example.test").await;
+    let url = app.admin_api("resources/quiz_questions/form/react");
+    // Two `___`, one blank: the second is added.
+    let ask = |prompt: &str, blanks: serde_json::Value| {
+        json!({"operation": "create", "changed": "prompt", "seq": 1,
+            "state": {"kind": "fill_blank", "prompt": prompt, "blanks": blanks}})
+    };
+    let answer = admin.post_json(&url, &ask("a ___ b ___", json!([{"ref": "n1", "data": {"label": "one"}}]))).await;
+    answer.assert_status(StatusCode::OK);
+    let patch = answer.json()["patches"][0].clone();
+    assert_eq!((patch["op"].clone(), patch["data"]["label"].clone()), (json!("add_relation_row"), json!("Blank 2")));
+    // One `___`, two blanks: the extra one is flagged, not removed.
+    let two = json!([{"ref": "n1", "data": {"label": "one"}}, {"ref": "n2", "data": {"label": "two"}}]);
+    let answer = admin.post_json(&url, &ask("a ___", two)).await.json();
+    assert_eq!(answer["patches"][0]["op"], json!("flag_relation_row"));
+    assert_eq!(answer["patches"][0]["id"], json!("n2"));
 });
 
 fn uuid_like() -> String {

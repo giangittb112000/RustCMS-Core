@@ -15,6 +15,8 @@ test("a category's sections hold their links, saved and removed with them", asyn
   await page.getByRole("button", { name: "Add a section" }).click();
   // The section is the first row; its links are rows inside it.
   const section = page.getByRole("main").getByRole("listitem").first();
+  // A reaction on the rows titles a new section (ADR 0044, part D); the user may change it.
+  await expect(section.getByLabel(/^Title/)).toHaveValue("Section 1");
   await section.getByLabel(/^Title/).fill("Start here");
   const links = section.getByRole("listitem");
   await section.getByRole("button", { name: "Add a link" }).click();

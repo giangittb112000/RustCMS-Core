@@ -6,6 +6,7 @@
 //! Administrators only (instructors get no `quiz_*` permission).
 
 use rustcms::admin::*;
+use serde_json::json;
 
 use crate::models::{quiz_blank, quiz_option, quiz_question};
 
@@ -42,7 +43,29 @@ impl Resource for QuizQuestionResource {
         Form::new().schema(components![
             SelectInput::make("lesson_id"),
             SelectInput::make("kind").options(kinds()),
-            Textarea::make("prompt"),
+            // #region quiz-prompt-reacts
+            // A reaction keeps the blanks in step with the prompt as it is typed
+            // (each `___` is a blank): missing ones are added, extra ones flagged.
+            Textarea::make("prompt").reacts(|_ctx, state| {
+                let mut patches = Vec::new();
+                if state.text("kind") == quiz_question::FILL_BLANK {
+                    let wanted = state.text("prompt").matches("___").count();
+                    let rows = state.relation_rows("blanks");
+                    for n in rows.len()..wanted {
+                        patches
+                            .push(FormPatch::add_relation_row("blanks", json!({"label": format!("Blank {}", n + 1)})));
+                    }
+                    for row in rows.iter().skip(wanted) {
+                        patches.push(FormPatch::flag_relation_row(
+                            "blanks",
+                            row.id(),
+                            "No ___ in the prompt for this blank",
+                        ));
+                    }
+                }
+                Box::pin(async move { Ok(patches) })
+            }),
+            // #endregion quiz-prompt-reacts
             Toggle::make("explain").label("Hints on correct options"),
             // Options of a choice question: the options relation holds the rows
             // without a blank (`where_null`), each with an image and an
@@ -60,6 +83,21 @@ impl Resource for QuizQuestionResource {
                     FileUpload::make("image"),
                     RichEditor::make("explanation"),
                 ])
+                // #region quiz-validate
+                // Checked on every save that changes the options (the panel, the
+                // API, imports): one correct option for a single-answer question,
+                // at least one otherwise.
+                .validate_rows(|_ctx, check| {
+                    let correct = check.rows().iter().filter(|r| r.get("correct") == Some(&json!(true))).count();
+                    match check.parent().get("kind").and_then(|k| k.as_str()) {
+                        Some(quiz_question::SINGLE) if correct != 1 => {
+                            Err(RowsError::list("must have exactly one correct option"))
+                        }
+                        _ if correct == 0 => Err(RowsError::list("must have a correct option")),
+                        _ => Ok(()),
+                    }
+                })
+                // #endregion quiz-validate
                 .add_action_label("Add an option"),
             // Blanks, each with its choices: options of the blank that also name
             // their question (a double foreign key), filled in by the server
@@ -82,6 +120,14 @@ impl Resource for QuizQuestionResource {
                                 when_root("explain").is_true(),
                             ])),
                         ])
+                        // Each blank has a correct choice (checked per blank).
+                        .validate_rows(|_ctx, check| {
+                            if check.rows().iter().any(|r| r.get("correct") == Some(&json!(true))) {
+                                Ok(())
+                            } else {
+                                Err(RowsError::list("must have a correct choice"))
+                            }
+                        })
                         .add_action_label("Add a choice"),
                 ])
                 .add_action_label("Add a blank"),

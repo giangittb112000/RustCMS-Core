@@ -120,6 +120,12 @@ pub(crate) struct RowTarget<'a> {
     pub(crate) filters: &'a [(&'static str, RelationFilter)],
     /// The rows the write changes, at every level.
     pub(crate) budget: &'a RowBudget,
+    /// What holds the rows (the record, or the enclosing row) as the write
+    /// leaves it, and whether it is created: what `validate_rows` reads.
+    pub(crate) holder: &'a Data,
+    pub(crate) holder_op: Operation,
+    /// The repeater's rule over its final rows (ADR 0044, part D).
+    pub(crate) validate: Option<&'a crate::ui::RowsValidator>,
 }
 
 /// What changed, for the parent's history.
@@ -401,7 +407,53 @@ impl<R: Resource> ResourceAdapter<R> {
             outcome.reordered =
                 self.reorder_rows(ctx, txn, &target, column, &parent_value, &order, &refs, &survivors).await?;
         }
+        // The rule over the final rows: on a new holder, or when this save changed them (ADR 0044, part D).
+        if let Some(rule) = target.validate
+            && (target.holder_op == Operation::Create || !outcome.is_empty())
+        {
+            self.check_rows(ctx, txn, &target, &parent_filter, &refs, rule).await?;
+        }
         Ok(outcome)
+    }
+
+    /// Runs `rule` on every live row of the relation (filtered, not trashed,
+    /// also those the user cannot see), in the order column's order, as the
+    /// write left them; each named by its key, or the ref of a row this write
+    /// created. Its errors are at the repeater's path.
+    async fn check_rows(
+        &self,
+        ctx: &Ctx,
+        txn: &Arc<sea_orm::DatabaseTransaction>,
+        target: &RowTarget<'_>,
+        parent_filter: &sea_orm::Condition,
+        refs: &HashMap<String, String>,
+        rule: &crate::ui::RowsValidator,
+    ) -> AppResult<()> {
+        let mut query = self.live_rows(parent_filter);
+        if let Some(column) = target.order_column {
+            query = query.order_by_asc(self.column(column).column);
+        }
+        let rows = query.order_by_asc(self.pk).limit(MAX_ORDERED_ROWS as u64 + 1).all(txn.as_ref()).await?;
+        if rows.len() > MAX_ORDERED_ROWS {
+            return Err(ValidationErrors::field(target.relation, "has too many rows to check here").into());
+        }
+        let created: HashMap<&String, &String> = refs.iter().map(|(reference, key)| (key, reference)).collect();
+        let rows = rows
+            .iter()
+            .map(|model| {
+                let key = self.key_of(model);
+                let id = created.get(&key).map_or(key.clone(), |r| (*r).clone());
+                let mut values = self.record(model);
+                values.retain(|name, _| self.field(name).is_none_or(|f| f.secret.is_none()));
+                crate::ui::CheckedRow { id, values }
+            })
+            .collect();
+        let check = crate::ui::RowsCheck { operation: target.holder_op, parent: target.holder.clone(), rows };
+        rule(ctx, &check).map_err(|refused| {
+            let mut errors = ValidationErrors::new();
+            refused.add_at(target.relation, &mut errors);
+            AppError::Validation(errors)
+        })
     }
 
     /// Removes every row of the parent the user sees: the live children (at
@@ -527,6 +579,9 @@ impl<R: Resource> ResourceAdapter<R> {
                 parent: None,
                 ancestors: &ancestors,
                 budget: target.budget,
+                // Removals check nothing.
+                holder: &Data::new(),
+                op: Operation::Update,
             };
             self.write_changes(ctx, txn, level, changes).await?;
         }
@@ -679,6 +734,7 @@ impl<R: Resource> ResourceAdapter<R> {
             let key = self.key_of(&model);
             let mut ancestors = target.ancestors.to_vec();
             ancestors.push(key.clone());
+            let holder = self.record(&model);
             let level = RowsLevel {
                 repeaters: &target.rules.nested,
                 key: &key,
@@ -686,6 +742,8 @@ impl<R: Resource> ResourceAdapter<R> {
                 parent: Some(&values),
                 ancestors: &ancestors,
                 budget: target.budget,
+                holder: &holder,
+                op,
             };
             outcomes = self.write_changes(ctx, txn, level, changes).await?;
             for (_, outcome) in &mut outcomes {
@@ -1444,6 +1502,10 @@ fn settle(
                 errors.add(name, format!("must have at least {min} items"));
             }
         }
+        // A rule over the rows holds on a new holder's rows, sent or not (ADR 0044, part D).
+        if op == Operation::Create && repeater.spec.validate.is_some() && !out.iter().any(|(i, _)| *i == index) {
+            out.push((index, RowChange::default()));
+        }
     }
     errors.into_result()?;
     Ok(out)
@@ -1461,6 +1523,9 @@ pub(super) struct RowsLevel<'a> {
     /// The keys of the levels down to `key` (included).
     pub(super) ancestors: &'a [String],
     pub(super) budget: &'a RowBudget,
+    /// The record or row holding them, as written, and whether it is created.
+    pub(super) holder: &'a Data,
+    pub(super) op: Operation,
 }
 
 impl<R: Resource> ResourceAdapter<R> {
@@ -1531,12 +1596,14 @@ impl<R: Resource> ResourceAdapter<R> {
         ctx: &Ctx,
         txn: &Arc<sea_orm::DatabaseTransaction>,
         model: &Model<R>,
+        op: Operation,
         changes: Vec<(usize, RowChange)>,
         root: &Data,
     ) -> AppResult<Vec<(&'static str, RowsOutcome)>> {
         let key = self.key_of(model);
         let budget = RowBudget::new(changes.iter().map(|(_, c)| c.size()).sum());
         let ancestors = [key.clone()];
+        let holder = self.record(model);
         let level = RowsLevel {
             repeaters: &self.row_repeaters,
             key: &key,
@@ -1544,6 +1611,8 @@ impl<R: Resource> ResourceAdapter<R> {
             parent: None,
             ancestors: &ancestors,
             budget: &budget,
+            holder: &holder,
+            op,
         };
         self.write_changes(ctx, txn, level, changes).await
     }
@@ -1587,6 +1656,9 @@ impl<R: Resource> ResourceAdapter<R> {
                 ancestors: level.ancestors,
                 filters: &repeater.filters,
                 budget: level.budget,
+                holder: level.holder,
+                holder_op: level.op,
+                validate: repeater.spec.validate.as_ref().map(|r| &r.0),
             };
             out.push((repeater.name, child.write_rows(ctx, txn, target, change).await?));
         }

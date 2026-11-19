@@ -68,6 +68,21 @@ pub trait DynResource: Send + Sync {
     /// nested in the rows of the form's (ADR 0044, part C): lock order edges.
     #[doc(hidden)]
     fn nested_row_edges(&self) -> Vec<(&'static str, &'static str)>;
+    /// A relationship row's value of field `name`, as a reaction's patch sets
+    /// it (ADR 0044, part D): canonical, when the user may write the field in
+    /// `op` and the child's input checks accept it; `None` otherwise.
+    #[doc(hidden)]
+    fn accept_row_value(
+        &self,
+        ctx: &Ctx,
+        op: crate::Operation,
+        name: &str,
+        value: &serde_json::Value,
+    ) -> Option<serde_json::Value>;
+    /// Whether `value` decodes as field `name` (`null` included): a reaction's
+    /// state keeps such values of relationship rows.
+    #[doc(hidden)]
+    fn decodes(&self, name: &str, value: &serde_json::Value) -> bool;
     /// The JSON repeaters declared in the rows of this form's relationship
     /// repeaters (any depth) whose child is `target` (ADR 0044, part C): what
     /// a restore of a `target` record checks its JSON fields' media with.

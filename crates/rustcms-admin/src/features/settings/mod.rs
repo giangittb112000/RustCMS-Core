@@ -469,6 +469,12 @@ impl<T: SettingsPage> SettingsAdapter<T> {
             let spec = field.input.repeater.as_deref().expect("repeater fields have a spec");
             let here = format!("settings `{group}`");
             let rows = crate::engine::repeater::Rows::compile(&here, &field.name, spec, Some(&root));
+            // Rules over a settings page's rows come later (ADR 0044, part D).
+            assert!(
+                rows.validate().is_none(),
+                "{here}: `{}`: `validate_rows` is not available on settings pages",
+                field.name
+            );
             // Settings hold no application rich text nodes (they need a resource's registry).
             assert!(
                 rows.node_names().is_empty(),

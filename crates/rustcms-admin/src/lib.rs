@@ -46,12 +46,12 @@ pub use resource::{
 };
 pub use schema::{ResourceInfo, ResourceSchema, SchemaOperation};
 pub use ui::{
-    BadgeColumn, BelongsToManySelect, BooleanColumn, BooleanEntry, Breakpoint, Checkbox, CheckboxList, Computed,
-    ComputedEntry, Condition, CustomEntry, CustomInput, DateColumn, DatePicker, DateRangeFilter, DateTimePicker,
-    FileUpload, Form, FormPatch, FormState, FormWidth, Grid, Hidden, Infolist, KeyValue, KeyValueEntry, MediaEntry,
-    NumberInput, RelationEntry, RepeatableEntry, Repeater, RichEditor, RichTextEntry, Scope, SecretInput,
-    SecretMapInput, Section, SelectFilter, SelectInput, Split, Tab, Table, Tabs, TernaryFilter, TextColumn, TextEntry,
-    TextInput, Textarea, Toggle, When, when, when_parent, when_root,
+    BadgeColumn, BelongsToManySelect, BooleanColumn, BooleanEntry, Breakpoint, Checkbox, CheckboxList, CheckedRow,
+    Computed, ComputedEntry, Condition, CustomEntry, CustomInput, DateColumn, DatePicker, DateRangeFilter,
+    DateTimePicker, FileUpload, Form, FormPatch, FormState, FormWidth, Grid, Hidden, Infolist, KeyValue, KeyValueEntry,
+    MediaEntry, NumberInput, RelationEntry, RepeatableEntry, Repeater, RichEditor, RichTextEntry, RowsCheck, RowsError,
+    Scope, SecretInput, SecretMapInput, Section, SelectFilter, SelectInput, Split, Tab, Table, Tabs, TernaryFilter,
+    TextColumn, TextEntry, TextInput, Textarea, Toggle, When, when, when_parent, when_root,
 };
 
 /// A JSON object in wire format (input, hook data, trusted records).

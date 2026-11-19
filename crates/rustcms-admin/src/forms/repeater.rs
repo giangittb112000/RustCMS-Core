@@ -1,7 +1,17 @@
 //! `Repeater`: a list of rows, each row several inputs (ADR 0040), in one JSON
 //! column or as the child records of a has-many relation.
 
-use super::{Component, Input, InputType};
+use super::{Component, Input, InputType, RowsValidator};
+
+/// A repeater's `validate_rows` (ADR 0044, part D).
+#[derive(Clone)]
+pub(crate) struct RowsRule(pub(crate) RowsValidator);
+
+impl std::fmt::Debug for RowsRule {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str("RowsRule")
+    }
+}
 
 /// What a repeater holds and how it is edited. Options that do not fit (a
 /// JSON-only rule on a relationship row) are refused at boot.
@@ -30,6 +40,8 @@ pub(crate) struct RepeaterSpec {
     /// Nested relationship repeaters: child fields the server fills with an
     /// ancestor's key (ADR 0044, part C).
     pub(crate) inherit: Vec<String>,
+    /// A rule over the final rows (ADR 0044, part D).
+    pub(crate) validate: Option<RowsRule>,
 }
 
 impl Default for RepeaterSpec {
@@ -51,6 +63,7 @@ impl Default for RepeaterSpec {
             cloneable: false,
             table: false,
             inherit: Vec::new(),
+            validate: None,
         }
     }
 }
@@ -144,6 +157,26 @@ impl Input {
     /// ```
     pub fn inherit(mut self, field: impl Into<String>) -> Self {
         self.spec().inherit.push(field.into());
+        self
+    }
+
+    /// A rule over the repeater's final rows, checked by the server whenever a
+    /// save changes them (on create when the repeater is shown, rows sent or
+    /// not): the panel, the API and imports. Relationship repeaters (any
+    /// level; every live row of the relation, also those the user cannot see:
+    /// keep their values out of messages) and JSON repeaters of the form.
+    ///
+    /// ```rust,ignore
+    /// Repeater::make("options").relationship().validate_rows(|_ctx, check| {
+    ///     let correct = check.rows().iter().filter(|r| r.get("correct") == Some(&json!(true))).count();
+    ///     if correct == 1 { Ok(()) } else { Err(RowsError::list("must have exactly one correct option")) }
+    /// })
+    /// ```
+    pub fn validate_rows(
+        mut self,
+        rule: impl Fn(&crate::Ctx, &super::RowsCheck) -> Result<(), super::RowsError> + Send + Sync + 'static,
+    ) -> Self {
+        self.spec().validate = Some(RowsRule(std::sync::Arc::new(rule)));
         self
     }
 

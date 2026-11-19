@@ -4,8 +4,8 @@
   before it is built.
 - Date: 2026-11-18
 - Amends ADR 0037 (conditions inside rows), ADR 0040 (repeaters), ADR 0041 (one phase per child resource; in
-  part C, a locking pass per parent row), ADR 0018 (in part C, chains of parent locks) and, in part D, ADR 0043
-  (form reactions).
+  part C, a locking pass per parent row), ADR 0018 (in part C, chains of parent locks) and, in parts D and E,
+  ADR 0043 (form reactions).
 
 ## Context
 
@@ -42,7 +42,8 @@ The work is split into four parts, each its own release step, decided in order:
 | A | Conditions on and in relationship repeaters, conditions reading the root form, filtered has-many relations, table layout, relationship rows on view pages | 24 |
 | B | Server rules of each input applied in every row of every repeater; media, rich text and `belongs_to` in rows (JSON and relationship) | 25 |
 | C | Nested relationship repeaters (three levels), `inherit`, chained locks | 26 |
-| D | `validate_rows`, row hooks, reactions on relationship rows, server closures | 27 |
+| D | `validate_rows`, reactions on relationship rows | 27 |
+| E | Server closures for visibility, options and required | 28 |
 
 Decisions taken with the owner (2026-11-18), by number in the plan:
 
@@ -508,10 +509,123 @@ first. A row whose inputs did not change but whose nested rows did still runs it
   child's own form checks its own.
 - **Large trees.** A form whose rows hold many nested rows reads one request per row when it opens.
 
-## Part D
+## Decision: part D (vocabulary 27)
 
-To be written before it is built. Planned content:
+Part D lets an application keep an invariant over a repeater's rows (a single-answer question has exactly one
+correct option) and lets form reactions edit relationship rows. Decisions taken with the owner on 2026-11-19
+are marked (D1–D6). Server closures, planned here, are part E (D1).
 
-- `validate_rows` over the final set of rows, and a row hook before the write;
-- reaction patches on relationship rows by key or ref (amends ADR 0043);
-- server closures for visibility, options and required, re-run on save (Q5).
+### `validate_rows` (R8)
+
+```rust
+Repeater::make("options")
+    .relationship()
+    .validate_rows(|_ctx, check| {
+        let correct = check.rows().iter().filter(|r| r.get("correct") == Some(&json!(true))).count();
+        match check.parent().get("kind").and_then(|k| k.as_str()) {
+            Some("single") if correct != 1 => Err(RowsError::list("must have exactly one correct option")),
+            _ => Ok(()),
+        }
+    })
+```
+
+- **Where (D4).** On relationship repeaters at any level, and on JSON repeaters of a resource's form (its top
+  level). Boot refuses it on JSON repeaters nested in rows, on settings pages and in action forms (later).
+- **A plain function (D5)**: `Fn(&Ctx, &RowsCheck) -> Result<(), RowsError> + Send + Sync`. It reads what it is
+  given; it does not query the database inside the write.
+- **What it reads.** `RowsCheck` holds:
+  - `operation()` (`Create` or `Update` of the record);
+  - `parent()`: the values of what holds the rows as this write leaves them: the record's stored values after
+    its row is written (a relationship repeater of the form), the enclosing row's (a nested repeater), or the
+    form's values as the save stores them (a JSON repeater);
+  - `rows()`: the final rows, in order, each with `id()` and `get(name)`/`values()`.
+- **The final rows of a relationship repeater (D2)** are every live row of the relation (filtered, not
+  trashed), read after the repeater's rows are written, **including rows the user cannot see**: the invariant
+  holds on the data, not on one user's view. The read takes no lock of its own: every writer of those rows
+  locks the parent first (ADR 0041 point 3, part C). Rows come in the order column's order (else key order),
+  with every field of the child except encrypted ones. A row's `id()` is the ref of a row this save created, its
+  key otherwise. **The function must not put values of rows the user cannot see in its messages** (the guide
+  says so); it is application code, as hooks are.
+- **The final rows of a JSON repeater** are the list as the save writes it, after the `mutate_before_*` hooks
+  (hidden inputs left out), ids being row indexes; `parent()` is the stored record with what the save writes
+  over it (review, 2026-11-19: it first ran before the hooks, on the form's values).
+- **When (D3).**
+  - On create, when the repeater is shown, whether or not rows were sent (a question created without options
+    meets "exactly one correct" too).
+  - On update, when the save changes the repeater's rows: a relationship repeater whose change created,
+    changed, removed or reordered rows; a JSON repeater whose value was sent.
+  - Never for a hidden repeater (its rows are removed, or kept untouched), and not on saves that leave the rows
+    alone: an old record whose rows break a newer rule stays editable. A save changing only the parent (a
+    question made single-answer) does not run it either: an application keeps such a rule on that path in the
+    parent's `mutate_before_update` (review, 2026-11-19, kept as decided in D3).
+  - On every path that writes through the form's input: the panel, the API, imports. Writes to a child on its
+    own page do not run its parent's repeater rules (as `min_items`, ADR 0041).
+- **Order in the write.** A relationship repeater's check runs after its rows are written (and, nested, after
+  the rows of each of them), before its parent's `after_save`; a JSON repeater's with the form's conditions,
+  before the hooks. A failure rolls back the whole write.
+- **Errors.** `RowsError::list(message)` at the repeater (`options`), `RowsError::row(id, message)` at a row
+  (`options.n1`), `RowsError::input(id, name, message)` at a row's input (`options.n1.correct`); `.and(…)`
+  gathers several. Nested, the path holds every level (`blanks.4.choices`). Messages are the application's,
+  translated with `ctx.t()` by the application, code `custom` (as other application validation).
+- **`before_row_write` is not added (D6).** The child's `mutate_before_create`/`update` already run for every row
+  on every path, and `validate_rows` keeps the set's invariant: a repeater's own row hook would be a second
+  place changing the same row.
+
+### Reactions on relationship rows (R9, amends ADR 0043)
+
+- **Top-level relationship repeaters only (D6).** Rows of nested repeaters are left for later.
+- **State.** The panel sends a relationship repeater's rows as it holds them (stored rows it read, with the
+  user's unsaved changes; new rows by ref): `state[name] = [{"key": "8", "data": {…}}, {"ref": "n1", "data": {…}}]`,
+  each row's data its inputs' values in wire format. A repeater with more rows than the panel edits (100) is
+  read-only there: the panel does not send it, and a request sending more leaves it out of the state (the
+  reaction still runs; its rows are not patched). They are user input, as every value of the state.
+  - `FormState::relation_rows(name) -> &[StateRow]` (`key()`, `reference()`, `get(name)`, `text(name)`).
+  - The server keeps the rows of a repeater the form shows the user (the child listable) and the user may
+    change (child `create` allowed with the parent bound, `update` or `delete` admitted), and in each row the
+    values of the repeater's inputs that decode; anything else is left out. A patch of a repeater not in the
+    state is dropped.
+- **A relationship repeater may react** (`.reacts()`): a change of its rows asks for its reaction. Boot no
+  longer refuses it.
+- **Patches**, by row identity, never by place:
+
+  | Patch | Effect |
+  |---|---|
+  | `add_relation_row(field, data)` (`.with_ref(r)`) | adds a new row; the server gives it a ref (`r1`, …) unless the reaction did |
+  | `update_relation_row(field, id, data)` | sets inputs of a row (`id`: a key or a ref) |
+  | `remove_relation_row(field, id)` | removes a row |
+  | `flag_relation_row(field, id, message)` | a warning under a row; changes nothing |
+
+- **Kept only when the user could make the change** (ADR 0043's rule), else dropped and logged:
+  - the repeater is an input of the form the user may change, not hidden by its condition on the state as the
+    previous patches left it;
+  - adding needs the child's `create` (admitted and allowed, with the parent bound) and `addable`, under
+    `max_items`; updating needs `update` admitted and a row of the state the user may change (a stored row the
+    panel marked updatable, or a new row); removing needs `delete` admitted, `deletable` and stays above
+    `min_items`;
+  - the row's data names inputs of the repeater's rows (the create inputs for a new row), never the parent key,
+    an inherited key, a filter or order column; each value passes the child field's input checks (as a
+    save's), hidden inputs (the row's conditions, reading the state) are left out; values canonical;
+  - an id that names no row of the state is dropped; a patch that changes nothing is dropped.
+- **Nothing is written.** As in ADR 0043, the panel applies the patches to its form; the save sends them as any
+  change, and the server checks them again.
+
+### Wire (vocabulary 27)
+
+- `FormPatch` gains `add_relation_row` (`field`, `ref`, `data`), `update_relation_row` (`field`, `id`, `data`),
+  `remove_relation_row` (`field`, `id`), `flag_relation_row` (`field`, `id`, `message`).
+- `FormReactRequest.state` may hold a relationship repeater's rows (`[{key?, ref?, data}]`).
+- `InputSchema.reacts` may be set on a relationship repeater.
+- An SPA on vocabulary 26 sees vocabulary 27 as unknown and shows forms read-only.
+
+## Consequences (part D)
+
+- **Invariants over rows are declared once** and hold on the panel, the API and imports; a save that does not
+  change the rows does not check them.
+- **`validate_rows` reads rows the user may not see.** Its messages are the application's responsibility.
+- **Reactions can fill relationship rows** (blanks from a prompt); the panel shows them as unsaved rows.
+- ADR 0043's "left for later: row patches for relationship repeaters" is done for the top level.
+
+## Part E
+
+To be written before it is built: server closures for visibility, options and required, declared with their
+dependencies, asked through `form/react`, run again on save on every path (Q5).

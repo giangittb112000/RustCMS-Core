@@ -600,3 +600,32 @@ db_test!(rich_editors_in_settings_rows_need_the_media_library, |db: TestDb| asyn
     let message = panicked.err().and_then(|p| p.downcast_ref::<String>().cloned()).unwrap_or_default();
     assert!(message.contains("needs the media library"), "{message}");
 });
+
+#[derive(Debug, Clone, Default, serde::Serialize, serde::Deserialize)]
+pub struct RuledSettings {
+    pub notes: Vec<serde_json::Value>,
+}
+
+impl rustcms_core::settings::Settings for RuledSettings {
+    const GROUP: &'static str = "ruled";
+}
+
+#[async_trait::async_trait]
+impl SettingsPage for RuledSettings {
+    fn meta() -> SettingsMeta {
+        SettingsMeta::new("Ruled")
+    }
+
+    fn fields() -> Vec<SettingField> {
+        vec![SettingField::repeater(
+            Repeater::make("notes").schema(components![TextInput::make("body")]).validate_rows(|_, _| Ok(())),
+        )]
+    }
+}
+
+// Rules over a settings page's rows come later (ADR 0044, part D).
+#[test]
+#[should_panic(expected = "`validate_rows` is not available on settings pages")]
+fn rules_over_settings_rows() {
+    let _ = AdminProvider::new().settings::<RuledSettings>();
+}

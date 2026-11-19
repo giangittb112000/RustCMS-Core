@@ -205,6 +205,17 @@ older documents (`document_needs_version`) and more than 500 nodes
 read-only (they read versions 1 and 2 only). Extensions draw and edit nodes
 with `registerRichTextNode` (host `ui` 4).
 
+Vocabulary 27 adds reactions on relationship rows (ADR 0044, part D). A
+`form/react` request's `state` may hold a top-level relationship repeater's
+rows as the form holds them: `[{"key": "8", "data": {…}} | {"ref": "n1", "data": {…}}]`,
+at most 100 (422 beyond), each row's inputs in wire format. `FormPatch` gains
+`add_relation_row` (`field`, `ref`, `data`), `update_relation_row` (`field`,
+`id`, `data`), `remove_relation_row` (`field`, `id`) and `flag_relation_row`
+(`field`, `id`, `message`), `id` being a key or a ref; clients apply them to
+the rows they hold (a removed stored row goes to the change's `delete`). A
+relationship repeater may carry `reacts`. New issue code
+`too_many_rows_to_check` (a rule over more than 1,000 rows).
+
 Vocabulary 26 adds rows of rows (ADR 0044, part C). A relationship repeater's
 rows may hold relationship repeaters (`relationship.resource` the nested child,
 `relation` a has-many relation of the row's resource) and JSON repeaters of the

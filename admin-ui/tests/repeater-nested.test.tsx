@@ -12,6 +12,7 @@ import type { ComponentSchema, InputSchema } from "@/api/types";
 import { createSession } from "@/app/session";
 import { Components } from "@/renderers/form";
 import { type FormValues, defaultValues, fromFormValue, inputsOf, serverErrors } from "@/schema/form";
+import { applyPatches, reactionState } from "@/schema/reactions";
 import { type RelationState, changeOf, relationRowProblems } from "@/schema/relation-rows";
 import edit from "../../fixtures/contract/repeater-nested.schema.edit.json";
 
@@ -121,4 +122,49 @@ it("says that hiding the rows removes the rows inside them too", async () => {
   await screen.findByDisplayValue("yes");
   fireEvent.change(screen.getByLabelText(/^Kind/), { target: { value: JSON.stringify("choice") } });
   expect(await screen.findByRole("status")).toHaveTextContent("Saving removes the 1 rows of Blanks you can see, and the rows inside them.");
+});
+
+describe("reactions on relationship rows (ADR 0044, part D)", () => {
+  const stored = (): RelationState => ({
+    rows: [
+      { key: "1", values: { label: "First", mode: JSON.stringify("select"), hints: "", choices: "" }, changed: [], update: true, delete: true },
+      { key: "2", values: { label: "Locked", mode: JSON.stringify("text"), hints: "", choices: "" }, changed: [], update: false, delete: false },
+    ],
+    deleted: [],
+  });
+
+  it("sends the rows the form holds: stored ones until changed, then the changes", () => {
+    const values = { ...defaultValues(inputs, { title: "Q", kind: "blank" }), blanks: "" };
+    expect(reactionState(inputs, values, () => stored()).blanks).toEqual([
+      { key: "1", data: { label: "First", mode: "select", hints: null } },
+      { key: "2", data: { label: "Locked", mode: "text", hints: null } },
+    ]);
+    const changed = { ...stored(), rows: [...stored().rows, { ref: "n7", values: { label: "New", mode: "", hints: "", choices: "" }, changed: [] }] };
+    const state = reactionState(inputs, { ...values, blanks: JSON.stringify(changed) }, () => stored());
+    expect((state.blanks as unknown[])[2]).toEqual({ ref: "n7", data: { label: "New", mode: null, hints: null } });
+  });
+
+  it("applies row patches by identity, never to rows the user may not change", () => {
+    const values = { ...defaultValues(inputs, { title: "Q", kind: "blank" }), blanks: "" };
+    const applied = applyPatches(inputs, values, [
+      { op: "add_relation_row", field: "blanks", ref: "r1", data: { label: "Added" } },
+      { op: "update_relation_row", field: "blanks", id: "1", data: { label: "First!" } },
+      { op: "update_relation_row", field: "blanks", id: "2", data: { label: "Changed?" } },
+      { op: "remove_relation_row", field: "blanks", id: "2" },
+      { op: "flag_relation_row", field: "blanks", id: "r1", message: "check this" },
+    ], () => stored());
+    const state = JSON.parse(applied.values.blanks as string) as RelationState;
+    expect(state.rows.map((r) => [r.key ?? r.ref, r.values.label])).toEqual([["1", "First!"], ["2", "Locked"], ["r1", "Added"]]);
+    expect(state.rows[0]!.changed).toEqual(["label"]);
+    expect(state.deleted).toEqual([]);
+    // The warning stays with its row, by place once applied.
+    expect(applied.flags.blanks).toEqual({ 2: ["check this"] });
+    // A repeater whose rows the form does not hold (more than it reads: read-only) is neither sent nor patched.
+    expect(reactionState(inputs, values, () => null)).not.toHaveProperty("blanks");
+    const locked = applyPatches(inputs, values, [{ op: "add_relation_row", field: "blanks", ref: "r1", data: { label: "x" } }], () => null);
+    expect(locked.values).not.toHaveProperty("blanks");
+    // A removal the user may make.
+    const removed = applyPatches(inputs, values, [{ op: "remove_relation_row", field: "blanks", id: "1" }], () => stored());
+    expect((JSON.parse(removed.values.blanks as string) as RelationState).deleted).toEqual(["1"]);
+  });
 });

@@ -92,6 +92,15 @@ All notable changes are documented here. The format follows
     `too_many_rows_changed`). Demo:
     categories hold sections with links (migration `m20261121_000001_create_category_sections`). LMS: blanks
     hold their choices (`inherit("quiz_question_id")`), a quiz seeder.
+  - Part D (vocabulary 27): `Repeater::validate_rows(|ctx, check| …)`, a rule over a repeater's final rows
+    (relationship repeaters at any level: every live row of the relation, also those the user cannot see;
+    the form's JSON repeaters), run on create when shown and whenever a save changes the rows, on every path;
+    `RowsCheck`, `CheckedRow`, `RowsError` (`list`, `row`, `input`, `and`); new code `too_many_rows_to_check`.
+    Form reactions on relationship rows: `FormState::relation_rows(name)` (`StateRow`), patches
+    `add_relation_row`, `update_relation_row`, `remove_relation_row`, `flag_relation_row` by key or ref, kept
+    when the user could make them; relationship repeaters may `.reacts()` (ADR 0043 amended). Demo: a new
+    section gets a title. LMS: one correct option per single-answer question, a correct choice per blank, the
+    prompt's `___` keep the blanks in step.
   - Demo: categories are their posts or a link (migration `m20261119_000001_add_layout_to_categories`), posts
     edited as a table and shown on the view page, a "Drafts" section. LMS: quiz questions with options
     (`where_null("blank_id")`) and blanks, three tables (migration `m20261119_000006_create_quiz_tables`).
@@ -112,6 +121,8 @@ All notable changes are documented here. The format follows
 - A hook of a relationship repeater's child that adds media to a row no longer fails (500): the row's media are
   checked with the parent's. `media::check_references` takes owned paths; `DynResource::field_locks_media_or_secret`
   is `field_is_encrypted`.
+- `FormPatch` gains four variants (relationship rows) and `FormState` a field: code matching `FormPatch`
+  exhaustively adds them. `DynResource` gains `accept_row_value`, `decodes`, `row_json_repeaters`.
 - `ResourceMeta::lock_parent` may target a resource that locks a parent of its own (ADR 0044, part C, amending
   ADR 0018): a write locks its direct parent; a cycle is refused at boot. `DynResource::compile_row_rules` takes
   the panel's rich text nodes; `DynResource::nested_row_edges` is new. LMS: `quiz_options.blank_id` is a

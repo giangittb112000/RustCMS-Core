@@ -26,6 +26,8 @@ pub mod question {
         pub title: String,
         /// `choice` or `blank`.
         pub kind: String,
+        /// A JSON repeater's rows: tags, distinct (`validate_rows`).
+        pub tags: Option<Json>,
     }
 
     #[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]
@@ -98,22 +100,109 @@ impl Resource for QuestionResource {
 
     fn fields() -> Vec<Field> {
         use question::Column as C;
-        vec![Field::column(C::Title).required(), Field::column(C::Kind).required()]
+        vec![Field::column(C::Title).required(), Field::column(C::Kind).required(), Field::column(C::Tags)]
     }
 
     fn form() -> Form {
         Form::new().schema(components![
-            TextInput::make("title"),
+            // Reactions on relationship rows (ADR 0044, part D): the title says what to patch.
+            TextInput::make("title").reacts(|_ctx, state| {
+                let rows = state.relation_rows("blanks").to_vec();
+                let first = rows.first().map(|r| r.id().to_owned()).unwrap_or_default();
+                let patches = match state.text("title") {
+                    "add" => vec![FormPatch::add_relation_row("blanks", json!({"label": "auto", "mode": "select"}))],
+                    "add then name" => vec![
+                        FormPatch::add_relation_row_as("blanks", "x", json!({"label": "a"})),
+                        FormPatch::update_relation_row("blanks", "x", json!({"label": "b"})),
+                    ],
+                    "not yours" => vec![
+                        FormPatch::add_relation_row("blanks", json!({"position": 1})),
+                        FormPatch::add_relation_row("blanks", json!({"question_id": 1})),
+                        FormPatch::add_relation_row("blanks", json!({"mode": "zzz"})),
+                        FormPatch::update_relation_row("blanks", "999", json!({"label": "x"})),
+                        FormPatch::add_relation_row("options", json!({"content": "hidden repeater"})),
+                    ],
+                    "rename" => rows
+                        .iter()
+                        .map(|r| {
+                            FormPatch::update_relation_row(
+                                "blanks",
+                                r.id(),
+                                json!({"label": format!("{}!", r.text("label"))}),
+                            )
+                        })
+                        .collect(),
+                    "same" => rows
+                        .iter()
+                        .map(|r| FormPatch::update_relation_row("blanks", r.id(), json!({"label": r.text("label")})))
+                        .collect(),
+                    "remove" => vec![FormPatch::remove_relation_row("blanks", first)],
+                    "flag" => vec![FormPatch::flag_relation_row("blanks", first, "check this")],
+                    _ => vec![],
+                };
+                Box::pin(async move { Ok(patches) })
+            }),
             SelectInput::make("kind").options(vec![("choice", "Choice"), ("blank", "Blank")]),
+            // Tags are distinct (a rule over a JSON repeater's rows).
+            Repeater::make("tags").schema(components![TextInput::make("name").required()]).validate_rows(
+                |_ctx, check| {
+                    let mut seen = std::collections::HashSet::new();
+                    for row in check.rows() {
+                        if !seen.insert(row.get("name").cloned()) {
+                            return Err(RowsError::input(row.id(), "name", "is a duplicate"));
+                        }
+                    }
+                    Ok(())
+                }
+            ),
+            // A question titled "two" has exactly two options (every live one,
+            // also those the user cannot see); an option is never "bad".
             Repeater::make("options")
                 .relationship()
                 .order_column("position")
                 .shown_when(when("kind").eq("choice"))
-                .schema(components![TextInput::make("content")]),
+                .schema(components![TextInput::make("content")])
+                .validate_rows(|_ctx, check| {
+                    let mut refused: Option<RowsError> = None;
+                    for row in check.rows() {
+                        if row.get("content") == Some(&json!("bad")) {
+                            let e = RowsError::input(row.id(), "content", "is bad");
+                            refused = Some(match refused.take() {
+                                Some(r) => r.and(e),
+                                None => e,
+                            });
+                        }
+                    }
+                    if check.parent().get("title") == Some(&json!("two")) && check.rows().len() != 2 {
+                        let e = RowsError::list("must have exactly two options");
+                        refused = Some(match refused.take() {
+                            Some(r) => r.and(e),
+                            None => e,
+                        });
+                    }
+                    refused.map_or(Ok(()), Err)
+                }),
             Repeater::make("blanks")
                 .relationship()
                 .order_column("position")
                 .shown_when(when("kind").eq("blank"))
+                // Reacts to its rows: a row without a label gets one.
+                .reacts(|_ctx, state| {
+                    let patches = state
+                        .relation_rows("blanks")
+                        .iter()
+                        .enumerate()
+                        .filter(|(_, r)| r.text("label").is_empty())
+                        .map(|(i, r)| {
+                            FormPatch::update_relation_row(
+                                "blanks",
+                                r.id(),
+                                json!({"label": format!("Blank {}", i + 1)}),
+                            )
+                        })
+                        .collect();
+                    Box::pin(async move { Ok(patches) })
+                })
                 .schema(components![
                     TextInput::make("label"),
                     SelectInput::make("mode"),
@@ -125,6 +214,14 @@ impl Resource for QuestionResource {
                         .inherit("question_id")
                         .order_column("position")
                         .shown_when(when("mode").ne("open"))
+                        // A blank's choices are distinct (checked per blank).
+                        .validate_rows(|_ctx, check| {
+                            let mut seen = std::collections::HashSet::new();
+                            match check.rows().iter().find(|r| !seen.insert(r.get("content").cloned())) {
+                                Some(_) => Err(RowsError::list("must be distinct")),
+                                None => Ok(()),
+                            }
+                        })
                         .schema(components![
                             TextInput::make("content"),
                             // Explained only for a select blank (the enclosing row).
@@ -144,6 +241,18 @@ impl Resource for QuestionResource {
     async fn after_save(_ctx: &Ctx, _txn: &DatabaseTransaction, record: &question::Model) -> AppResult<()> {
         saved(Self::SLUG, record.id);
         Ok(())
+    }
+
+    // Tag names are stored in lower case: the rule over the tags sees them so.
+    async fn mutate_before_create(_ctx: &Ctx, _txn: &DatabaseTransaction, mut data: Data) -> AppResult<Data> {
+        if let Some(Value::Array(tags)) = data.get_mut("tags") {
+            for tag in tags.iter_mut() {
+                if let Some(name) = tag.get("name").and_then(Value::as_str).map(str::to_lowercase) {
+                    tag["name"] = json!(name);
+                }
+            }
+        }
+        Ok(data)
     }
 }
 
@@ -710,7 +819,7 @@ db_test!(the_edit_form_holds_the_nested_repeater, |db: TestDb| async move {
 mod boot {
     use super::*;
 
-    fn fails(registry: fn() -> Registry) -> String {
+    pub(super) fn fails(registry: fn() -> Registry) -> String {
         let Err(err) = std::panic::catch_unwind(move || registry().finish()) else { panic!("refused at boot") };
         err.downcast_ref::<String>().cloned().unwrap_or_default()
     }
@@ -891,4 +1000,300 @@ mod boot {
             .register::<OptionResource>()
             .finish();
     }
+}
+
+mod validate {
+    use super::*;
+
+    async fn options_of(app: &TestApp, question: i32) -> Vec<String> {
+        option::Entity::find()
+            .filter(option::Column::QuestionId.eq(question))
+            .filter(option::Column::BlankId.is_null())
+            .order_by_asc(option::Column::Position)
+            .all(app.state().db())
+            .await
+            .unwrap()
+            .into_iter()
+            .map(|o| o.content)
+            .collect()
+    }
+
+    fn options(contents: &[&str]) -> Value {
+        let rows: Vec<Value> = contents
+            .iter()
+            .enumerate()
+            .map(|(i, c)| json!({"ref": format!("n{}", i + 1), "data": {"content": c}}))
+            .collect();
+        json!({"create": rows})
+    }
+
+    db_test!(the_rule_holds_on_create_rows_sent_or_not, |db: TestDb| async move {
+        let (app, users) = setup(db).await;
+        let admin = app.acting_as(&users.admin).await;
+        // No option sent: the rule runs on none.
+        let refused = create(&admin, &app, json!({"title": "two", "kind": "choice"})).await;
+        refused.assert_status(StatusCode::UNPROCESSABLE_ENTITY);
+        assert_eq!(
+            refused.json()["errors"]["options"][0],
+            json!("must have exactly two options"),
+            "{}",
+            refused.json()
+        );
+        // Rows of a hidden repeater are not checked.
+        create(&admin, &app, json!({"title": "two", "kind": "blank"})).await.assert_status(StatusCode::CREATED);
+        // Errors at a new row's input, by its ref.
+        let refused =
+            create(&admin, &app, json!({"title": "two", "kind": "choice", "options": options(&["a", "bad"])})).await;
+        refused.assert_status(StatusCode::UNPROCESSABLE_ENTITY);
+        assert_eq!(refused.json()["errors"]["options.n2.content"][0], json!("is bad"), "{}", refused.json());
+        let created =
+            create(&admin, &app, json!({"title": "two", "kind": "choice", "options": options(&["a", "b"])})).await;
+        created.assert_status(StatusCode::CREATED);
+    });
+
+    db_test!(the_rule_runs_when_a_save_changes_the_rows, |db: TestDb| async move {
+        let (app, users) = setup(db).await;
+        let admin = app.acting_as(&users.admin).await;
+        let created =
+            create(&admin, &app, json!({"title": "two", "kind": "choice", "options": options(&["a", "b"])})).await;
+        let question: i32 = created.json()["data"]["key"].as_str().unwrap().parse().unwrap();
+        // A third option: refused, nothing saved.
+        let refused = update(&admin, &app, question, json!({"options": options(&["c"])})).await;
+        refused.assert_status(StatusCode::UNPROCESSABLE_ENTITY);
+        assert!(refused.json()["errors"]["options"].is_array(), "{}", refused.json());
+        assert_eq!(options_of(&app, question).await, vec!["a", "b"]);
+        // A stored row's error names its key.
+        let keys: Vec<i32> = option::Entity::find()
+            .filter(option::Column::QuestionId.eq(question))
+            .order_by_asc(option::Column::Position)
+            .all(app.state().db())
+            .await
+            .unwrap()
+            .iter()
+            .map(|o| o.id)
+            .collect();
+        let bad = json!({"options": {"update": [{"key": keys[0].to_string(), "data": {"content": "bad"}}]}});
+        let refused = update(&admin, &app, question, bad).await;
+        let path = format!("options.{}.content", keys[0]);
+        assert_eq!(refused.json()["errors"][&path][0], json!("is bad"), "{}", refused.json());
+        // A save leaving the rows alone does not check them: an old question with
+        // three options stays editable.
+        let extra = option::ActiveModel {
+            question_id: Set(question),
+            content: Set("c".into()),
+            position: Set(9),
+            ..Default::default()
+        };
+        extra.insert(app.state().db()).await.unwrap();
+        update(&admin, &app, question, json!({"kind": "choice"})).await.assert_status(StatusCode::OK);
+    });
+
+    db_test!(the_rule_reads_rows_the_user_cannot_see, |db: TestDb| async move {
+        let (app, users) = setup(db).await;
+        let admin = app.acting_as(&users.admin).await;
+        let created = create(&admin, &app, json!({"title": "x", "kind": "choice", "options": options(&["a"])})).await;
+        let question: i32 = created.json()["data"]["key"].as_str().unwrap().parse().unwrap();
+        // Outside everyone's scope, still one of the question's options.
+        let hidden = option::ActiveModel {
+            question_id: Set(question),
+            content: Set("hidden".into()),
+            position: Set(9),
+            ..Default::default()
+        };
+        hidden.insert(app.state().db()).await.unwrap();
+        let key = option::Entity::find().filter(option::Column::Content.eq("a")).one(app.state().db()).await.unwrap();
+        let key = key.unwrap().id.to_string();
+        // Two options with the hidden one: the rule holds.
+        let change = json!({"title": "two", "options": {"update": [{"key": key, "data": {"content": "a!"}}]}});
+        update(&admin, &app, question, change).await.assert_status(StatusCode::OK);
+    });
+
+    db_test!(a_nested_rule_runs_per_row, |db: TestDb| async move {
+        let (app, users) = setup(db).await;
+        let admin = app.acting_as(&users.admin).await;
+        let blank = |r: &str, choices: &[&str]| {
+            let rows: Vec<Value> = choices
+                .iter()
+                .enumerate()
+                .map(|(i, c)| json!({"ref": format!("c{i}"), "data": {"content": c}}))
+                .collect();
+            json!({"ref": r, "data": {"label": r, "mode": "select", "choices": {"create": rows}}})
+        };
+        // The same choice in two blanks: fine; twice in one: refused there.
+        let created = create(
+            &admin,
+            &app,
+            json!({"title": "Q", "kind": "blank", "blanks": {"create": [
+                blank("b1", &["x", "y"]), blank("b2", &["x"]),
+            ]}}),
+        )
+        .await;
+        created.assert_status(StatusCode::CREATED);
+        let refused = create(
+            &admin,
+            &app,
+            json!({"title": "Q", "kind": "blank", "blanks": {"create": [
+                blank("b1", &["x"]), blank("b2", &["x", "x"]),
+            ]}}),
+        )
+        .await;
+        refused.assert_status(StatusCode::UNPROCESSABLE_ENTITY);
+        assert_eq!(refused.json()["errors"]["blanks.b2.choices"][0], json!("must be distinct"), "{}", refused.json());
+    });
+
+    db_test!(a_json_repeater_s_rule_names_rows_by_index, |db: TestDb| async move {
+        let (app, users) = setup(db).await;
+        let admin = app.acting_as(&users.admin).await;
+        let tags = json!([{"name": "a"}, {"name": "b"}, {"name": "a"}]);
+        let refused = create(&admin, &app, json!({"title": "Q", "kind": "blank", "tags": tags})).await;
+        refused.assert_status(StatusCode::UNPROCESSABLE_ENTITY);
+        assert_eq!(refused.json()["errors"]["tags.2.name"][0], json!("is a duplicate"), "{}", refused.json());
+        let created = create(&admin, &app, json!({"title": "Q", "kind": "blank", "tags": [{"name": "a"}]})).await;
+        created.assert_status(StatusCode::CREATED);
+        // The rule reads what the save writes, after the hooks ("A" is stored "a").
+        let refused =
+            create(&admin, &app, json!({"title": "Q", "kind": "blank", "tags": [{"name": "A"}, {"name": "a"}]})).await;
+        refused.assert_status(StatusCode::UNPROCESSABLE_ENTITY);
+        assert_eq!(refused.json()["errors"]["tags.1.name"][0], json!("is a duplicate"), "{}", refused.json());
+    });
+
+    #[test]
+    fn rules_hold_on_the_form_s_repeaters_only() {
+        struct NestedJson;
+        impl Resource for NestedJson {
+            type Entity = question::Entity;
+            const SLUG: &'static str = "questions";
+            fn meta() -> ResourceMeta {
+                ResourceMeta::new("Question")
+            }
+            fn fields() -> Vec<Field> {
+                vec![Field::column(question::Column::Tags)]
+            }
+            fn form() -> Form {
+                Form::new().schema(components![Repeater::make("tags").schema(components![
+                    TextInput::make("name"),
+                    Repeater::make("aliases")
+                        .schema(components![TextInput::make("alias")])
+                        .validate_rows(|_, _| Ok(())),
+                ])])
+            }
+        }
+        let message = super::boot::fails(|| Registry::new().register::<NestedJson>());
+        assert!(message.contains("`validate_rows` is for relationship repeaters"), "{message}");
+    }
+}
+
+mod reactions {
+    use super::*;
+
+    async fn react(client: &TestClient<'_>, app: &TestApp, body: Value) -> TestResponse {
+        client.post_json(&app.admin_api("resources/questions/form/react"), &body).await
+    }
+
+    fn asked(title: &str, rows: Value) -> Value {
+        json!({"operation": "create", "changed": "title", "state": {"title": title, "kind": "blank", "blanks": rows}, "seq": 1})
+    }
+
+    db_test!(a_reaction_adds_and_names_rows, |db: TestDb| async move {
+        let (app, users) = setup(db).await;
+        let admin = app.acting_as(&users.admin).await;
+        // The server names a new row (a ref not taken in the state).
+        let answer = react(&admin, &app, asked("add", json!([{"ref": "r1", "data": {"label": "mine"}}]))).await;
+        answer.assert_status(StatusCode::OK);
+        let patch = answer.json()["patches"][0].clone();
+        assert_eq!(patch["op"], json!("add_relation_row"));
+        assert_eq!(patch["ref"], json!("r2"));
+        assert_eq!(patch["data"], json!({"label": "auto", "mode": "select"}));
+        // A later patch of the answer names the row it added.
+        let answer = react(&admin, &app, asked("add then name", json!([]))).await.json();
+        assert_eq!(
+            answer["patches"][1],
+            json!({"op": "update_relation_row", "field": "blanks", "id": "x", "data": {"label": "b"}})
+        );
+    });
+
+    db_test!(patches_the_user_could_not_make_are_dropped, |db: TestDb| async move {
+        let (app, users) = setup(db).await;
+        let admin = app.acting_as(&users.admin).await;
+        // The order column, an inherited or parent key, a refused value, an unknown
+        // row, rows of a hidden repeater: none kept.
+        let answer = react(&admin, &app, asked("not yours", json!([]))).await.json();
+        assert_eq!(answer["patches"], json!([]), "{answer}");
+        // Nothing to change: dropped.
+        let rows = json!([{"ref": "n1", "data": {"label": "a"}}]);
+        assert_eq!(react(&admin, &app, asked("same", rows)).await.json()["patches"], json!([]));
+        // More rows than the panel edits: the repeater is left out of the state, the
+        // reaction still runs, its rows are not patched.
+        let many: Vec<Value> = (0..101).map(|i| json!({"ref": format!("n{i}"), "data": {}})).collect();
+        let answer = react(&admin, &app, asked("add", json!(many))).await;
+        answer.assert_status(StatusCode::OK);
+        assert_eq!(answer.json()["patches"], json!([]));
+    });
+
+    db_test!(stored_rows_are_patched_by_key_as_the_user_may, |db: TestDb| async move {
+        let (app, users) = setup(db).await;
+        let (question, blanks) = stored(&app, &[("A", "select", &[]), ("B", "select", &[])]).await;
+        let rows = json!([
+            {"key": blanks[0].0.to_string(), "data": {"label": "A", "mode": "select"}},
+            {"key": blanks[1].0.to_string(), "data": {"label": "B", "mode": "select"}},
+            {"ref": "n1", "data": {"label": "C"}},
+        ]);
+        let edit = |title: &str| {
+            json!({"operation": "edit", "key": question.to_string(), "changed": "title",
+                "state": {"title": title, "kind": "blank", "blanks": rows}, "seq": 1})
+        };
+        let admin = app.acting_as(&users.admin).await;
+        let answer = react(&admin, &app, edit("rename")).await.json();
+        let labels: Vec<_> = answer["patches"].as_array().unwrap().iter().map(|p| p["data"]["label"].clone()).collect();
+        assert_eq!(labels, vec![json!("A!"), json!("B!"), json!("C!")]);
+        let answer = react(&admin, &app, edit("remove")).await.json();
+        assert_eq!(
+            answer["patches"][0],
+            json!({"op": "remove_relation_row", "field": "blanks", "id": blanks[0].0.to_string()})
+        );
+        let answer = react(&admin, &app, edit("flag")).await.json();
+        assert_eq!(answer["patches"][0]["message"], json!("check this"));
+        // A user who may not remove blanks: the removal is dropped.
+        let reader = UserFactory::new().name("Reader").create(app.state().db()).await;
+        let auth = app.state().service::<AuthState>().unwrap();
+        let rbac = RbacService::new(app.state().db(), &auth.resolver);
+        let permissions: Vec<String> = [
+            "questions.view_any",
+            "questions.view",
+            "questions.update",
+            "question_blanks.view_any",
+            "question_blanks.view",
+            "question_blanks.update",
+        ]
+        .map(str::to_owned)
+        .to_vec();
+        let role = rbac.create_role(Actor::System, ADMIN_GUARD, "reader", &permissions).await.unwrap();
+        rbac.assign_role(Actor::System, reader.id, role.id).await.unwrap();
+        let reader = app.acting_as(&reader).await;
+        assert_eq!(react(&reader, &app, edit("remove")).await.json()["patches"], json!([]));
+        // A user who may create blanks but not list them: the form does not show the
+        // repeater, nor does a reaction patch it.
+        let blind = UserFactory::new().name("Blind").create(app.state().db()).await;
+        let permissions: Vec<String> =
+            ["questions.view_any", "questions.view", "questions.create", "question_blanks.create"]
+                .map(str::to_owned)
+                .to_vec();
+        let role = rbac.create_role(Actor::System, ADMIN_GUARD, "blind", &permissions).await.unwrap();
+        rbac.assign_role(Actor::System, blind.id, role.id).await.unwrap();
+        let blind = app.acting_as(&blind).await;
+        assert_eq!(react(&blind, &app, asked("add", json!([]))).await.json()["patches"], json!([]));
+    });
+
+    db_test!(a_relationship_repeater_reacts_to_its_rows, |db: TestDb| async move {
+        let (app, users) = setup(db).await;
+        let admin = app.acting_as(&users.admin).await;
+        let body = json!({"operation": "create", "changed": "blanks", "seq": 1, "state": {"title": "Q", "kind": "blank",
+            "blanks": [{"ref": "n1", "data": {"label": "set"}}, {"ref": "n2", "data": {}}]}});
+        let answer = react(&admin, &app, body).await;
+        answer.assert_status(StatusCode::OK);
+        assert_eq!(
+            answer.json()["patches"],
+            json!([{"op": "update_relation_row", "field": "blanks", "id": "n2", "data": {"label": "Blank 2"}}])
+        );
+    });
 }

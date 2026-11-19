@@ -296,6 +296,10 @@ returns a list of `FormPatch`es:
 | `FormPatch::add_row(field, row)`, `add_row_at(field, index, row)` | adds a row to a JSON repeater |
 | `FormPatch::remove_row(field, index)`, `move_row(field, from, to)` | removes or moves a row |
 | `FormPatch::flag_row(field, index, message)` | a warning under a row; changes nothing |
+| `FormPatch::add_relation_row(field, data)` (`add_relation_row_as(field, ref, data)`) | adds a row to a relationship repeater |
+| `FormPatch::update_relation_row(field, id, data)` | sets inputs of a relationship row (`id`: its key, or a new row's ref) |
+| `FormPatch::remove_relation_row(field, id)` | removes a relationship row |
+| `FormPatch::flag_relation_row(field, id, message)` | a warning under a relationship row; changes nothing |
 | `FormPatch::notice(message)` | a message to the user |
 
 ```rust
@@ -313,16 +317,25 @@ NumberInput::make("total"),
   the user may view the record), then what the user typed in the inputs they
   may write (a value that does not decode yet, a number half typed, is left
   out), and on a create form opened from a relation section, the key that
-  relation binds. Never encrypted fields, links or child records, nor a field
-  the user may not read. **These values are user input**: check an id the
+  relation binds. Never encrypted fields or links, nor a field the user may not
+  read. The rows of the form's relationship repeaters the user may change are
+  there as the panel holds them (stored rows with the user's unsaved changes,
+  then new rows; not a repeater with more rows than the form edits),
+  through `state.relation_rows(name)` (`id()`, `key()`,
+  `reference()`, `get(name)`, `text(name)`). **These values are user input**: check an id the
   reaction looks up (a `belongs_to` key, a media id) against what the user may
   see, with `ctx.records(…)`.
 - **What it may change.** Patches apply in order (a row index is the row's
   place after the previous patches), conditions evaluated again after each
   one. The server drops, and logs, a patch the user could not make: a field
   not in the form, not readable and writable by the user, hidden by its
-  conditions, encrypted, or a value its input refuses; row patches name JSON
-  repeaters only. Patches that change nothing are dropped. Values are sent as
+  conditions, encrypted, or a value its input refuses. Row patches by index
+  name JSON repeaters; relationship rows are named by key or ref and are
+  changed as the user could: `create`, `update` or `delete` on the child,
+  `addable`/`deletable`, `min_items`/`max_items`, inputs of the rows only (never
+  the parent key, a filter or order column), values the child's field accepts,
+  inputs hidden by the row's conditions left out; a new row gets a ref from the
+  server unless the reaction named it. Patches that change nothing are dropped. Values are sent as
   a save stores them (a decimal at the column's scale, rows without their
   hidden inputs). At most 200 patches, messages of at most 500 characters.
   Changes made by a patch do not set off other reactions.
@@ -339,8 +352,17 @@ NumberInput::make("total"),
   them (the API, imports and actions write without them). What must always
   hold belongs in `mutate_before_create`/`mutate_before_update` or validation.
 
+A relationship repeater may react too: a change of its rows asks for its
+reaction. The demo's categories title a new section; the LMS keeps a
+question's blanks in step with its prompt:
+
+<<< @/../../../examples/demo/src/admin/resources/category_resource.rs#sections-reacts [src/admin/resources/category_resource.rs]
+
+<<< @/../../../examples/lms/src/admin/resources/quiz_question_resource.rs#quiz-prompt-reacts [src/admin/resources/quiz_question_resource.rs]
+
 Reactions are for resource forms: settings pages and action forms do not take
-them yet, nor inputs inside repeater rows.
+them yet, nor inputs inside repeater rows, and rows of nested relationship
+repeaters cannot be patched.
 
 ## Leaving with unsaved changes
 
@@ -440,6 +462,43 @@ Repeater::make("faq")
   and do not fold.
 - **Not in rows:** secrets, belongs-to-many inputs, record selects
   (`belongs_to`: a JSON row has no field to choose from), tabs and splits.
+
+### Rules over the rows
+
+`.validate_rows(|ctx, check| …)` keeps an invariant over a repeater's rows (a
+single-answer question has exactly one correct option). It runs on the
+server whenever a save changes the rows, on the panel, the API and imports:
+
+<<< @/../../../examples/lms/src/admin/resources/quiz_question_resource.rs#quiz-validate [src/admin/resources/quiz_question_resource.rs]
+
+- **What it reads.** `check.rows()` (each row's `id()` and `get(name)`),
+  `check.parent()` (the values of what holds the rows, as the save leaves
+  them: the record, or the enclosing row) and `check.operation()`.
+  - For [child records](#child-records): **every** live row of the relation
+    (filtered, not trashed), read after the save wrote them, including rows
+    the user cannot see, in the order column's order. A row is named by its
+    key, or the ref of a row this save created. Keep values of rows the user
+    cannot see out of messages.
+  - For a JSON repeater: the list as the save writes it (after the
+    `mutate_before_*` hooks), rows named by index; `parent()` is the record
+    with what the save writes over it.
+- **When.** On create, when the repeater is shown, whether or not rows were
+  sent; on update, when the save adds, changes, removes or reorders rows (a
+  JSON repeater: when its value is sent). Never for a hidden repeater, and not
+  on a save that leaves the rows alone, so a record whose rows break a newer
+  rule stays editable. Writes to a child on its own page do not run its
+  parent's rules, and a save that changes only the parent does not run them
+  either: a rule reading the parent (a question made single-answer while it
+  has two correct options) is kept on that path by the parent's
+  `mutate_before_update`, if it must hold there too.
+- **Errors.** `RowsError::list(message)` on the repeater (`options`),
+  `RowsError::row(id, message)` on a row (`options.n1`),
+  `RowsError::input(id, name, message)` on a row's input
+  (`options.n1.correct`); `.and(…)` gathers several. A refusal saves nothing.
+  Nested repeaters' rules run per row (`blanks.4.choices`).
+- On child records (any level) and on the form's own JSON repeaters; not on
+  JSON repeaters inside rows, settings pages or action forms. A plain
+  function: it does not read the database.
 
 On view pages each row is shown with the entries of its inputs (a
 `RepeatableEntry`, see [the default view page](infolists.md#the-default-view-page));

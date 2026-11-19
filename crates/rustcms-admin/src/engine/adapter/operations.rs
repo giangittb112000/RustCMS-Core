@@ -131,6 +131,31 @@ impl<R: Resource> DynResource for ResourceAdapter<R> {
         out
     }
 
+    fn accept_row_value(
+        &self,
+        ctx: &Ctx,
+        op: Operation,
+        name: &str,
+        value: &serde_json::Value,
+    ) -> Option<serde_json::Value> {
+        self.field(name).filter(|f| f.secret.is_none() && f.can_write(op, ctx))?;
+        let rule = InputRule {
+            options: self.input_options(name),
+            bounds: self.number_bounds.get(name).copied(),
+            ..self.rule(name, false)
+        };
+        let mut errors = ValidationErrors::new();
+        if !check_input(name, &rule, value, &mut errors) {
+            return None;
+        }
+        Some(if value.is_null() { value.clone() } else { self.canonical_value(name, value) })
+    }
+
+    fn decodes(&self, name: &str, value: &serde_json::Value) -> bool {
+        self.field(name).is_some_and(|f| f.secret.is_none())
+            && (value.is_null() || self.column(name).kind.decode(value).is_ok())
+    }
+
     fn nested_row_edges(&self) -> Vec<(&'static str, &'static str)> {
         let mut out = Vec::new();
         crate::adapter::rows::nested_edges(&self.row_repeaters, &mut out);
@@ -638,6 +663,8 @@ impl<R: Resource> DynResource for ResourceAdapter<R> {
         let data = R::mutate_before_create(&wctx, &txn, input).await?;
         self.check_parent_written(&wctx, &data, &parents)?;
         self.check_filters_kept(&data, &fixed)?;
+        // Rules over JSON rows, on what is written (ADR 0044, part D).
+        self.check_json_rows(&wctx, Operation::Create, None, &data, &hidden)?;
         if let Some((field, value)) = &bound
             && data.get(field) != Some(value)
         {
@@ -667,7 +694,7 @@ impl<R: Resource> DynResource for ResourceAdapter<R> {
         self.check_parent_stored(&wctx, &model, &parents)?;
         let link_audits = self.write_links(&wctx, &txn, &model, links).await?;
         // The children, once the parent is written (locked after it); `after_save` sees them.
-        let mut row_outcomes = self.write_row_changes(&wctx, &txn, &model, rows, &root).await?;
+        let mut row_outcomes = self.write_row_changes(&wctx, &txn, &model, Operation::Create, rows, &root).await?;
         // Media last, the rows' with the record's: the media resource ranks after every other (ADR 0041, 0044).
         let row_media = row_outcomes.iter_mut().flat_map(|(_, o)| std::mem::take(&mut o.media)).collect();
         self.check_media(&wctx, &txn, &data, row_media).await?;
@@ -731,6 +758,8 @@ impl<R: Resource> DynResource for ResourceAdapter<R> {
         let root = self.row_root(&wctx, Operation::Update, Some((&record, viewable)), &input);
         let data = R::mutate_before_update(&wctx, &txn, &model, input).await?;
         self.check_parent_written(&wctx, &data, &parents)?;
+        // Rules over JSON rows, on what is written over the record (ADR 0044, part D).
+        self.check_json_rows(&wctx, Operation::Update, Some(&record), &data, &hidden)?;
         self.check_relations(&wctx, &txn, &data).await?;
         // Link targets, before the row's foreign keys lock what they reference.
         let links = self.lock_links(&wctx, &txn, links, &data).await?;
@@ -745,7 +774,7 @@ impl<R: Resource> DynResource for ResourceAdapter<R> {
         self.check_parent_stored(&wctx, &model, &parents)?;
         let link_audits = self.write_links(&wctx, &txn, &model, links).await?;
         // The children, once the parent is written (locked after it); `after_save` sees them.
-        let mut row_outcomes = self.write_row_changes(&wctx, &txn, &model, rows, &root).await?;
+        let mut row_outcomes = self.write_row_changes(&wctx, &txn, &model, Operation::Update, rows, &root).await?;
         // Media last, the rows' with the record's: the media resource ranks after every other (ADR 0041, 0044).
         let row_media = row_outcomes.iter_mut().flat_map(|(_, o)| std::mem::take(&mut o.media)).collect();
         self.check_media(&wctx, &txn, &data, row_media).await?;

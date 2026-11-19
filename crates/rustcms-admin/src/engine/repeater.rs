@@ -38,6 +38,8 @@ pub(crate) struct Rows {
     reads_outside: bool,
     min_items: Option<usize>,
     max_items: Option<usize>,
+    /// The rule over the final rows (a form's top-level repeater, ADR 0044 part D).
+    validate: Option<crate::ui::RowsRule>,
 }
 
 #[derive(Debug, Clone)]
@@ -128,6 +130,10 @@ impl Rows {
         assert!(depth <= MAX_DEPTH, "{here}: repeaters nest {MAX_DEPTH} deep at most");
         check_spec(&here, spec);
         assert!(spec.inherit.is_empty(), "{here}: `inherit` is for relationship repeaters nested in rows");
+        assert!(
+            spec.validate.is_none() || depth == 1,
+            "{here}: `validate_rows` is for relationship repeaters and the form's own JSON repeaters (not rows of rows)"
+        );
         // Conditions name inputs of the same row (ADR 0037 rules), or of the
         // levels around it (ADR 0044).
         let kinds: Vec<(String, FieldKind)> =
@@ -224,7 +230,13 @@ impl Rows {
             reads_outside,
             min_items: spec.min_items.map(|n| n as usize),
             max_items: spec.max_items.map(|n| n as usize),
+            validate: spec.validate.clone(),
         }
+    }
+
+    /// The rule over the final rows, if declared.
+    pub(crate) fn validate(&self) -> Option<&crate::ui::RowsValidator> {
+        self.validate.as_ref().map(|r| &r.0)
     }
 
     /// Fewest rows, when declared above 0.

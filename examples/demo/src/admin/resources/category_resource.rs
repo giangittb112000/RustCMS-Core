@@ -90,7 +90,27 @@ impl Resource for CategoryResource {
                                 .add_action_label("Add a link"),
                         ])
                         .item_label("{title}")
-                        .add_action_label("Add a section"),
+                        .add_action_label("Add a section")
+                        // #region sections-reacts
+                        // A reaction on the rows themselves: a section added without a
+                        // title gets one ("Section 2"), which the user may change.
+                        .reacts(|_ctx, state| {
+                            let patches = state
+                                .relation_rows("sections")
+                                .iter()
+                                .enumerate()
+                                .filter(|(_, row)| row.key().is_none() && row.text("title").is_empty())
+                                .map(|(index, row)| {
+                                    FormPatch::update_relation_row(
+                                        "sections",
+                                        row.id(),
+                                        json!({"title": format!("Section {}", index + 1)}),
+                                    )
+                                })
+                                .collect();
+                            Box::pin(async move { Ok(patches) })
+                        }),
+                    // #endregion sections-reacts
                     // #endregion sections-repeater
                 ])
                 .aside(components![Section::make("Display").compact().collapsible(false).schema(components![

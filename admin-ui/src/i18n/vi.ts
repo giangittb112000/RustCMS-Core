@@ -85,6 +85,7 @@ export const vi: Record<keyof typeof en, string> = {
   "issue.too_many_rows": "có quá nhiều dòng để sắp xếp ở đây",
   "issue.too_many_rows_to_remove": "có quá nhiều dòng để xóa ở đây",
   "issue.too_many_rows_changed": "thay đổi quá nhiều dòng trong một lần lưu",
+  "issue.too_many_rows_to_check": "có quá nhiều dòng để kiểm tra ở đây",
   "issue.positions_exhausted": "đã hết vị trí; hãy đánh số lại các dòng",
   "issue.stale": "Dữ liệu vừa được người khác thay đổi. Hãy tải lại và thử lại.",
   "issue.last_super_admin": "Cần ít nhất một super admin đang hoạt động cho guard `{guard}`.",

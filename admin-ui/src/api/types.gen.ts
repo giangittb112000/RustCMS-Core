@@ -854,6 +854,50 @@ message: string, } | { "op": "notice",
 /**
  * The message (translated).
  */
+message: string, } | { "op": "add_relation_row", 
+/**
+ * The repeater.
+ */
+field: string, 
+/**
+ * The new row's reference (given by the server when the reaction did not).
+ */
+ref: string, 
+/**
+ * Its inputs' values, in wire format.
+ */
+data: { [key in string]: JsonValue }, } | { "op": "update_relation_row", 
+/**
+ * The repeater.
+ */
+field: string, 
+/**
+ * The row: a key, or a new row's reference.
+ */
+id: string, 
+/**
+ * The inputs' new values, in wire format.
+ */
+data: { [key in string]: JsonValue }, } | { "op": "remove_relation_row", 
+/**
+ * The repeater.
+ */
+field: string, 
+/**
+ * The row: a key, or a new row's reference.
+ */
+id: string, } | { "op": "flag_relation_row", 
+/**
+ * The repeater.
+ */
+field: string, 
+/**
+ * The row: a key, or a new row's reference.
+ */
+id: string, 
+/**
+ * The warning (translated).
+ */
 message: string, };
 
 export type FormReactRequest = { 

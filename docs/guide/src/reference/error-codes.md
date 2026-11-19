@@ -112,6 +112,7 @@ keeps it complete.
 | `too_many_rows` | `has too many rows to order here` (more than 1,000 rows of one parent) |
 | `too_many_rows_to_remove` | `has too many rows to remove here` (a save hiding a relationship repeater whose parent has more than 1,000 rows) |
 | `too_many_rows_changed` | `changes too many rows at once` (on the form: a save changing more than 1,000 rows of relationship repeaters, at every level, rows removed with their parent row included) |
+| `too_many_rows_to_check` | `has too many rows to check here` (a repeater with `validate_rows` whose parent has more than 1,000 rows) |
 | `positions_exhausted` | `has no positions left; renumber the rows` (the order column reached its type's largest value) |
 | `stale` | `This was changed by someone else meanwhile. Reload and try again.` |
 | `last_super_admin` | At least one active super admin is required for the `{guard}` guard. |

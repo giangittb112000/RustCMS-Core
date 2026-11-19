@@ -129,6 +129,7 @@ pub const TEMPLATES: &[(&str, &str)] = &[
     ("too_many_rows", "has too many rows to order here"),
     ("too_many_rows_to_remove", "has too many rows to remove here"),
     ("too_many_rows_changed", "changes too many rows at once"),
+    ("too_many_rows_to_check", "has too many rows to check here"),
     ("positions_exhausted", "has no positions left; renumber the rows"),
     ("stale", "This was changed by someone else meanwhile. Reload and try again."),
     ("last_super_admin", "At least one active super admin is required for the `{guard}` guard."),

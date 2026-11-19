@@ -78,6 +78,27 @@ export function relationFormValue(input: InputSchema): FormValue {
   return JSON.stringify({ rows, deleted: [] } satisfies RelationState);
 }
 
+/**
+ * Every value a row holds, in wire format (a stored row its edit inputs, a new
+ * row its create inputs; rows of its own relationship repeaters left out): what
+ * a form reaction reads (ADR 0044, part D).
+ */
+export function rowWire(repeater: RepeaterSchema, row: RelationRow): Record<string, JsonValue> {
+  const out: Record<string, JsonValue> = {};
+  for (const i of inputsOf(row.key ? repeater.components : createView(repeater).components)) {
+    if (i.repeater?.relationship) continue;
+    const form = row.values[i.name];
+    if (form === undefined) continue;
+    try {
+      const v = fromFormValue(i, form) as JsonValue | undefined;
+      if (v !== undefined) out[i.name] = v;
+    } catch {
+      // Half typed: left out, as the server would.
+    }
+  }
+  return out;
+}
+
 /** The change a form value sends (undefined: nothing changed). */
 export function changeOf(input: InputSchema, value: FormValue): JsonValue | undefined {
   const repeater = input.repeater;

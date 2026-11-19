@@ -16,6 +16,7 @@
         "label": "Title",
         "name": "title",
         "nullable": false,
+        "reacts": true,
         "rules": [
           {
             "rule": "required"
@@ -47,6 +48,36 @@
         ],
         "type": "select",
         "valueType": "string"
+      },
+      {
+        "columnSpan": 1,
+        "disabled": false,
+        "label": "Tags",
+        "name": "tags",
+        "nullable": true,
+        "repeater": {
+          "addable": true,
+          "components": [
+            {
+              "columnSpan": 1,
+              "disabled": false,
+              "label": "Name",
+              "name": "name",
+              "nullable": false,
+              "rules": [
+                {
+                  "rule": "required"
+                }
+              ],
+              "type": "text_input",
+              "valueType": "string"
+            }
+          ],
+          "deletable": true
+        },
+        "rules": [],
+        "type": "repeater",
+        "valueType": "json"
       },
       {
         "columnSpan": 1,
@@ -122,6 +153,7 @@
         "label": "Blanks",
         "name": "blanks",
         "nullable": false,
+        "reacts": true,
         "repeater": {
           "addable": true,
           "components": [
@@ -513,5 +545,5 @@
     ],
     "searchable": false
   },
-  "vocabularyVersion": 26
+  "vocabularyVersion": 27
 }
