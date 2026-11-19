@@ -13,7 +13,7 @@ use crate::ui::{
 /// Version of the schema structure.
 pub const SCHEMA_VERSION: u32 = 2;
 /// Version of the component, column and filter vocabulary.
-pub const VOCABULARY_VERSION: u32 = 27;
+pub const VOCABULARY_VERSION: u32 = 28;
 
 /// Navigation entry and identity of a resource.
 #[derive(Debug, Clone, PartialEq, Serialize)]
@@ -221,6 +221,13 @@ pub struct InputSchema {
     #[cfg_attr(feature = "ts", ts(optional))]
     #[serde(skip_serializing_if = "Option::is_none")]
     pub toolbar: Option<RichToolbar>,
+    /// Rules computed on the server (vocabulary 28, ADR 0044 part E): the
+    /// inputs whose change asks `form/rules` again, and the answer for the
+    /// form's values when the schema was read (`options` holds the computed
+    /// options).
+    #[cfg_attr(feature = "ts", ts(optional))]
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub server_rules: Option<ServerRulesSchema>,
     /// Rich text: the application nodes the document may hold (vocabulary
     /// 18, ADR 0042); absent when none.
     #[cfg_attr(feature = "ts", ts(as = "Option<Vec<RichNodeSchema>>", optional))]
@@ -678,6 +685,74 @@ pub struct FormReactVia {
     pub record: String,
     /// The relation's name.
     pub relation: String,
+}
+
+/// An input's rules computed on the server (ADR 0044, part E).
+#[derive(Debug, Clone, PartialEq, Serialize)]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
+#[serde(rename_all = "camelCase")]
+pub struct ServerRulesSchema {
+    /// The inputs whose change asks the server again.
+    pub depends_on: Vec<String>,
+    /// Whether the input is shown (absent: no rule).
+    #[cfg_attr(feature = "ts", ts(optional))]
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub shown: Option<bool>,
+    /// Whether the input is required (absent: no rule).
+    #[cfg_attr(feature = "ts", ts(optional))]
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub required: Option<bool>,
+}
+
+/// The form's state, asking for its inputs' rules computed on the server
+/// (`POST form/rules`, ADR 0044 part E); authorized as [`FormReactRequest`].
+#[derive(Debug, Clone, PartialEq, serde::Deserialize)]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
+#[serde(deny_unknown_fields)]
+pub struct FormRulesRequest {
+    /// `create` or `edit` (`view` is refused).
+    pub operation: SchemaOperation,
+    /// The record's key (`edit` only).
+    #[cfg_attr(feature = "ts", ts(optional))]
+    #[serde(default)]
+    pub key: Option<String>,
+    /// The form's values, in wire format (as a save sends them).
+    #[cfg_attr(feature = "ts", ts(type = "Record<string, JsonValue>"))]
+    pub state: crate::Data,
+    /// A create form opened through a relation of another record.
+    #[cfg_attr(feature = "ts", ts(optional))]
+    #[serde(default)]
+    pub via: Option<FormReactVia>,
+    /// Sent back unchanged: the panel applies only its latest request's answer.
+    pub seq: u32,
+}
+
+/// An input's rules for a form's state.
+#[derive(Debug, Clone, PartialEq, Serialize)]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
+pub struct EvaluatedRules {
+    /// Whether it is shown.
+    pub shown: bool,
+    /// Whether it is required (when shown).
+    pub required: bool,
+    /// Its options (an `options_fn` input), translated.
+    #[cfg_attr(feature = "ts", ts(optional))]
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub options: Option<Vec<SelectOption>>,
+}
+
+/// The answer to a [`FormRulesRequest`].
+#[derive(Debug, Clone, PartialEq, Serialize)]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
+pub struct FormRulesResponse {
+    /// The request's `seq`.
+    pub seq: u32,
+    /// Each input with rules, by name.
+    pub rules: std::collections::BTreeMap<String, EvaluatedRules>,
+    /// A rule failed (error, timeout): nothing to apply.
+    #[cfg_attr(feature = "ts", ts(as = "Option<bool>", optional))]
+    #[serde(skip_serializing_if = "std::ops::Not::not")]
+    pub failed: bool,
 }
 
 /// The answer to a [`FormReactRequest`].

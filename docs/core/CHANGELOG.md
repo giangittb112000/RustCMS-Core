@@ -101,6 +101,13 @@ All notable changes are documented here. The format follows
     when the user could make them; relationship repeaters may `.reacts()` (ADR 0043 amended). Demo: a new
     section gets a title. LMS: one correct option per single-answer question, a correct choice per blank, the
     prompt's `___` keep the blanks in step.
+  - Part E (vocabulary 28): rules computed on the server: `Input::shown_when_fn`, `required_fn`, `options_fn`
+    (async, with `Ctx`), `depends_on([...])` (required), `rules_timeout`; on resource forms' own inputs (not
+    rows, relationship repeaters, settings, actions). The schema carries the first answer
+    (`InputSchema.serverRules`, computed `options`); `POST form/rules` answers as the form changes (authorized and
+    limited as `form/react`); saves run them again on every path (hidden values dropped, `is required`, `is not
+    one of the options`, new code `form_rules_failed`). Declarative conditions may not read an input whose
+    visibility is computed. `SelectOption` is exported at the crate root. Demo: a link category needs its link.
   - Demo: categories are their posts or a link (migration `m20261119_000001_add_layout_to_categories`), posts
     edited as a table and shown on the view page, a "Drafts" section. LMS: quiz questions with options
     (`where_null("blank_id")`) and blanks, three tables (migration `m20261119_000006_create_quiz_tables`).

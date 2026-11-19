@@ -15,6 +15,7 @@ mod react;
 mod read;
 mod references;
 pub(crate) mod rows;
+mod rules;
 pub(crate) mod schema;
 mod secrets;
 mod write;
@@ -107,6 +108,8 @@ pub(crate) struct ResourceAdapter<R: Resource> {
     row_repeaters: Vec<rows::RowRepeater>,
     /// Inputs that react, in form order (ADR 0043).
     reactions: Vec<react::InputReaction>,
+    /// Inputs with rules computed on the server, in form order (ADR 0044, part E).
+    input_rules: Vec<rules::InputRuleSet>,
     /// The record title (ADR 0038).
     title: Option<crate::engine::title::TitleTemplate>,
     /// The view page's entries, when declared (ADR 0039).
@@ -334,6 +337,7 @@ impl<R: Resource> ResourceAdapter<R> {
         let repeaters = input::json_repeaters(slug, &form, &columns, &secrets);
         let row_repeaters = rows::row_repeaters(slug, &form, &relations, &conditions);
         let reactions = react::reactions(slug, &form, &fields);
+        let input_rules = rules::input_rules(slug, &form, &fields);
         for input in form.inputs().into_iter().filter(|i| i.kind == InputType::Custom) {
             let widget = input.widget.as_deref().unwrap_or_default();
             assert!(crate::ui::valid_widget(widget), "resource `{slug}`: invalid widget name `{widget}`");
@@ -555,7 +559,7 @@ impl<R: Resource> ResourceAdapter<R> {
         let kind_of = |name: &str| input::condition_kind(&columns, &secrets, name);
         crate::engine::conditions::canonicalize(&mut infolist.components, &kind_of);
 
-        Self {
+        let adapter = Self {
             // Without `infolist()`, the form read-only.
             infolist: Some(if infolist.is_empty() { infolist::from_form(&form, &fields, &columns) } else { infolist }),
             computed,
@@ -579,13 +583,17 @@ impl<R: Resource> ResourceAdapter<R> {
             repeaters,
             row_repeaters,
             reactions,
+            input_rules,
             action_conditions,
             title,
             table_ui,
             limits: Limits::default(),
             rich_nodes: std::sync::OnceLock::new(),
             _resource: PhantomData,
-        }
+        };
+        // Conditions never read an input whose visibility is computed (ADR 0044, part E).
+        adapter.check_rules_unread();
+        adapter
     }
 
     fn field(&self, name: &str) -> Option<&Field> {

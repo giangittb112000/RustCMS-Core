@@ -53,6 +53,9 @@ test("a category's posts follow its layout: a table, its view page, removed when
   await page.getByLabel(/^Layout/).selectOption({ label: "A link" });
   await expect(page.getByRole("status").filter({ hasText: "Saving removes the 2 rows of Posts you can see." })).toBeVisible();
   await expect(rows).toHaveCount(0);
+  // A link category needs its link: a rule computed on the server (ADR 0044, part E).
+  await page.getByRole("button", { name: "Save" }).click();
+  await expect(page.getByText("is required")).toBeVisible();
   await page.getByLabel(/^Link/).fill("https://example.test/elsewhere");
   // Back and forth keeps the drafts: shown again, the rows are there.
   await page.getByLabel(/^Layout/).selectOption({ label: "Its posts" });

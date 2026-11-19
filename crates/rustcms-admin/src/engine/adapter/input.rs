@@ -105,7 +105,8 @@ impl<R: Resource> ResourceAdapter<R> {
             let bounds = self.number_bounds.get(name).copied();
             // Under a condition, `required` (and a non-nullable column) means
             // "when shown": checked once visibility is known (`apply_conditions`).
-            let conditional = conditions.is_conditional(name);
+            let conditional = conditions.is_conditional(name)
+                || (std::ptr::eq(conditions, &self.conditions) && self.shown_by_rule(name));
             let mut rule = InputRule { options, bounds, ..self.rule(name, field.required && !conditional) };
             rule.nullable |= conditional;
             let accepted = check_input(name, &rule, value, &mut errors);
@@ -136,9 +137,13 @@ impl<R: Resource> ResourceAdapter<R> {
                     errors.add(name.as_str(), format!("must have at least {min} items"));
                 }
             }
-            for field in
-                self.fields.iter().filter(|f| f.required && f.can_write(op, ctx) && !conditions.is_conditional(&f.name))
-            {
+            let form = std::ptr::eq(conditions, &self.conditions);
+            for field in self.fields.iter().filter(|f| {
+                f.required
+                    && f.can_write(op, ctx)
+                    && !conditions.is_conditional(&f.name)
+                    && !(form && self.shown_by_rule(&f.name))
+            }) {
                 if !input.contains_key(&field.name) && !given.contains(&field.name.as_str()) {
                     errors.add(field.name.as_str(), "is required");
                 }
@@ -224,6 +229,10 @@ impl<R: Resource> ResourceAdapter<R> {
                 {
                     input.insert(name.to_owned(), value);
                 }
+                continue;
+            }
+            // Its rule decides when it is shown, so whether it is required then (ADR 0044, part E).
+            if row.is_none() && self.shown_by_rule(name) {
                 continue;
             }
             let needed = field.required || !self.column(name).nullable;

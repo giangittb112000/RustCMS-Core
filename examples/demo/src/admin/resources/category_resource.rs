@@ -54,7 +54,19 @@ impl Resource for CategoryResource {
                     // #endregion reacts
                     TextInput::make("slug").prefix("/categories/"),
                     SelectInput::make("layout").options(vec![("posts", "Its posts"), ("link", "A link")]),
-                    TextInput::make("link_url").label("Link").shown_when(when("layout").eq("link")),
+                    // #region link-required
+                    // Required for a link category: a rule `when(..)` cannot state (it
+                    // only shows and hides), computed on the server and checked on
+                    // every save, the API's included.
+                    TextInput::make("link_url")
+                        .label("Link")
+                        .shown_when(when("layout").eq("link"))
+                        .depends_on(["layout"])
+                        .required_fn(|_ctx, state| {
+                            let link = state.text("layout") == "link";
+                            Box::pin(async move { Ok(link) })
+                        }),
+                    // #endregion link-required
                     // #region posts-repeater
                     // The category's posts, edited in its form: each row is a post
                     // (the posts resource's rules, policy and hooks apply), one

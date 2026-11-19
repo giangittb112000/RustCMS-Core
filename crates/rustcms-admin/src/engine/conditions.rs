@@ -121,6 +121,11 @@ impl FormConditions {
         self.fields.iter().filter(|f| f.name == name).any(|f| f.conditions.iter().any(outside))
     }
 
+    /// Whether a condition reads input `name` of level `scope`.
+    pub(crate) fn reads(&self, scope: Scope, name: &str) -> bool {
+        self.kinds.contains_key(&(scope, name.to_owned()))
+    }
+
     /// Whether a condition reads outside its level (`when_parent`, `when_root`).
     pub(crate) fn reads_outside(&self) -> bool {
         self.kinds.keys().any(|(scope, _)| *scope != Scope::Row)

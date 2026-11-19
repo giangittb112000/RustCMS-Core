@@ -158,6 +158,7 @@ impl<R: Resource> ResourceAdapter<R> {
                     rich_nodes: Vec::new(),
                     reacts: false,
                     toolbar: None,
+                    server_rules: None,
                 })
             })
             .collect();
@@ -238,6 +239,13 @@ fn canonical(
 pub(super) fn check_action_form(slug: &str, action: &str, form: &[ActionField]) {
     let mut names = HashSet::new();
     for field in form {
+        // Rules computed on the server are for resource forms (ADR 0044, part E).
+        assert!(
+            field.input.rules.is_none(),
+            "resource `{slug}`: action `{action}`: form field `{}`: rules computed on the server (`shown_when_fn`, …) \
+             are for resource forms",
+            field.name
+        );
         assert!(
             !field.name.is_empty()
                 && field.name.bytes().all(|b| b.is_ascii_lowercase() || b.is_ascii_digit() || b == b'_')

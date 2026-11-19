@@ -202,6 +202,13 @@ pub trait DynResource: Send + Sync {
         ctx: &Ctx,
         request: crate::schema::FormReactRequest,
     ) -> AppResult<crate::schema::FormReactResponse>;
+    /// The rules computed on the server of the create or edit form's inputs
+    /// for the form's state (ADR 0044, part E), for a user who may write that form.
+    async fn form_rules(
+        &self,
+        ctx: &Ctx,
+        request: crate::schema::FormRulesRequest,
+    ) -> AppResult<crate::schema::FormRulesResponse>;
     /// Creates a record from client input.
     async fn create(&self, ctx: &Ctx, input: Data) -> AppResult<Envelope>;
     /// Updates a record from client input (PATCH semantics).

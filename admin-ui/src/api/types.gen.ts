@@ -440,6 +440,13 @@ reacts?: boolean,
  */
 toolbar?: RichToolbar, 
 /**
+ * Rules computed on the server (vocabulary 28, ADR 0044 part E): the
+ * inputs whose change asks `form/rules` again, and the answer for the
+ * form's values when the schema was read (`options` holds the computed
+ * options).
+ */
+serverRules?: ServerRulesSchema, 
+/**
  * Rich text: the application nodes the document may hold (vocabulary
  * 18, ADR 0042); absent when none.
  */
@@ -959,6 +966,70 @@ patches: Array<FormPatch>,
  * The reaction failed (error, timeout): nothing to apply.
  */
 failed?: boolean, };
+
+export type FormRulesRequest = { 
+/**
+ * `create` or `edit` (`view` is refused).
+ */
+operation: SchemaOperation, 
+/**
+ * The record's key (`edit` only).
+ */
+key?: string, 
+/**
+ * The form's values, in wire format (as a save sends them).
+ */
+state: Record<string, JsonValue>, 
+/**
+ * A create form opened through a relation of another record.
+ */
+via?: FormReactVia, 
+/**
+ * Sent back unchanged: the panel applies only its latest request's answer.
+ */
+seq: number, };
+
+export type FormRulesResponse = { 
+/**
+ * The request's `seq`.
+ */
+seq: number, 
+/**
+ * Each input with rules, by name.
+ */
+rules: { [key in string]: EvaluatedRules }, 
+/**
+ * A rule failed (error, timeout): nothing to apply.
+ */
+failed?: boolean, };
+
+export type EvaluatedRules = { 
+/**
+ * Whether it is shown.
+ */
+shown: boolean, 
+/**
+ * Whether it is required (when shown).
+ */
+required: boolean, 
+/**
+ * Its options (an `options_fn` input), translated.
+ */
+options?: Array<SelectOption>, };
+
+export type ServerRulesSchema = { 
+/**
+ * The inputs whose change asks the server again.
+ */
+dependsOn: Array<string>, 
+/**
+ * Whether the input is shown (absent: no rule).
+ */
+shown?: boolean, 
+/**
+ * Whether the input is required (absent: no rule).
+ */
+required?: boolean, };
 
 export type ComponentSchema = InputSchema | LayoutSchema | EntrySchema;
 

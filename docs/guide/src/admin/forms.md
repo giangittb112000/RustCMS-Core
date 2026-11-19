@@ -364,6 +364,45 @@ Reactions are for resource forms: settings pages and action forms do not take
 them yet, nor inputs inside repeater rows, and rows of nested relationship
 repeaters cannot be patched.
 
+## Rules computed on the server
+
+When a rule needs code or data that `when(..)` cannot state (a field required
+for some accounts, a topic select offering the chosen subject's topics), an
+input takes closures run on the server:
+
+| Method | Answers |
+|---|---|
+| `.shown_when_fn(f)` | whether the input is shown (with `shown_when`, both must say so) |
+| `.required_fn(f)` | whether it is required, when shown |
+| `.options_fn(f)` | the options of a select or checkbox list (not `belongs_to`) |
+| `.depends_on([...])` | **required**: the inputs whose change asks again (empty: only when the form opens and on save) |
+| `.rules_timeout(d)` | the time the input's rules may take (5 seconds by default, at most 30) |
+
+<<< @/../../../examples/demo/src/admin/resources/category_resource.rs#link-required [src/admin/resources/category_resource.rs]
+
+- **`f` is async**, with the request's `Ctx` (it may read the database; it
+  should not write) and the `FormState` a reaction reads: what the user's form
+  holds, the inputs hidden by `when(..)` conditions read as empty. **Its values
+  are user input**: look records up through `ctx.records(…)`/`ctx.record(…)`.
+- **When the form opens** the schema holds the answer for its values; **when an
+  input of `depends_on` changes** and typing pauses, the panel asks again and
+  applies the latest answer (a hidden input is hidden as by a condition and its
+  value is not sent).
+- **On every save** (the panel, the API, imports) the server runs the rules
+  again, after the `when(..)` conditions: a hidden input's value is dropped; a
+  shown required one (`required_fn`, or under `shown_when_fn` the field's own
+  `required`) without a value is `is required` on create, or when the save sends
+  it or an input it depends on (an old record stays editable otherwise); a
+  value outside the computed options is `is not one of the options`. A rule
+  that fails or runs out of time refuses the save (`form_rules_failed`, nothing
+  saved): keep rules light (each input's time limit, 30 seconds for the whole
+  form). An import's check before it runs does not run them; the run does.
+- **Where.** The form's own inputs of resource forms; not inputs in repeater
+  rows, relationship repeaters, hidden, encrypted or link inputs, settings pages
+  or action forms. A `when(..)` condition may not read an input whose visibility
+  is computed (the panel evaluates conditions without waiting for the server).
+- Prefer `when(..)`: the panel evaluates it at once, without a request.
+
 ## Leaving with unsaved changes
 
 A create or edit form with changes not saved asks before the user leaves it:

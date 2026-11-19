@@ -87,6 +87,7 @@ export const en = {
   "issue.too_many_rows_to_remove": "has too many rows to remove here",
   "issue.too_many_rows_changed": "changes too many rows at once",
   "issue.too_many_rows_to_check": "has too many rows to check here",
+  "issue.form_rules_failed": "could not check the form; try again",
   "issue.positions_exhausted": "has no positions left; renumber the rows",
   "issue.stale": "This was changed by someone else meanwhile. Reload and try again.",
   "issue.last_super_admin": "At least one active super admin is required for the `{guard}` guard.",

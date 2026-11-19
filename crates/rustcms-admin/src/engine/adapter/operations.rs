@@ -123,6 +123,15 @@ impl<R: Resource> DynResource for ResourceAdapter<R> {
             let here = format!("resource `{}`: repeater `{}`", R::SLUG, repeater.name);
             crate::adapter::rows::compile_rules(&here, repeater, registry, nodes, &root, None, &[R::SLUG], 1);
         }
+        // Rows never read an input whose visibility is computed (ADR 0044, part E).
+        for name in self.form.inputs().iter().map(|i| i.name.as_str()).filter(|n| self.shown_by_rule(n)) {
+            assert!(
+                !crate::adapter::rows::rows_read_root(&self.row_repeaters, name),
+                "resource `{}`: a condition of a relationship repeater's rows reads `{name}`, whose visibility is \
+                 computed on the server (`shown_when_fn`): conditions cannot read it",
+                R::SLUG
+            );
+        }
     }
 
     fn row_json_repeaters(&self, target: &str) -> Vec<&HashMap<String, crate::engine::repeater::Rows>> {
@@ -300,19 +309,17 @@ impl<R: Resource> DynResource for ResourceAdapter<R> {
             return Err(AppError::Forbidden);
         }
         let links = self.link_inputs(ctx, op, viewed.as_ref()).await;
+        let mut components =
+            self.fill_row_repeaters(ctx, self.components(ctx, &self.form.components, op, &links), op).await;
+        // Rules computed on the server: their answer for the form as it opens (ADR 0044, part E).
+        self.fill_rules(ctx, op, viewed.as_ref(), &mut components).await;
         Ok(ResourceSchema {
             schema_version: SCHEMA_VERSION,
             vocabulary_version: VOCABULARY_VERSION,
             resource: ResourceAdapter::info(self).translated(ctx),
             operation: op,
             abilities,
-            form: FormSchema {
-                columns: self.form.columns,
-                components: self
-                    .fill_row_repeaters(ctx, self.components(ctx, &self.form.components, op, &links), op)
-                    .await,
-                width: self.form.width,
-            },
+            form: FormSchema { columns: self.form.columns, components, width: self.form.width },
             table: self.table_schema(ctx).await,
             relations: match (&viewed, op) {
                 (Some(record), SchemaOperation::View) => self.relation_schemas(ctx, record).await,
@@ -399,6 +406,14 @@ impl<R: Resource> DynResource for ResourceAdapter<R> {
         request: crate::schema::FormReactRequest,
     ) -> AppResult<crate::schema::FormReactResponse> {
         ResourceAdapter::react(self, ctx, request).await
+    }
+
+    async fn form_rules(
+        &self,
+        ctx: &Ctx,
+        request: crate::schema::FormRulesRequest,
+    ) -> AppResult<crate::schema::FormRulesResponse> {
+        ResourceAdapter::form_rules(self, ctx, request).await
     }
 
     async fn lookup(&self, ctx: &Ctx, search: Option<&str>, keys: &[String]) -> AppResult<Vec<(String, String)>> {
@@ -655,6 +670,8 @@ impl<R: Resource> DynResource for ResourceAdapter<R> {
         // holds them), and stored whether or not an input shows them (ADR 0044).
         input.extend(fixed.iter().map(|(f, v)| ((*f).to_owned(), v.clone())));
         let (hidden_before, hidden) = self.apply_conditions(&wctx, Operation::Create, &mut input, None, bound_field)?;
+        // Rules computed on the server, on every path (ADR 0044, part E).
+        self.apply_rules(&wctx, Operation::Create, &mut input, None, &hidden).await?;
         input.extend(fixed.iter().map(|(f, v)| ((*f).to_owned(), v.clone())));
         // Relationship repeaters hidden by the form's conditions (ADR 0044).
         let rows = self.settle_rows(Operation::Create, rows, &hidden_before, &hidden)?;
@@ -753,6 +770,8 @@ impl<R: Resource> DynResource for ResourceAdapter<R> {
         let viewable = self.policy.allows(&wctx, ability::VIEW, Some(&record)).await;
         let (hidden_before, hidden) =
             self.apply_conditions(&wctx, Operation::Update, &mut input, Some((&record, viewable)), None)?;
+        // Rules computed on the server, on every path, under the record's lock (ADR 0044, part E).
+        self.apply_rules(&wctx, Operation::Update, &mut input, Some((&record, viewable)), &hidden).await?;
         // Relationship repeaters hidden by the form's conditions: a write hiding one removes its rows (ADR 0044).
         let rows = self.settle_rows(Operation::Update, rows, &hidden_before, &hidden)?;
         let root = self.row_root(&wctx, Operation::Update, Some((&record, viewable)), &input);

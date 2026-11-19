@@ -321,6 +321,7 @@ impl<R: Resource> ResourceAdapter<R> {
             // Never on view pages, nor for a user who cannot change the input (ADR 0043).
             reacts: !disabled && op != SchemaOperation::View && input.reaction.is_some(),
             toolbar: None,
+            server_rules: None,
         })
     }
 
@@ -379,6 +380,7 @@ impl<R: Resource> ResourceAdapter<R> {
             // Its rows may react (ADR 0044, part D); left out when the user can change nothing.
             reacts: input.reaction.is_some(),
             toolbar: None,
+            server_rules: None,
         }
     }
 
@@ -467,6 +469,7 @@ impl<R: Resource> ResourceAdapter<R> {
             rich_nodes: Vec::new(),
             reacts: false,
             toolbar: None,
+            server_rules: None,
         })
     }
 
@@ -701,6 +704,7 @@ fn pivot_input_schema(
         rich_nodes: Vec::new(),
         reacts: false,
         toolbar: None,
+        server_rules: None,
     }
 }
 

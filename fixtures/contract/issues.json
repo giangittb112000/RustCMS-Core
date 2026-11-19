@@ -134,6 +134,9 @@
   "file_types": [
     "does not accept {types} files"
   ],
+  "form_rules_failed": [
+    "could not check the form; try again"
+  ],
   "given_twice": [
     "may only be given once"
   ],

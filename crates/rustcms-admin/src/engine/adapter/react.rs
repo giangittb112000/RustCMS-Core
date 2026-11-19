@@ -90,10 +90,23 @@ pub(super) fn reactions(slug: &str, form: &Form, fields: &[Field]) -> Vec<InputR
 }
 
 /// A turn of one user, given back when dropped.
-struct UserTurn(String);
+pub(super) struct UserTurn(String);
+
+/// A turn across users if one is free now (the schema's first answer never waits).
+pub(super) fn try_turn() -> Option<tokio::sync::SemaphorePermit<'static>> {
+    REACTING.try_acquire().ok()
+}
+
+/// A turn across users (at most 8 at once), waited for a short while (else 429).
+pub(super) async fn turn() -> AppResult<tokio::sync::SemaphorePermit<'static>> {
+    tokio::time::timeout(REACTING_WAIT, REACTING.acquire())
+        .await
+        .map_err(|_| AppError::TooManyRequests { retry_after: 5 })?
+        .map_err(AppError::internal)
+}
 
 impl UserTurn {
-    fn take(user: &str) -> Option<Self> {
+    pub(super) fn take(user: &str) -> Option<Self> {
         let mut map = PER_USER.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
         let count = map.get_or_insert_with(HashMap::new).entry(user.to_owned()).or_default();
         if *count >= REACTING_PER_USER {
@@ -247,7 +260,7 @@ impl<R: Resource> ResourceAdapter<R> {
     /// form: an input of the form for a field the user may write, not
     /// encrypted, whose value decodes (`null` included). A JSON repeater
     /// holding more rows than it may is refused (422).
-    fn typed(&self, ctx: &Ctx, op: Operation, name: &str, value: &Value) -> AppResult<bool> {
+    pub(super) fn typed(&self, ctx: &Ctx, op: Operation, name: &str, value: &Value) -> AppResult<bool> {
         let input_of_form = self.form.inputs().iter().any(|i| i.name == name);
         let field = self.field(name).filter(|f| f.secret.is_none());
         if !input_of_form || field.is_none() || !self.writable(ctx, op, name) {
@@ -305,7 +318,7 @@ impl<R: Resource> ResourceAdapter<R> {
     }
 
     /// Whether a reaction may see field `name`: readable, not encrypted.
-    fn state_field(&self, ctx: &Ctx, name: &str) -> bool {
+    pub(super) fn state_field(&self, ctx: &Ctx, name: &str) -> bool {
         self.field(name).is_some_and(|f| f.secret.is_none() && f.can_read(ctx))
     }
 

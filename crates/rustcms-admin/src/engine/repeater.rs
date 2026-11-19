@@ -298,6 +298,13 @@ impl Rows {
     /// Whether some condition of these rows (nested ones included) reads the
     /// levels around them: the list is checked again once those are known
     /// ([`Self::check_in`]).
+    pub(crate) fn reads_root(&self, name: &str) -> bool {
+        self.conditions.reads(crate::ui::Scope::Root, name)
+            || self.inputs.iter().any(|i| matches!(&i.rule, RowRule::Nested(rows) if rows.reads_root(name)))
+    }
+
+    /// Whether some condition of these rows (nested ones included) reads the
+    /// levels around them.
     pub(crate) fn reads_outside(&self) -> bool {
         self.reads_outside
     }
@@ -647,11 +654,19 @@ pub(crate) fn check_spec(here: &str, spec: &RepeaterSpec) {
                 }
                 Component::Entry(_) => panic!("{here}: a row holds inputs, not entries"),
                 // Reactions belong to the form's own inputs (ADR 0041).
-                Component::Input(input) => assert!(
-                    input.reaction.is_none(),
-                    "{here}: row input `{}` cannot react (`.reacts()` is for the form's own inputs)",
-                    input.name
-                ),
+                Component::Input(input) => {
+                    assert!(
+                        input.reaction.is_none(),
+                        "{here}: row input `{}` cannot react (`.reacts()` is for the form's own inputs)",
+                        input.name
+                    );
+                    // Rules computed on the server are the form's own inputs' (ADR 0044, part E).
+                    assert!(
+                        input.rules.is_none(),
+                        "{here}: row input `{}` cannot have rules computed on the server (`shown_when_fn`, …)",
+                        input.name
+                    );
+                }
             }
         }
     }
@@ -772,6 +787,7 @@ pub(crate) fn rows_schema(
                         toolbar: (input.kind == InputType::RichEditor)
                             .then(|| crate::ui::RowContent::toolbar(input.content.as_deref()))
                             .flatten(),
+                        server_rules: None,
                     }))
                 }
             })

@@ -31,6 +31,7 @@ in runtime mode the page is rendered per request (static mode renders it once); 
 | POST | `/resources/{slug}/records` | 201 `{data: Envelope}` |
 | GET / PATCH / DELETE | `/resources/{slug}/records/{key}` | `{data: Envelope}` / `{data: Envelope}` / 204 |
 | POST | `/resources/{slug}/form/react` | `FormReactRequest` `{operation: "create" \| "edit", key?, changed, state, previous?, via?: {parent, record, relation}, seq}` → `FormReactResponse` `{seq, patches, failed?}`: the changes the reaction of input `changed` asks for (ADR 0043). Before the body is read: 403 unless the user may create or update records of the resource, and 120 requests per user per minute; then create: `create` (through `via`, as that relation creates), edit: `update` on the record, in scope; `view` is 422, as is an input without a reaction or a JSON repeater sent with more rows than it holds; 2 reactions at once per user and 8 in all (429 beyond) |
+| POST | `/resources/{slug}/form/rules` | `FormRulesRequest` `{operation, key?, state, via?, seq}` → `FormRulesResponse` `{seq, rules: {input: {shown, required, options?}}, failed?}`: the rules computed on the server of every input with `serverRules` (ADR 0044, part E), for the form's state. Authorized and limited as `form/react` (same bucket and turns); a failing rule answers `failed: true` |
 | GET | `/resources/{slug}/records/{key}/computed` | `ComputedValues` `{data: {name: value}, failed: [name]}`: the computed values the view page's infolist shows, for a user who may view the record (ADR 0039); 60 requests per user per minute and 8 pages computing at once (429 beyond) |
 | POST | `/resources/{slug}/records/{key}/restore` | `{data: Envelope}` (soft deletes; trashed records only) |
 | DELETE | `/resources/{slug}/records/{key}/force` | 204 (soft deletes; trashed records only) |
@@ -204,6 +205,18 @@ older documents (`document_needs_version`) and more than 500 nodes
 (`max_app_nodes`). Clients of vocabulary 17 and below show version 3 documents
 read-only (they read versions 1 and 2 only). Extensions draw and edit nodes
 with `registerRichTextNode` (host `ui` 4).
+
+Vocabulary 28 adds rules computed on the server (ADR 0044, part E). An input
+may carry `serverRules` `{dependsOn, shown?, required?}`: the server's answer
+for the form's values when the schema was read (`options` holds computed
+options). Clients hide an input `shown: false` as a condition would (its value
+not sent), mark a `required: true` one required, and, when an input of some
+`dependsOn` changes and typing pauses, post `form/rules` and apply the latest
+answer (only if the form has not changed since). Saves run the rules again on
+every path: a hidden input's value is dropped, a shown required one without a
+value is `is required`, a value outside computed options `is not one of the
+options`; a rule failing refuses the save with a form error
+`form_rules_failed`.
 
 Vocabulary 27 adds reactions on relationship rows (ADR 0044, part D). A
 `form/react` request's `state` may hold a top-level relationship repeater's

@@ -1410,6 +1410,18 @@ fn check_row_fields(here: &str, repeater: &RowRepeater, child: &dyn DynResource)
     }
 }
 
+/// Whether a condition of the rows of `repeaters` (any level, their JSON rows
+/// too) reads input `name` of the record's form (`when_root`).
+pub(crate) fn rows_read_root(repeaters: &[RowRepeater], name: &str) -> bool {
+    repeaters.iter().any(|repeater| {
+        repeater.rules.get().is_some_and(|rules| {
+            rules.conditions.reads(crate::ui::Scope::Root, name)
+                || rules.json.values().any(|rows| rows.reads_root(name))
+                || rows_read_root(&rules.nested, name)
+        })
+    })
+}
+
 /// The JSON repeaters of the rows of `repeaters` (at every level) whose child
 /// is `target` (ADR 0044, part C).
 pub(crate) fn json_rows_of<'a>(

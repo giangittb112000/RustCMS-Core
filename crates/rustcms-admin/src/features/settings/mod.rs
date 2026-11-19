@@ -461,6 +461,15 @@ impl<T: SettingsPage> SettingsAdapter<T> {
         let group = T::GROUP;
         assert!(valid_group(group), "settings `{group}`: groups are 1–32 of `a-z`, `0-9`, `_`");
         let mut fields = T::fields();
+        // Rules computed on the server are for resource forms (ADR 0044, part E).
+        for field in &fields {
+            assert!(
+                field.input.rules.is_none(),
+                "settings `{group}`: field `{}`: rules computed on the server (`shown_when_fn`, …) are for resource \
+                 forms",
+                field.name
+            );
+        }
         // Repeater rows, whose conditions may read the page's fields (`when_root`, ADR 0044).
         let kinds: Vec<(String, crate::engine::wire::FieldKind)> =
             fields.iter().filter(|f| !f.is_secret()).map(|f| (f.name.clone(), f.kind.value_kind())).collect();

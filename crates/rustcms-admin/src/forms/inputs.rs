@@ -104,6 +104,8 @@ pub struct Input {
     pub(crate) repeater: Option<Box<super::repeater::RepeaterSpec>>,
     /// The input's reaction (ADR 0043; boxed: most inputs have none).
     pub(crate) reaction: Option<Box<super::reactions::Reaction>>,
+    /// Rules computed on the server (ADR 0044, part E; boxed: most inputs have none).
+    pub(crate) rules: Option<Box<super::rules::InputRules>>,
     /// JSON repeater rows: rules a field gives elsewhere.
     pub(crate) required: bool,
     pub(crate) max_length: Option<usize>,
@@ -184,6 +186,7 @@ impl Input {
             clear_when_hidden: false,
             repeater: None,
             reaction: None,
+            rules: None,
             required: false,
             max_length: None,
             integer: false,
@@ -366,6 +369,77 @@ impl Input {
     /// How long the reaction may take (default 5 seconds, at most 30).
     pub fn reaction_timeout(mut self, timeout: std::time::Duration) -> Self {
         self.reaction.get_or_insert_default().timeout = timeout;
+        self
+    }
+
+    /// Whether the input is shown, computed on the server from the form's
+    /// state (ADR 0044, part E): for rules `when(..)` cannot state (they need
+    /// code or data). Run when the form is read, when an input of
+    /// [`depends_on`](Self::depends_on) changes, and on every save (a hidden
+    /// input's value is dropped, as a condition's). With `shown_when`, both must
+    /// say shown. Needs `depends_on`.
+    ///
+    /// ```rust,ignore
+    /// TextInput::make("tax_id")
+    ///     .depends_on(["country"])
+    ///     .shown_when_fn(|_ctx, state| Box::pin(async move { Ok(state.text("country") == "VN") }))
+    /// ```
+    pub fn shown_when_fn<F>(mut self, rule: F) -> Self
+    where
+        F: for<'a> Fn(&'a crate::Ctx, &'a super::FormState) -> crate::BoxFuture<'a, rustcms_core::AppResult<bool>>
+            + Send
+            + Sync
+            + 'static,
+    {
+        self.rules.get_or_insert_default().shown = Some(std::sync::Arc::new(rule));
+        self
+    }
+
+    /// Whether the input is required (when shown), computed on the server (see
+    /// [`shown_when_fn`](Self::shown_when_fn)). Needs `depends_on`.
+    pub fn required_fn<F>(mut self, rule: F) -> Self
+    where
+        F: for<'a> Fn(&'a crate::Ctx, &'a super::FormState) -> crate::BoxFuture<'a, rustcms_core::AppResult<bool>>
+            + Send
+            + Sync
+            + 'static,
+    {
+        self.rules.get_or_insert_default().required = Some(std::sync::Arc::new(rule));
+        self
+    }
+
+    /// The options of a select or checkbox list (not `belongs_to`), computed on
+    /// the server (see [`shown_when_fn`](Self::shown_when_fn)): a value outside
+    /// them is refused on save. Needs `depends_on`.
+    pub fn options_fn<F>(mut self, rule: F) -> Self
+    where
+        F: for<'a> Fn(
+                &'a crate::Ctx,
+                &'a super::FormState,
+            ) -> crate::BoxFuture<'a, rustcms_core::AppResult<Vec<SelectOption>>>
+            + Send
+            + Sync
+            + 'static,
+    {
+        self.rules.get_or_insert_default().options = Some(std::sync::Arc::new(rule));
+        self
+    }
+
+    /// The inputs whose change asks the server for this input's rules again
+    /// (`shown_when_fn`, `required_fn`, `options_fn`; required with them). An
+    /// empty list: computed when the form is read and on save only.
+    pub fn depends_on<I, S>(mut self, inputs: I) -> Self
+    where
+        I: IntoIterator<Item = S>,
+        S: Into<String>,
+    {
+        self.rules.get_or_insert_default().depends_on = Some(inputs.into_iter().map(Into::into).collect());
+        self
+    }
+
+    /// Time the input's rules may take together (default 5 seconds, at most 30).
+    pub fn rules_timeout(mut self, timeout: std::time::Duration) -> Self {
+        self.rules.get_or_insert_default().timeout = timeout;
         self
     }
 

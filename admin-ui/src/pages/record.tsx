@@ -1,7 +1,7 @@
 import { Link, useBlocker, useNavigate } from "@tanstack/react-router";
 import { Pencil, Trash2 } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { useForm } from "react-hook-form";
+import { type Resolver, useForm } from "react-hook-form";
 import { ApiError } from "@/api/client";
 import { useUncertain } from "@/api/context";
 import { type Via, useComputed, useDeleteRecord, useRecord, useSaveRecord, useSchema } from "@/api/queries";
@@ -21,6 +21,8 @@ import { MEDIA_SLUG, MediaPreview } from "@/renderers/media-library";
 import { InfolistRenderer, hasComputed } from "@/renderers/infolist";
 import { ActionNoticeView, RecordActions, useActionRunner } from "@/components/actions";
 import { useFormReactions } from "@/api/reactions";
+import { useFormRules } from "@/api/rules";
+import { initialRules, ruleDependencies, withRules } from "@/schema/rules";
 import { type FormValues, defaultValues, hiddenNames, inputsOf, payloadOf, protectLossyJson, relabel, serverErrors } from "@/schema/form";
 import { errorText, show, type Text, useLocale, useT } from "@/i18n";
 import { editResolver } from "@/schema/resolver";
@@ -106,9 +108,13 @@ function RecordForm({
   const mounted = useMounted();
   const editing = recordKey !== undefined;
   // Fixed at mount, like the defaults: JSON values that lost precision on the way here stay read-only.
-  const [components] = useState(() =>
+  const [base] = useState(() =>
     protectLossyJson(via ? bindVia(schema.form.components, via) : schema.form.components, record?.data),
   );
+  // Rules computed on the server (ADR 0044, part E): the schema's answer, then the latest asked for.
+  const [rules, setRules] = useState(() => initialRules(base));
+  const components = useMemo(() => withRules(base, rules), [base, rules]);
+  const dependencies = useMemo(() => ruleDependencies(base), [base]);
   const inputs = useMemo(() => inputsOf(components), [components]);
   const { readOnly } = compatibility(schema);
   // Blind edit (update without view): defaults are placeholders, so what the user
@@ -116,10 +122,14 @@ function RecordForm({
   const blind = editing && !record;
   const touched = useRef(new Set<string>());
   const dirty = useRef<(name: string) => boolean>(() => true);
-  const resolver = useMemo(
+  const currentResolver = useMemo(
     () => editResolver(inputs, editing, (name) => dirty.current(name), components),
     [inputs, editing, components],
   );
+  // The form keeps one resolver; it checks with the rules the server answered last.
+  const resolverRef = useRef(currentResolver);
+  resolverRef.current = currentResolver;
+  const resolver = useCallback<Resolver<FormValues>>((values, context, options) => resolverRef.current(values, context, options), []);
   const form = useForm<FormValues>({ defaultValues: defaultValues(inputs, record?.data), resolver });
   // Placeholders are not values: on create (database defaults apply to untouched
   // fields), on a blind edit, and for write-only inputs, only what the user
@@ -171,6 +181,7 @@ function RecordForm({
   }, []);
   // After a write with an unknown outcome, resubmitting could create a duplicate.
   const uncertain = useUncertain(slug);
+  const serverRulesRef = useRef<{ onUserChange: (name: string) => void } | null>(null);
   // Reactions of the form (ADR 0043); what they change is sent as if typed.
   const reactions = useFormReactions({
     slug,
@@ -179,8 +190,25 @@ function RecordForm({
     inputs,
     form,
     paused: readOnly || save.isPending || uncertain,
-    onPatched: (name) => touched.current.add(name),
+    onPatched: (name) => {
+      touched.current.add(name);
+      // A patched input others' rules depend on asks for them again.
+      serverRulesRef.current?.onUserChange(name);
+    },
   });
+  const serverRules = useFormRules({
+    slug,
+    recordKey,
+    via,
+    inputs,
+    dependencies,
+    form,
+    paused: readOnly || save.isPending || uncertain,
+    // The schema's answer did not know the relation's key, nor (blind edit) the record.
+    askNow: Object.keys(initialRules(base)).length > 0 && (via !== undefined || blind),
+    onRules: setRules,
+  });
+  serverRulesRef.current = serverRules;
 
   // After a failed save, the first input with an error (in form order) gets the
   // focus, once enclosing tabs have opened it; only while this form is shown
@@ -318,6 +346,7 @@ function RecordForm({
               onUserChange: (name) => {
                 touched.current.add(name);
                 reactions.onUserChange(name);
+                serverRules.onUserChange(name);
               },
               rowFlags: reactions.flags,
             }}

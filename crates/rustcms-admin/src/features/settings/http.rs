@@ -282,6 +282,7 @@ fn input_schema(ctx: &Ctx, field: &SettingField, input: &crate::ui::Input, disab
         rich_nodes: Vec::new(),
         reacts: false,
         toolbar: None,
+        server_rules: None,
     }
 }
 

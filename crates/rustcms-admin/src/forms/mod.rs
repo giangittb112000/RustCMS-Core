@@ -7,6 +7,7 @@ mod layouts;
 mod reactions;
 mod repeater;
 mod rows_check;
+mod rules;
 
 pub use conditions::*;
 pub use form::*;
@@ -19,3 +20,4 @@ pub use repeater::Repeater;
 pub(crate) use repeater::{RepeaterSpec, RowsRule};
 pub(crate) use rows_check::RowsValidator;
 pub use rows_check::{CheckedRow, RowsCheck, RowsError};
+pub(crate) use rules::RuleFn;

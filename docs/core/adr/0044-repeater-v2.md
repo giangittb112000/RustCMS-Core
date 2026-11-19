@@ -1,7 +1,6 @@
 # ADR 0044: Repeaters, second round
 
-- Status: accepted for parts A, B and C (unreleased, vocabularies 24 to 26). Part D is written and reviewed
-  before it is built.
+- Status: accepted (unreleased, vocabularies 24 to 28), parts A to E.
 - Date: 2026-11-18
 - Amends ADR 0037 (conditions inside rows), ADR 0040 (repeaters), ADR 0041 (one phase per child resource; in
   part C, a locking pass per parent row), ADR 0018 (in part C, chains of parent locks) and, in parts D and E,
@@ -625,7 +624,99 @@ Repeater::make("options")
 - **Reactions can fill relationship rows** (blanks from a prompt); the panel shows them as unsaved rows.
 - ADR 0043's "left for later: row patches for relationship repeaters" is done for the top level.
 
-## Part E
+## Decision: part E (vocabulary 28)
 
-To be written before it is built: server closures for visibility, options and required, declared with their
-dependencies, asked through `form/react`, run again on save on every path (Q5).
+Part E lets a form's rule be application code run on the server (Q5): whether an input is shown, whether it is
+required, which options a select offers. Declarative conditions (`when(..)`, ADR 0037) stay the way to write
+rules the panel can evaluate itself; a closure is for rules that need code or data (a topic select offering the
+topics of the chosen subject, a field required for some accounts). Decisions taken with the owner on
+2026-11-19 are marked (E1–E6).
+
+### Declaring (E1, E2, E6)
+
+```rust
+SelectInput::make("topic_id")
+    .depends_on(["subject_id"])
+    .options_fn(|ctx, state| Box::pin(async move { topics_of(ctx, state.get("subject_id")).await }))
+    .shown_when_fn(|_ctx, state| Box::pin(async move { Ok(!state.text("subject_id").is_empty()) })),
+TextInput::make("tax_id")
+    .depends_on(["country"])
+    .required_fn(|_ctx, state| Box::pin(async move { Ok(state.text("country") == "VN") })),
+```
+
+- `.shown_when_fn(f)`, `.required_fn(f)` (`f` answers `bool`) and `.options_fn(f)` (`f` answers
+  `Vec<SelectOption>`, values in wire format), each
+  `for<'a> Fn(&'a Ctx, &'a FormState) -> BoxFuture<'a, AppResult<T>>`: async, with the request's `Ctx`, so it may
+  read the database; it should not write. `FormState` is the reactions' (ADR 0043): what the user's form holds.
+- **`.depends_on([...])` is required** with any of them: the inputs whose change asks the server again. Each is an
+  input of the form (boot).
+- `.rules_timeout(d)`: 5 seconds by default, at most 30 (one limit for an input's closures).
+- **Where (E6):** inputs at the form's level of a resource (inside sections, grids, tabs). Boot refuses them in
+  repeater rows, on relationship repeaters (hiding one removes rows: never on arbitrary code), on hidden,
+  encrypted and link inputs, on settings pages and action forms. `options_fn` is for selects and checkbox lists
+  that are not `belongs_to` (those read the target's options).
+
+### With declarative conditions (E4)
+
+- An input may have `shown_when` and `shown_when_fn`: it is shown when both say so.
+- Declarative conditions may not name an input that has `shown_when_fn` (boot): the panel evaluates them without
+  waiting for the server, and no cycle can form.
+- Closures read the state as the declarative conditions leave it: inputs they hide read `null`.
+
+### The panel (E3)
+
+- **Schema.** An input with closures carries `serverRules: {dependsOn, shown?, required?}` and, with `options_fn`,
+  `options` computed: the closures' answers for the form's values when the schema is read (create: the defaults;
+  edit: the record as the user's form holds it). A closure failing then counts as shown, not required, with the
+  declared options; the failure is logged; so does a user (or panel) without a free turn of the reactions'
+  limits, never waiting. Never on view pages. A create form opened through a relation and a blind edit ask
+  `form/rules` once when they open (the schema did not know the relation's key, or the record).
+- **Route `POST {admin}/api/resources/{slug}/form/rules` (E5).** Authorized as `form/react` (before the body:
+  the user may create or update; `create` with `via` through a relation, `edit` with `key` on a record the user
+  may update), the same state, the same limits (the `form-react` bucket, 120 per user per minute, 2 at once per
+  user, 8 across users), and a `seq`. It answers `{seq, rules: {input: {shown, required, options?}}}` for every
+  input with closures, `failed: true` on an error or timeout (the panel keeps what it had). Listed in
+  `http::routes` and `fixtures/authz/admin.toml`.
+- **Asking.** When an input named by some `depends_on` changes (typed, or patched by a reaction) and typing
+  pauses (about 400 ms), the panel sends the form's values; an answer is applied only if it is the latest and no
+  input it depends on changed since; one arriving while a save is in flight is asked for again afterwards.
+- **Applying.** An input `shown: false` is hidden as by a condition (its value not sent); `required` adds the
+  required mark and the client check; options replace the declared ones (a value no longer among them stays
+  until the user changes it; the save refuses it).
+
+### On save (Q5)
+
+- **Every path** that writes through the form runs the closures again: the panel, the API, imports. They are
+  rules of the form, not of the panel.
+- **When.** After the declarative conditions, under the record's lock on update, on the state those conditions
+  read (ADR 0037: what the user's form holds, the input over it); each closure with its time limit, with the
+  request's `Ctx` (not the write's transaction).
+- **Effect**, as a condition's:
+  - hidden: the value sent is dropped (never stored), not required;
+  - not hidden by a `when(..)` condition (those come first), shown and required (`required_fn`, or, under
+    `shown_when_fn`, the field's own `required` or a column that is not nullable): no value (`null`, `""` or
+    `[]`, the input over the stored record) is `is required`, for a user who may read and write the field, when
+    the save could change that: on create, or when the input or an input it depends on is sent (an old record
+    is not refused for an input the save leaves alone; review, 2026-11-19);
+  - options: a value sent outside the answer is `is not one of the options` (each value of a list).
+- **Failure.** A closure that fails or runs out of time refuses the save: a form error `form_rules_failed`
+  ("could not check the form; try again"), nothing saved, the failure logged. Saves never wait for the route's
+  limits; each input's time limit, and 30 seconds for the whole form, bound them.
+- An import's check before it runs does not run the rules (it reads no database); the run does.
+
+### Wire (vocabulary 28)
+
+- `InputSchema.serverRules` (`dependsOn`, `shown?`, `required?`); `options` holds the computed options.
+- Route `form/rules`: `FormRulesRequest` (`operation`, `key?`, `via?`, `state`, `seq`), `FormRulesResponse`
+  (`seq`, `rules`, `failed?`).
+- New issue code `form_rules_failed`.
+- An SPA on vocabulary 27 sees vocabulary 28 as unknown and shows forms read-only.
+
+## Consequences (part E)
+
+- **Rules that need code or data are declared on the input** and hold on every write path.
+- **Saves run application code** (bounded by its time limit): a slow or failing closure refuses saves of that
+  form. Closures should be light.
+- **Forms with closures ask the server while the user types** (one request per pause in a dependency), within
+  the reactions' limits.
+- **Declarative conditions stay first:** they cannot read inputs a closure shows or hides.
