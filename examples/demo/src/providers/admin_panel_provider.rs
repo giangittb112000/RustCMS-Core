@@ -47,6 +47,8 @@ pub fn provider() -> AdminProvider {
         )
         // #endregion rich-text-nodes
         .resource::<CategoryResource>()
+        .resource::<crate::admin::resources::category_section_resource::CategorySectionResource>()
+        .resource::<crate::admin::resources::category_section_resource::SectionLinkResource>()
         .resource::<PostResource>()
         .resource::<TagResource>()
         .resource::<crate::admin::resources::integration_resource::IntegrationResource>()

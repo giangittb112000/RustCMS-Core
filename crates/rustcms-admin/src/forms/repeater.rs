@@ -27,6 +27,9 @@ pub(crate) struct RepeaterSpec {
     pub(crate) cloneable: bool,
     /// Rows as table rows (ADR 0044).
     pub(crate) table: bool,
+    /// Nested relationship repeaters: child fields the server fills with an
+    /// ancestor's key (ADR 0044, part C).
+    pub(crate) inherit: Vec<String>,
 }
 
 impl Default for RepeaterSpec {
@@ -47,6 +50,7 @@ impl Default for RepeaterSpec {
             default_items: 0,
             cloneable: false,
             table: false,
+            inherit: Vec::new(),
         }
     }
 }
@@ -119,6 +123,27 @@ impl Input {
     /// repeater; its inputs are the child's fields.
     pub fn relationship(mut self) -> Self {
         self.spec().relationship = true;
+        self
+    }
+
+    /// A relationship repeater nested in another's rows: the child's field
+    /// `field`, a `belongs_to` of an enclosing level (the record's resource, or
+    /// an enclosing row's), is filled by the server with that level's key on
+    /// create (the user never sends it). Checked at boot.
+    ///
+    /// ```rust,ignore
+    /// // A quiz question's blanks, each with its choices: options that also
+    /// // name their question (a double foreign key).
+    /// Repeater::make("blanks").relationship().schema(components![
+    ///     TextInput::make("label"),
+    ///     Repeater::make("choices")
+    ///         .relationship()
+    ///         .inherit("quiz_question_id")
+    ///         .schema(components![TextInput::make("content")]),
+    /// ])
+    /// ```
+    pub fn inherit(mut self, field: impl Into<String>) -> Self {
+        self.spec().inherit.push(field.into());
         self
     }
 

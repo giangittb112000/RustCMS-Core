@@ -119,6 +119,8 @@ export function rowProblems(repeater: RepeaterSchema, rows: Row[], prefix = "", 
       if (hidden.has(input.name)) continue;
       const path = at(`${index}.${input.name}`);
       const value = row[input.name] ?? toFormValue(input, undefined);
+      // A relationship repeater's rows are checked by `relationRowProblems` (ADR 0044, part C).
+      if (input.repeater?.relationship) continue;
       if (input.type === "repeater" && input.repeater) {
         const nested = parseRows(value) ?? [];
         Object.assign(out, rowProblems(input.repeater, nested, path, below));

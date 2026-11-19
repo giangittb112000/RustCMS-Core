@@ -5,7 +5,7 @@
 import type { Envelope, InputSchema, JsonValue, RepeaterSchema } from "@/api/types";
 import type { Outer } from "./conditions";
 import { type FormValue, fromFormValue, inputsOf } from "./form";
-import { type Row, rowOf, rowProblems } from "./repeater";
+import { type Row, hiddenInRow, rowLevel, rowOf, rowProblems } from "./repeater";
 
 /** A row: a stored child (`key`) or a new one (`ref`), its form values and what changed. */
 export interface RelationRow {
@@ -129,6 +129,18 @@ export function relationRowProblems(repeater: RepeaterSchema, rows: RelationRow[
     const view = { ...(row.key ? repeater : createView(repeater)), minItems: undefined, maxItems: undefined };
     for (const [path, problem] of Object.entries(rowProblems(view, [row.values], "", outer))) {
       out[path.replace(/^0(?=\.|$)/, String(index))] = problem;
+    }
+    // The rows of the row's own relationship repeaters, as changed (ADR 0044, part C).
+    const hidden = hiddenInRow(view, row.values, outer);
+    // Where the levels around are not known, conditions reading them are the server's.
+    const below = outer ? { parent: rowLevel(view, row.values, hidden), root: outer.root } : undefined;
+    for (const input of inputsOf(view.components)) {
+      if (!input.repeater?.relationship || hidden.has(input.name)) continue;
+      const state = parseState(row.values[input.name] ?? "");
+      if (!state) continue;
+      for (const [path, problem] of Object.entries(relationRowProblems(input.repeater, state.rows, below))) {
+        out[`${index}.${input.name}${path ? `.${path}` : ""}`] = problem;
+      }
     }
   });
   return out;

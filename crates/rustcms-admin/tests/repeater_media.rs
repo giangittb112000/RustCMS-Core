@@ -80,6 +80,9 @@ pub mod photo {
         pub caption: Option<Json>,
         pub credit_id: Option<i32>,
         pub position: i32,
+        /// Edited only as a JSON repeater of the album's rows (ADR 0044, part C).
+        pub extras: Option<Json>,
+        pub deleted_at: Option<DateTimeUtc>,
     }
 
     #[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]
@@ -141,6 +144,8 @@ impl Resource for AlbumResource {
                 FileUpload::make("image"),
                 RichEditor::make("caption"),
                 SelectInput::make("credit_id"),
+                // A JSON repeater in a relationship row, with its own rules.
+                Repeater::make("extras").schema(components![FileUpload::make("file").accept(&["image/*"])]),
             ]),
         ])
     }
@@ -178,7 +183,7 @@ impl Resource for PhotoResource {
     const SLUG: &'static str = "photos";
 
     fn meta() -> ResourceMeta {
-        ResourceMeta::new("Photo").lock_parent("album_id", "albums")
+        ResourceMeta::new("Photo").soft_deletes().lock_parent("album_id", "albums")
     }
 
     fn fields() -> Vec<Field> {
@@ -189,6 +194,8 @@ impl Resource for PhotoResource {
             Field::column(C::Caption).rich_text(),
             Field::column(C::CreditId).belongs_to("people"),
             Field::column(C::Position).guarded().readable(|_| true),
+            Field::column(C::Extras),
+            Field::column(C::DeletedAt).guarded().readable(|_| true),
         ]
     }
 
@@ -487,6 +494,30 @@ db_test!(a_restored_record_meets_its_rows_files, |db: TestDb| async move {
     }
     let restored = client.post_json(&format!("{url}/restore"), &json!({})).await;
     assert!(issues(restored)["links.0.icon"].is_array());
+});
+
+db_test!(a_restored_row_meets_the_files_of_its_json_rows, |db: TestDb| async move {
+    let (app, admin) = setup(db).await;
+    let client = app.acting_as(&admin).await;
+    let png = stored_media(&app, admin.id, "image/png", 10, false).await;
+    // A photo's extras are a JSON repeater of the album's rows only (not the photo's own form).
+    let album = json!({"title": "A", "photos": {"create": [{"ref": "n1", "data": {"extras": [{"file": png}]}}]}});
+    create(&client, &app, "albums", album).await.assert_status(StatusCode::CREATED);
+    let photo = photo::Entity::find().one(app.state().db()).await.unwrap().unwrap().id;
+    client.fetch_csrf().await;
+    let url = app.admin_api(&format!("resources/photos/records/{photo}"));
+    client.send(axum::http::Method::DELETE, &url, None).await.assert_status(StatusCode::NO_CONTENT);
+    // The file went to the trash meanwhile: restoring the photo would bring back a reference to it.
+    {
+        use sea_orm::{ActiveModelTrait, ActiveValue::Set, IntoActiveModel};
+        let id = uuid::Uuid::parse_str(&png).unwrap();
+        let file = rustcms_admin::media::entity::Entity::find_by_id(id).one(app.state().db()).await.unwrap().unwrap();
+        let mut file = file.into_active_model();
+        file.deleted_at = Set(Some(chrono::Utc::now()));
+        file.update(app.state().db()).await.unwrap();
+    }
+    let restored = client.post_json(&format!("{url}/restore"), &json!({})).await;
+    assert!(issues(restored)["extras.0.file"].is_array());
 });
 
 db_test!(a_settings_row_file_moved_to_another_input_meets_its_rules, |db: TestDb| async move {

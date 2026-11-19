@@ -110,6 +110,12 @@ impl Rows {
         Self::compile_in(owner, name, spec, 1, Outer { parent: None, root }, &NodesCell::default())
     }
 
+    /// The rows of a JSON repeater at `depth` (a relationship row's input is
+    /// one level below its repeater, ADR 0044 part C), reading `outer`.
+    pub(crate) fn compile_at(owner: &str, name: &str, spec: &RepeaterSpec, depth: u8, outer: Outer<'_>) -> Self {
+        Self::compile_in(owner, name, spec, depth, outer, &NodesCell::default())
+    }
+
     fn compile_in(
         owner: &str,
         name: &str,
@@ -121,6 +127,7 @@ impl Rows {
         let here = format!("{owner}: repeater `{name}`");
         assert!(depth <= MAX_DEPTH, "{here}: repeaters nest {MAX_DEPTH} deep at most");
         check_spec(&here, spec);
+        assert!(spec.inherit.is_empty(), "{here}: `inherit` is for relationship repeaters nested in rows");
         // Conditions name inputs of the same row (ADR 0037 rules), or of the
         // levels around it (ADR 0044).
         let kinds: Vec<(String, FieldKind)> =
@@ -306,6 +313,18 @@ impl Rows {
         root: &Data,
     ) -> Option<Value> {
         self.check_at(path, value, errors, Some(OuterValues { parent: None, root: Some(root) }))
+    }
+
+    /// As [`Self::check_in`], with every level around the rows (a JSON
+    /// repeater in a relationship row reads that row as its parent).
+    pub(crate) fn check_with(
+        &self,
+        path: &str,
+        value: &Value,
+        errors: &mut ValidationErrors,
+        outer: OuterValues<'_>,
+    ) -> Option<Value> {
+        self.check_at(path, value, errors, Some(outer))
     }
 
     fn check_at(
@@ -571,11 +590,9 @@ pub(crate) fn row_inputs(components: &[Component]) -> Vec<&Input> {
 }
 
 /// The media collections the file uploads and rich editors of JSON rows
-/// name (ADR 0044), at any depth, as `(path, collection)` (`faq.icon`).
+/// name (ADR 0044), at any depth (through relationship rows too: their JSON
+/// repeaters), as `(path, collection)` (`faq.icon`).
 pub(crate) fn row_collections(spec: &RepeaterSpec, path: &str, out: &mut Vec<(String, String)>) {
-    if spec.relationship {
-        return;
-    }
     for input in row_inputs(&spec.components) {
         let at = format!("{path}.{}", input.name);
         if let Some(collection) = input.content.as_deref().and_then(|c| c.collection.clone()) {

@@ -79,6 +79,19 @@ All notable changes are documented here. The format follows
     (`MediaEntry`, `RichTextEntry` in JSON rows). Demo: footer links take an icon; LMS: quiz options take an
     image and an explanation (migration `m20261120_000007_add_media_to_quiz_options`), courses enroll learners
     in their form.
+  - Part C (vocabulary 26): rows of rows. A relationship row holds relationship repeaters of the child's
+    relations (three levels at most) and JSON repeaters of its JSON fields; the whole tree is saved at once,
+    the change of a row's repeater inside the row's change, errors at every level
+    (`blanks.n1.choices.n2.content`). `Repeater::inherit(field)` fills a nested child's field with an
+    enclosing level's key. The nested child locks its parent through the nested relation, or an ancestor
+    through an inherited field. Removing a row removes its rows (each through the child's policy and history;
+    403 when the user cannot see one); a row's `after_save` runs after its rows; `when_parent` reads the
+    enclosing relationship row; a nested repeater's own condition reads its row only (boot); a row's parent
+    key and inherited keys are set by the server (the child may keep them `guarded()`); restores check the
+    files of JSON rows declared in relationship rows; at most 1,000 rows per save (new code
+    `too_many_rows_changed`). Demo:
+    categories hold sections with links (migration `m20261121_000001_create_category_sections`). LMS: blanks
+    hold their choices (`inherit("quiz_question_id")`), a quiz seeder.
   - Demo: categories are their posts or a link (migration `m20261119_000001_add_layout_to_categories`), posts
     edited as a table and shown on the view page, a "Drafts" section. LMS: quiz questions with options
     (`where_null("blank_id")`) and blanks, three tables (migration `m20261119_000006_create_quiz_tables`).
@@ -99,6 +112,12 @@ All notable changes are documented here. The format follows
 - A hook of a relationship repeater's child that adds media to a row no longer fails (500): the row's media are
   checked with the parent's. `media::check_references` takes owned paths; `DynResource::field_locks_media_or_secret`
   is `field_is_encrypted`.
+- `ResourceMeta::lock_parent` may target a resource that locks a parent of its own (ADR 0044, part C, amending
+  ADR 0018): a write locks its direct parent; a cycle is refused at boot. `DynResource::compile_row_rules` takes
+  the panel's rich text nodes; `DynResource::nested_row_edges` is new. LMS: `quiz_options.blank_id` is a
+  `belongs_to("quiz_blanks")` field (the choices' parent key, still guarded).
+- A relationship repeater removing or ordering more than 500 rows of one parent no longer fails with "keys:
+  may not have more than 500 items": the rows are locked in batches, in key order, up to the 1,000 allowed.
 - Relationship repeater rows follow the repeater's own conditions; the child form's conditions no longer apply
   to them (ADR 0044). `Condition`'s variants gain `scope` (code building or matching them by hand adds it;
   `when`, `Condition::all`/`any` are unchanged). `ListQuery` gains `relation_filters` and

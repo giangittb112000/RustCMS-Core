@@ -106,6 +106,21 @@ impl FormConditions {
         self.fields.iter().map(|f| (f.name.as_str(), f.clear_when_hidden))
     }
 
+    /// Whether the conditions of field `name` read outside its level.
+    pub(crate) fn reads_outside_for(&self, name: &str) -> bool {
+        fn outside(condition: &Condition) -> bool {
+            match condition {
+                Condition::Eq { scope, .. }
+                | Condition::Ne { scope, .. }
+                | Condition::IsIn { scope, .. }
+                | Condition::Filled { scope, .. }
+                | Condition::IsTrue { scope, .. } => *scope != Scope::Row,
+                Condition::All { conditions } | Condition::Any { conditions } => conditions.iter().any(outside),
+            }
+        }
+        self.fields.iter().filter(|f| f.name == name).any(|f| f.conditions.iter().any(outside))
+    }
+
     /// Whether a condition reads outside its level (`when_parent`, `when_root`).
     pub(crate) fn reads_outside(&self) -> bool {
         self.kinds.keys().any(|(scope, _)| *scope != Scope::Row)

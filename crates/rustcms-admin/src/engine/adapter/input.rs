@@ -67,17 +67,21 @@ impl<R: Resource> ResourceAdapter<R> {
 
     /// Validates client input against field permissions and types.
     pub(super) fn accept_input(&self, ctx: &Ctx, op: Operation, input: Data) -> AppResult<Data> {
-        self.accept_input_in(ctx, op, input, &self.conditions)
+        self.accept_input_in(ctx, op, input, &self.conditions, &self.repeaters, &[])
     }
 
     /// As [`Self::accept_input`], `conditions` deciding which inputs are
-    /// conditional (a relationship row's, ADR 0044).
+    /// conditional and `repeaters` checking JSON rows (a relationship row's,
+    /// ADR 0044); the server sets the fields `given` (a relation's values), so
+    /// they are not required from the client.
     pub(super) fn accept_input_in(
         &self,
         ctx: &Ctx,
         op: Operation,
         input: Data,
         conditions: &crate::engine::conditions::FormConditions,
+        repeaters: &HashMap<String, crate::engine::repeater::Rows>,
+        given: &[&str],
     ) -> AppResult<Data> {
         let mut errors = ValidationErrors::new();
         let natural_create = op == Operation::Create && matches!(self.meta.key, KeyStrategy::Natural);
@@ -106,7 +110,7 @@ impl<R: Resource> ResourceAdapter<R> {
             rule.nullable |= conditional;
             let accepted = check_input(name, &rule, value, &mut errors);
             // A JSON repeater: each row checked, stored without its hidden inputs.
-            if accepted && let Some(rows) = self.repeaters.get(name.as_str()) {
+            if accepted && let Some(rows) = repeaters.get(name.as_str()) {
                 if let Some(list) = rows.check(name, value, &mut errors) {
                     canonical.push((name.clone(), list));
                 }
@@ -122,7 +126,7 @@ impl<R: Resource> ResourceAdapter<R> {
         }
         if op == Operation::Create {
             // A repeater with `min_items` left out of a create has no rows.
-            for (name, rows) in &self.repeaters {
+            for (name, rows) in repeaters {
                 let writable = self.field(name).is_some_and(|f| f.can_write(op, ctx));
                 if let Some(min) = rows.min_items()
                     && writable
@@ -135,7 +139,7 @@ impl<R: Resource> ResourceAdapter<R> {
             for field in
                 self.fields.iter().filter(|f| f.required && f.can_write(op, ctx) && !conditions.is_conditional(&f.name))
             {
-                if !input.contains_key(&field.name) {
+                if !input.contains_key(&field.name) && !given.contains(&field.name.as_str()) {
                     errors.add(field.name.as_str(), "is required");
                 }
             }
@@ -178,16 +182,18 @@ impl<R: Resource> ResourceAdapter<R> {
         bound: Option<&str>,
         row: Option<&RowLevel<'_>>,
     ) -> AppResult<(BTreeSet<String>, BTreeSet<String>)> {
-        let (conditions, inputs, outer) = match row {
-            Some(row) => (row.conditions, row.inputs.clone(), OuterValues { parent: None, root: row.root }),
-            None => (&self.conditions, self.form.inputs(), OuterValues::default()),
+        let (conditions, inputs, outer, repeaters) = match row {
+            Some(row) => {
+                (row.conditions, row.inputs.clone(), OuterValues { parent: row.parent, root: row.root }, row.repeaters)
+            }
+            None => (&self.conditions, self.form.inputs(), OuterValues::default(), &self.repeaters),
         };
         let mut conditional = conditions.conditional().peekable();
-        // JSON rows whose conditions read the form wait for its values (ADR 0044).
-        let waiting: Vec<&str> = self
-            .repeaters
+        // JSON rows whose conditions read the form (or, in a relationship row,
+        // that row) wait for its values (ADR 0044).
+        let waiting: Vec<&str> = repeaters
             .iter()
-            .filter(|(name, rows)| row.is_none() && rows.reads_outside() && input.contains_key(name.as_str()))
+            .filter(|(name, rows)| rows.reads_outside() && input.contains_key(name.as_str()))
             .map(|(name, _)| name.as_str())
             .collect();
         if conditional.peek().is_none() && waiting.is_empty() {
@@ -230,12 +236,22 @@ impl<R: Resource> ResourceAdapter<R> {
             }
         }
         if !waiting.is_empty() {
-            // The form as its conditions leave it: hidden inputs read as null.
-            let root = conditions.shown_values(&after, outer);
+            // The form (or the row) as its conditions leave it: hidden inputs read as null.
+            let level = conditions.shown_values(&after, outer);
             for name in waiting {
                 // Hidden repeaters were dropped above.
                 let Some(list) = input.get(name) else { continue };
-                if let Some(list) = self.repeaters[name].check_in(name, list, &mut errors, &root) {
+                let checked = match row {
+                    // In a relationship row: the row is the rows' parent (ADR 0044, part C).
+                    Some(row) => repeaters[name].check_with(
+                        name,
+                        list,
+                        &mut errors,
+                        OuterValues { parent: Some(&level), root: row.root },
+                    ),
+                    None => repeaters[name].check_in(name, list, &mut errors, &level),
+                };
+                if let Some(list) = checked {
                     input.insert(name.to_owned(), list);
                 }
             }
@@ -256,6 +272,16 @@ impl<R: Resource> ResourceAdapter<R> {
     }
 
     /// As [`Self::condition_values`], for `inputs` (a relationship row's).
+    pub(super) fn condition_values_in(
+        &self,
+        ctx: &Ctx,
+        op: Operation,
+        stored: Option<(&Data, bool)>,
+        inputs: &[&Input],
+    ) -> Data {
+        self.condition_values_of(ctx, op, stored, inputs)
+    }
+
     fn condition_values_of(&self, ctx: &Ctx, op: Operation, stored: Option<(&Data, bool)>, inputs: &[&Input]) -> Data {
         let mut out = Data::new();
         for input in inputs.iter().copied() {
@@ -693,11 +719,14 @@ pub(super) fn json_repeaters<C: ColumnTrait>(
 }
 
 /// The conditions a relationship row's write applies (ADR 0044): the
-/// repeater's, on the row's inputs, reading the record's form as `root`.
+/// repeater's, on the row's inputs, reading the record's form as `root` and
+/// the enclosing row as `parent` (part C); its JSON repeaters' rules.
 pub(crate) struct RowLevel<'a> {
     pub(crate) conditions: &'a crate::engine::conditions::FormConditions,
     pub(crate) inputs: Vec<&'a Input>,
     pub(crate) root: Option<&'a Data>,
+    pub(crate) parent: Option<&'a Data>,
+    pub(crate) repeaters: &'a HashMap<String, crate::engine::repeater::Rows>,
 }
 
 /// What `clear_when_hidden` writes: the declared default, else `null`, else

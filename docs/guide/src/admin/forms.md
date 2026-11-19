@@ -267,7 +267,7 @@ Section::make("Sale").shown_when(when("on_sale").is_true()).schema(components![
   is read by the conditions with the parent's key.
 - In a [repeater's rows](#repeaters), `when` names an input of the same row;
   `when_root("x")` names an input of the record's form and `when_parent("x")`
-  one of the enclosing row (a JSON repeater nested in a row), with the same
+  one of the enclosing row (a repeater nested in a row), with the same
   tests. `when_root` and `when_parent` are refused outside rows.
 
 The same works on [settings pages](settings.md) and in
@@ -485,8 +485,7 @@ ResourceMeta::new("Line").lock_parent("order_id", "orders")
 - **Several repeaters on one child resource** need [filtered relations](relationships.md#filtered-relations)
   that cannot share a row (the options of a question and the choices of its
   blanks, in one table). A resource with relationship repeaters cannot link
-  media records (belongs-to-many), and cannot lock a parent of its own
-  (`lock_parent` has no chains).
+  media records (belongs-to-many).
 - **Concurrent saves** of one parent and its children wait for each other;
   a rare conflict through other records answers 409 ("try again"), nothing
   saved.
@@ -541,16 +540,74 @@ ResourceMeta::new("Line").lock_parent("order_id", "orders")
   hide a repeater on a value whose change should keep its rows. A repeater
   with `deletable(false)` cannot be under a condition, and
   `clear_when_hidden` does not apply.
-- **Not yet:** repeaters inside relationship rows.
+- **JSON repeaters** of the child's JSON fields may be inputs of rows, with
+  the rules their own inputs declare (as on a form); `when_parent` in their
+  rows reads the relationship row.
 
 The demo's categories edit their posts this way (each row is a post):
 
 <<< @/../../../examples/demo/src/admin/resources/category_resource.rs#posts-repeater [src/admin/resources/category_resource.rs]
 
-The LMS's quiz questions edit their options (a table, hints read from the
-question's form) or their blanks, depending on the question's kind:
+#### Rows of rows
+
+A relationship row may hold relationship repeaters of its own: relations of
+the child (a question's blanks, each with its choices), three levels of
+repeaters at most below the form, whatever their kind. The whole tree is
+saved at once:
+
+- **The change of a row's repeater goes inside the row's change**, of the same
+  shape; a new row's rows are created with it (the server gives them the new
+  row's key). Errors name every level: `blanks.n1.choices.n2.content`,
+  `blanks.8.choices.12.content`.
+- **The nested child locks its parent, or an ancestor it inherits.** Either
+  the child declares `lock_parent` through the nested relation (the section's
+  links lock their section, which locks its category: parent locks may chain),
+  or it locks an enclosing level through a field filled in with
+  `.inherit(field)`. Saves of one record and of any of its rows then wait for
+  each other.
+- **`.inherit("question_id")`** names a field of the nested child that the
+  server fills with the key of an enclosing level (the record's, or an
+  enclosing row's): a `belongs_to` of that level, never an input (a client
+  sending it gets 422). Use it when the child also names an ancestor, as
+  options with a double foreign key `(blank_id, question_id)` do.
+- **Order of a save, level by level:** rows removed (each with its own rows
+  first), then rows changed and added, each written, then its own rows, then
+  its `after_save` (which sees them), then the order. The record's
+  `after_save` runs last.
+- **Removing a row removes its rows** of the repeaters the form declares in it,
+  through the child's policy (`delete` on each) and history, to the trash
+  with soft deletes; when the user cannot see one of them, the save is
+  refused (403). Only the rows of those repeaters' relations are removed:
+  other children of the row (another relation, or outside a filtered
+  relation) are left to the database (its foreign keys), as when the row is
+  deleted on its own page. Restoring a trashed row does not restore its rows.
+- **A nested repeater's condition reads its row only** (`when`): a row the
+  save does not touch keeps its rows, so a condition on the form could hide
+  them without removing them (refused at boot).
+- **Conditions:** `when_parent("x")` in a nested row reads the row it is in, as
+  this save leaves it; a nested repeater hidden by its row's condition loses
+  its rows when the save hides it, as on the form.
+- **At most 1,000 rows per save**, every level counted, rows removed with
+  their parent row included: beyond, the save is refused
+  (`too_many_rows_changed`, nothing saved).
+- **Positions:** new rows of an ordered nested repeater take positions after
+  every row of their parent and every row sharing a key the repeater
+  inherits, so a unique `(question, position)` holds across the blanks.
+- **The form reads** each stored row's own rows through its relation when it
+  opens (one request per row). View pages show the first level only.
+
+The demo's categories hold sections, each with its links (a chain of parent
+locks; a link's note shows in a detailed section):
+
+<<< @/../../../examples/demo/src/admin/resources/category_resource.rs#sections-repeater [src/admin/resources/category_resource.rs]
+
+The LMS's quiz questions edit their options (hints read from the question's
+form) or their blanks, each with its choices (options that also name their
+question, filled in with `inherit`), depending on the question's kind:
 
 <<< @/../../../examples/lms/src/admin/resources/quiz_question_resource.rs#quiz-form [src/admin/resources/quiz_question_resource.rs]
+
+<<< @/../../../examples/lms/src/admin/resources/quiz_question_resource.rs#quiz-blank-relations [src/admin/resources/quiz_question_resource.rs]
 
 ### Repeaters in lists, history and CSV
 

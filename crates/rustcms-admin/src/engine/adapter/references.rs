@@ -4,13 +4,6 @@
 use super::*;
 
 impl<R: Resource> ResourceAdapter<R> {
-    /// The final check of what a write stores (after hooks): related records
-    /// and media must be visible to the user, media must match its field.
-    pub(super) async fn check_written(&self, ctx: &Ctx, txn: &DatabaseTransaction, data: &Data) -> AppResult<()> {
-        self.check_relations(ctx, txn, data).await?;
-        self.check_media(ctx, txn, data, Vec::new()).await
-    }
-
     /// Media references: well-formed, existing, not trashed, visible to the
     /// user, and of an accepted type and size (see [`crate::media::check_references`]).
     /// Those of `data` (its fields, its JSON repeaters' rows) and `rows` (the
@@ -42,6 +35,17 @@ impl<R: Resource> ResourceAdapter<R> {
         prefix: &str,
         data: &Data,
     ) -> AppResult<Vec<crate::engine::repeater::MediaReference>> {
+        self.media_references_in(prefix, data, &self.repeaters)
+    }
+
+    /// As [`Self::media_references`], JSON rows read with `repeaters` (a
+    /// relationship row's, ADR 0044 part C).
+    pub(super) fn media_references_in(
+        &self,
+        prefix: &str,
+        data: &Data,
+        repeaters: &HashMap<String, crate::engine::repeater::Rows>,
+    ) -> AppResult<Vec<crate::engine::repeater::MediaReference>> {
         let mut errors = ValidationErrors::new();
         let mut wanted = Vec::new();
         for field in self.fields.iter().filter(|f| f.rich_text) {
@@ -64,7 +68,7 @@ impl<R: Resource> ResourceAdapter<R> {
                 wanted.push((at, rule.clone(), ids));
             }
         }
-        for (name, rows) in &self.repeaters {
+        for (name, rows) in repeaters {
             if let Some(value) = data.get(name) {
                 rows.references(&format!("{prefix}{name}"), value, &mut wanted);
             }

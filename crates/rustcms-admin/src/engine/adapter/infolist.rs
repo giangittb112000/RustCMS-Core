@@ -176,7 +176,7 @@ pub(super) fn check_relation_rows<C: ColumnTrait>(
     for entry in rows.entries() {
         let name = entry.name.as_str();
         assert!(seen.insert(name), "{here}: entry `{name}` appears twice in a row");
-        assert!(!entry.relationship, "{here}: entry `{name}`: rows of rows come later (ADR 0044, part C)");
+        assert!(!entry.relationship, "{here}: entry `{name}`: rows of rows are not shown on view pages yet (ADR 0044)");
         let field = fields.iter().find(|f| f.name == name && f.secret.is_none());
         assert!(
             field.is_some() && !matches!(entry.kind, EntryType::ComputedEntry),
@@ -239,7 +239,13 @@ fn form_entry(input: &Input, field: Option<(&Field, FieldKind)>) -> Option<Entry
             entry.column_span = input.column_span;
             entry.shown_when = input.shown_when.clone();
             entry.relationship = true;
-            entry.components = entries_of(&spec.components, &|input| form_entry(input, None));
+            // Rows of rows are not shown on view pages yet (ADR 0044, part C).
+            entry.components = entries_of(&spec.components, &|input| {
+                if input.repeater.as_deref().is_some_and(|spec| spec.relationship) {
+                    return None;
+                }
+                form_entry(input, None)
+            });
             return Some(entry);
         }
         (InputType::Repeater, _) if input.repeater.is_none() => return None,

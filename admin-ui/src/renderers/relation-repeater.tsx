@@ -9,10 +9,11 @@ import { Button } from "@/components/ui/button";
 import { useT } from "@/i18n";
 import { cn } from "@/lib/utils";
 import { type RelationRow, type RelationState, createView, newRef, parseState, relationRowProblems, stateOf } from "@/schema/relation-rows";
-import { type Row, hiddenInRow, itemLabel, rowOf } from "@/schema/repeater";
+import { inputsOf } from "@/schema/form";
+import { type Row, itemLabel, rowOf } from "@/schema/repeater";
 import type { FormContext, WidgetProps } from "./form";
 import { useOuter } from "./outer";
-import { IconButton, RowComponents, TABLE_BAR, TABLE_BODY, TABLE_ROW, TableHeader, tableOf } from "./repeater";
+import { IconButton, NestedRow, RowComponents, TABLE_BAR, TABLE_BODY, TABLE_ROW, TableHeader, tableOf } from "./repeater";
 
 /** How many stored rows a relationship repeater reads (more: edited in the relation section). */
 const pageOf = (input: InputSchema) => Math.min(input.repeater?.maxItems ?? 100, 100);
@@ -43,9 +44,11 @@ export function HiddenRowsNotice({ input, ctx }: { input: InputSchema; ctx: Form
   const stored = useStoredRows(input, ctx, false);
   const count = stored.data?.meta.total ?? 0;
   if (!ctx.record || count === 0) return null;
+  // Rows holding rows of their own (ADR 0044, part C): those go with them.
+  const nested = inputsOf(input.repeater?.components ?? []).some((i) => i.repeater?.relationship);
   return (
     <p role="status" className="col-span-full rounded-md border border-warning/40 bg-warning-soft px-3 py-2 text-sm text-warning-soft-foreground">
-      {t("repeater.willRemove", { count, label: input.label })}
+      {t(nested ? "repeater.willRemoveNested" : "repeater.willRemove", { count, label: input.label })}
     </p>
   );
 }
@@ -113,6 +116,11 @@ export function RelationRepeaterWidget({ id, input, ctx, value, onChange, disabl
           const bodyId = `${id}-${rowId}`;
           const failed = Object.keys(server).some((p) => p === rowId || p.startsWith(`${rowId}.`))
             || Object.keys(local).some((p) => p.startsWith(`${index}.`));
+          // The server's problems of this row, by place: what its own repeaters read (ADR 0044, part C).
+          const rowServer = Object.fromEntries(Object.entries(server)
+            .filter(([p]) => p.startsWith(`${rowId}.`))
+            .map(([p, message]) => [`${index}.${p.slice(rowId.length + 1)}`, message]));
+          const view = row.key ? repeater : createView(repeater);
           return (
             <li key={rowId} className={cn("rounded-lg border bg-card", table && TABLE_ROW, failed ? "border-destructive" : "border-border")}>
               <div className={cn("flex items-center gap-1 border-b border-border px-2 py-1.5", table && TABLE_BAR, table?.bar)}>
@@ -127,12 +135,15 @@ export function RelationRepeaterWidget({ id, input, ctx, value, onChange, disabl
               </div>
               <div id={bodyId} className={table ? cn(TABLE_BODY, table.cols) : "grid grid-cols-1 gap-4 p-4 md:grid-cols-2"}>
                 {typeof server[rowId] === "string" && <p role="alert" className="col-span-full text-xs text-destructive">{String(server[rowId])}</p>}
-                <RowComponents components={row.key ? repeater.components : createView(repeater).components}
-                  repeater={row.key ? repeater : createView(repeater)} row={row.values}
-                  hidden={hiddenInRow(row.key ? repeater : createView(repeater), row.values, outer)}
-                  path={(name) => `${index}.${name}`} problem={problem(index)} server={{}}
-                  ctx={{ ...ctx, slug: repeater.relationship?.resource ?? ctx.slug, record: row.key }} disabled={!editable}
-                  idPrefix={bodyId} onChange={(next) => setRow(index, next)} />
+                {/* The row is the parent level of its own repeaters' rows (`when_parent`). */}
+                <NestedRow repeater={view} row={row.values} outer={outer}>
+                  {(hidden) => (
+                    <RowComponents components={view.components} repeater={view} row={row.values} hidden={hidden}
+                      path={(name) => `${index}.${name}`} problem={problem(index)} server={rowServer}
+                      ctx={{ ...ctx, slug: repeater.relationship?.resource ?? ctx.slug, record: row.key }} disabled={!editable}
+                      idPrefix={bodyId} onChange={(next) => setRow(index, next)} />
+                  )}
+                </NestedRow>
               </div>
             </li>
           );

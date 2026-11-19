@@ -115,35 +115,26 @@ impl<R: Resource> DynResource for ResourceAdapter<R> {
         self.columns.get(name).is_some_and(|c| c.nullable || c.has_default)
     }
 
-    fn compile_row_rules(&self, registry: &crate::Registry) {
+    fn compile_row_rules(&self, registry: &crate::Registry, nodes: &Arc<crate::rich_text::AppNodes>) {
         // The record's form, as the rows' `when_root` reads it.
         let names: HashSet<String> = self.form.inputs().into_iter().map(|i| i.name.clone()).collect();
         let root = |name: &str| names.contains(name).then(|| self.condition_kind(name)).flatten();
         for repeater in &self.row_repeaters {
-            let Some(child) = registry.get(repeater.target) else { continue };
             let here = format!("resource `{}`: repeater `{}`", R::SLUG, repeater.name);
-            let row =
-                |name: &str| repeater.inputs.iter().any(|n| n == name).then(|| child.condition_kind(name)).flatten();
-            let outer = crate::engine::conditions::Outer { parent: None, root: Some(&root) };
-            let conditions =
-                crate::engine::conditions::FormConditions::new_in(&here, &repeater.spec.components, &row, outer);
-            for (name, _) in conditions.conditional() {
-                assert!(
-                    child.stores_hidden(name),
-                    "{here}: row input `{name}` has a condition but `{}.{name}` is not nullable and has no default (a \
-                     row created while it is hidden could not be stored): declare a default or make it nullable",
-                    repeater.target
-                );
-            }
-            let mut components = repeater.spec.components.clone();
-            let kind_of = |scope: crate::ui::Scope, name: &str| match scope {
-                crate::ui::Scope::Row => row(name),
-                crate::ui::Scope::Root => root(name),
-                crate::ui::Scope::Parent => None,
-            };
-            crate::engine::conditions::canonicalize_with(&mut components, &kind_of, &root);
-            let _ = repeater.rules.set(crate::adapter::rows::RowRules { conditions, components });
+            crate::adapter::rows::compile_rules(&here, repeater, registry, nodes, &root, None, &[R::SLUG], 1);
         }
+    }
+
+    fn row_json_repeaters(&self, target: &str) -> Vec<&HashMap<String, crate::engine::repeater::Rows>> {
+        let mut out = Vec::new();
+        crate::adapter::rows::json_rows_of(&self.row_repeaters, target, &mut out);
+        out
+    }
+
+    fn nested_row_edges(&self) -> Vec<(&'static str, &'static str)> {
+        let mut out = Vec::new();
+        crate::adapter::rows::nested_edges(&self.row_repeaters, &mut out);
+        out
     }
 
     fn field_is_encrypted(&self, name: &str) -> bool {
@@ -793,16 +784,33 @@ impl<R: Resource> DynResource for ResourceAdapter<R> {
         // Back among active records, its relationships must point to records
         // the user can see, as when it was written.
         let record = self.record(&model);
+        // JSON repeaters of rows of other forms (relationship rows, ADR 0044 part C).
+        let rows: Vec<&HashMap<String, crate::engine::repeater::Rows>> =
+            wctx.registry.all().into_iter().flat_map(|r| r.row_json_repeaters(R::SLUG)).collect();
         let relations: Data = self
             .fields
             .iter()
             // JSON repeaters too: their rows' files and images (ADR 0044).
             .filter(|f| {
-                f.belongs_to.is_some() || f.media.is_some() || f.rich_text || self.repeaters.contains_key(&f.name)
+                f.belongs_to.is_some()
+                    || f.media.is_some()
+                    || f.rich_text
+                    || self.repeaters.contains_key(&f.name)
+                    || rows.iter().any(|r| r.contains_key(&f.name))
             })
             .filter_map(|f| record.get(&f.name).map(|v| (f.name.clone(), v.clone())))
             .collect();
-        self.check_written(&wctx, &txn, &relations).await?;
+        let mut media = Vec::new();
+        for repeaters in &rows {
+            let only: Data = relations
+                .iter()
+                .filter(|(k, _)| repeaters.contains_key(*k))
+                .map(|(k, v)| (k.clone(), v.clone()))
+                .collect();
+            media.extend(self.media_references_in("", &only, repeaters)?);
+        }
+        self.check_relations(&wctx, &txn, &relations).await?;
+        self.check_media(&wctx, &txn, &relations, media).await?;
         let before = self.audit_snapshot(&model);
         let mut active = model.into_active_model();
         self.set_marker(&mut active, false)?;

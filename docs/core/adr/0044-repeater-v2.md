@@ -1,10 +1,11 @@
 # ADR 0044: Repeaters, second round
 
-- Status: accepted for parts A and B (unreleased, vocabularies 24 and 25). Parts C and D are written and
-  reviewed before each is built.
+- Status: accepted for parts A, B and C (unreleased, vocabularies 24 to 26). Part D is written and reviewed
+  before it is built.
 - Date: 2026-11-18
-- Amends ADR 0037 (conditions inside rows), ADR 0040 (repeaters), ADR 0041 (one phase per child resource) and,
-  in part D, ADR 0043 (form reactions).
+- Amends ADR 0037 (conditions inside rows), ADR 0040 (repeaters), ADR 0041 (one phase per child resource; in
+  part C, a locking pass per parent row), ADR 0018 (in part C, chains of parent locks) and, in part D, ADR 0043
+  (form reactions).
 
 ## Context
 
@@ -327,18 +328,190 @@ every other explicit lock of the write.
 - **Media held only in JSON rows have no database foreign key.** Deleting a media record does not clear a
   row that names it; the row shows it as unavailable, as a rich text image does today.
 
-## Parts C, D
+## Decision: part C (vocabulary 26)
 
-To be written before each is built. Planned content:
+Part C lets a relationship row hold repeaters of its own: relationship repeaters of the child's relations (a
+question's blanks, each with its choices) and JSON repeaters of the child's JSON fields. Decisions taken with
+the owner on 2026-11-19 are marked (C1–C7).
 
-- **C:**
-  - nested relationship repeaters, three levels (Q2): nested changes, refs of new parent rows, `inherit`
-    (Q7), chained `lock_parent`;
-  - deletes from the bottom level up, through policies and history, never relying on `ON DELETE CASCADE`;
-  - error paths `blanks.n1.choices.n2.content`;
-  - at most 1,000 rows in a write;
-  - `when_parent` across levels.
-- **D:**
-  - `validate_rows` over the final set of rows, and a row hook before the write;
-  - reaction patches on relationship rows by key or ref (amends ADR 0043);
-  - server closures for visibility, options and required, re-run on save (Q5).
+### Nesting
+
+- **What a relationship row may hold.**
+  - A relationship repeater over a has-many relation **of the row's resource** (the child), declared in the
+    child's `relations()`. The relation may be filtered.
+  - A JSON repeater over a JSON field of the child (C6). Its rules are declared on its inputs, as in a form
+    (part B), and checked on every write through the repeater. The child's own form may declare other rules
+    for that field: each form checks its own rows, as two forms of one resource already may.
+- **Depth.** Three levels of repeaters below the form at most (Q2), whatever their kind: `MAX_DEPTH`, shared
+  with JSON repeaters. A JSON repeater in a relationship row counts as one level.
+- **Boot refuses:**
+  - a nested relationship repeater whose relation is not a has-many of the row's resource, or a belongs-to-many;
+  - a nested child that is also the resource of an enclosing level (a resource editing itself through its rows);
+  - `.table()` on a repeater whose rows hold a repeater (as in part A);
+  - two nested repeaters in one row on the same child resource whose relations may share a row (part A's
+    disjointness rule);
+  - everything refused in rows today (`clear_when_hidden`, a `deletable(false)` repeater under a condition,
+    rules of the row's inputs, the parent key, filter or order columns as inputs).
+
+### Keys of ancestors: `inherit` (Q7)
+
+- `Repeater::make("choices").relationship().inherit("quiz_question_id")` on a nested relationship repeater
+  names a field of its child that the server fills with an **ancestor's key**: the record's (the form's
+  level) or an enclosing row's.
+- **Boot checks:**
+  - the field is `belongs_to` the resource of exactly one enclosing level, with that level's key type;
+  - it is not the relation's field, a filter column, the order column or a row input;
+  - `inherit` is refused on top-level repeaters and on JSON repeaters.
+- **The parent key of a nested row is the server's too**: written after the row's input is accepted, so the
+  child may keep it `guarded()` (a blank's key on its choices, which clients never move).
+- **On create** the value is the ancestor's key once that ancestor is written (a new row's key is known
+  before its rows are written). The user needs no write rule on the field. A client sending it gets 422 (`is
+  not allowed`, as any undeclared input); a hook changing it is a 500, as for the parent key.
+- **On update** the field is never written by the repeater. A stored row whose inherited field does not hold
+  the ancestor's key is not one of the rows (the relation's rows are those of the parent row; the database's
+  double foreign key, if any, keeps them consistent).
+- A required ancestor key that is not inherited is not detected at boot: the row's create fails with the
+  child's `is required`, at the row's path.
+
+### Locks (ADR 0018 and ADR 0041 point 3 amended) (C1)
+
+- **The family serializes on the root.** Every writer of rows at any level holds, before locking them, a row
+  that every other writer of that family also locks. For a nested repeater, the child's `lock_parent` must go
+  to one of:
+  - **its direct parent, through the nested relation's field** (a chain: the parent resource locks its own
+    parent, as a top-level repeater's child does). ADR 0018's "no chains" is lifted: a `lock_parent` target may
+    declare its own. A write still locks its direct parent only; ranks put each resource after the one it
+    locks, and the lock graph stays acyclic (checked at boot). The demo's section links lock their section,
+    which locks its category.
+  - **an ancestor of the repeater, through an inherited field.** The LMS quiz's choices lock the question
+    through `quiz_question_id`, as its top-level options do: the options table is edited by the question's
+    `options` repeater and by the blanks' `choices`, and one resource has one `lock_parent`.
+
+  Anything else is refused at boot.
+- **Lock graph.** For each nested repeater, the outer child gains an edge to the nested child (as a parent to
+  its `lock_parent` children): a write locks the blanks before their choices, and a question's phases run in
+  rank order (blanks and their choices before the options, when the ranks say so).
+- **Locking passes.** ADR 0041 point 6 becomes one locking pass **per parent row and relation**: the named rows
+  of one row's nested change (and its live children when it orders them, at most 1,000), in key order, under
+  the lock of that row (locked by its own level's pass, or written by this write). Passes of different parent
+  rows run in the order the rows are written, so keys of one child resource are not in key order across them.
+  That is safe for the reason of part A's several repeaters: every writer that locks rows under more than one
+  parent row holds the root (the root's write) or the ancestor every child locks, so such writers already
+  wait for each other on that row.
+- Media stay last, once, for the whole write (part B).
+
+### Wire (C7: refs)
+
+- A row's `data`, in `create` and `update`, may hold a nested repeater's change under the repeater's name,
+  with the shape of ADR 0040 (`create`, `update`, `delete`, `order`; `clear` is the server's own).
+  - In a `create` row, the nested change holds `create` (and `order`) only, as a create form's.
+  - An `update` row may carry only a nested change (its own inputs unchanged).
+- **Refs** stay unique within one change: a nested change belongs to the row it is in, so no ref names another
+  level's row. The panel keeps them unique in the page (`n1`, `n2`, …) for its own tracking.
+- **Shape checks** recurse: admission of the parts sent at every level (`create`, `update`, `delete` on each
+  child, 403) before any key is read, then the shape (422 at the repeater's path).
+- **At most 1,000 rows per write.** Every row a write creates, updates or deletes counts, at every level,
+  including rows removed with their parent row or because a repeater was hidden. Beyond: 422
+  `too_many_rows_changed` ("changes too many rows at once") on the form, nothing saved. Each part of one change
+  still holds 100 entries at most.
+- **Error paths** name each level's row by key or ref: `blanks.n1.choices.n2.content`,
+  `blanks.8.choices.12.content`; a nested repeater's own errors at `blanks.8.choices`.
+
+### Writing a level
+
+For one relationship repeater of one parent row (the record, or a row written above):
+
+1. **Lock** the named rows (and live children to order) in one pass, rechecked under the lock (part A).
+2. **Delete** rows, each with its nested rows first (C2):
+   - for each relationship repeater the row declares, the row's live children through that relation are
+     locked through `lock_visible`; when one of them is not visible to the user, the write is a 403 and
+     nothing is saved: the framework never removes rows the user cannot see, and never relies on
+     `ON DELETE CASCADE`;
+   - each child is deleted under the child's policy, with its history (to the trash with soft deletes),
+     bottom level first, then the row;
+   - relations the repeater does not declare, and the row's children outside a filtered relation, are left
+     to the database (its foreign keys: cascade, restrict, or a trashed row's children kept live), as for any
+     delete of that row.
+3. **Update** rows: the row's inputs (accepted, conditions, hooks, write), then its nested changes with its
+   key, then its `after_save` and history (C3).
+4. **Create** rows: the row (the parent key, inherited keys and filter values from the server), then its
+   nested changes with its new key, then its `after_save` and history.
+5. **Bounds** (`min_items`, `max_items`) on the parent row's rows, then the **order**.
+
+New rows of an ordered nested repeater take positions after every row of the parent row and every row sharing
+an ancestor key the repeater inherits (trashed included), so a unique `(question, position)` holds across the
+blanks; an order moves rows among the places they hold, as in part A.
+
+A row's `after_save` sees its nested rows, as the record's sees its rows; it runs after them, bottom level
+first. A row whose inputs did not change but whose nested rows did still runs its `after_save`.
+
+### Conditions across levels
+
+- `when_parent(name)` in a relationship row of a nested repeater reads the enclosing relationship row: its
+  values as this write leaves them (stored values the user may read, the row's change over them, after its own
+  conditions; a new row's declared defaults with its data). In rows of a top-level repeater it stays refused
+  (the parent is the form: `when_root`).
+- `when_root(name)` reads the record's form at any depth.
+- In a JSON repeater inside a relationship row, `when_parent` reads the relationship row and `when_root` the
+  form.
+- **A nested repeater's own condition (or its layouts') reads its row only** (`when`; boot refuses `when_root`
+  and `when_parent` there): it is settled when its row is written, and a row the save does not touch would
+  otherwise keep rows a change of the form hides (review, 2026-11-19).
+- **Hiding a nested repeater** (its condition in the row, or a layout's) follows part A at the row's level:
+  shown before and hidden after on the row's values, its visible rows are removed (under the 1,000 rows of the
+  write); changes sent for a hidden nested repeater are dropped; `min_items` does not apply while hidden. A
+  removed row of a hidden repeater removes its own nested rows, as a deleted row does (step 2).
+
+### History
+
+- Each row records its own entries, at every level.
+- A row whose nested rows changed records a `rows_changed` entry per nested relation (counts only), when its
+  resource is audited. The record's `rows_changed` counts its direct rows only.
+
+### Panel
+
+- **Nested rows are a tree.** A row's nested relationship repeater holds its own state (rows, removed keys,
+  order) as the form's does; saving sends it inside the row's change (only when something changed).
+- **Reading (C4).** When the form opens, each stored row reads its nested rows through the row's relation
+  list (`GET …/{child}/records/{key}/relations/{relation}`, filtered, sorted by the order column), one request
+  per row, at most 100 rows each (beyond: read-only, as today). New rows start with the nested repeater's
+  `default_items`. No new route.
+- **Removing a row** that holds nested rows removes them on save; the hidden-repeater notice of part A says
+  so when the hidden repeater's rows hold repeaters ("…, and the rows inside them").
+- **Errors** at nested paths show under the nested row's input; uploads and editors in nested rows are tracked
+  by their full path (part B).
+- **Limits on the client** (`min_items`, `max_items`, row problems) are checked per level, as the server does.
+
+### View pages (C5)
+
+- Unchanged in this part: a view page shows the first level of a relationship repeater (part A). Nested
+  relationship entries are left for later.
+
+### Wire (vocabulary 26)
+
+- `RepeaterSchema.components` of a relationship repeater may hold relationship repeaters (their
+  `relationship.resource` the nested child, `relation` a relation of the row's resource) and JSON repeaters.
+- Conditions in those rows may have `scope: "parent"`.
+- New error code `too_many_rows_changed`.
+- An SPA on vocabulary 25 sees vocabulary 26 as unknown and shows forms read-only.
+
+## Consequences (part C)
+
+- **Deleting a row deletes its nested rows** through policies and history; a user who cannot see one of them
+  cannot delete the row (403). A row whose nested repeater is not declared in the form keeps the database's
+  behaviour.
+- **Trashing a row trashes its nested rows**: restoring the row from its own page does not restore them.
+- **ADR 0018's "no chains" is lifted.** A `lock_parent` target may have its own; resources that relied on the
+  refusal see no change, and a chain's middle resource ranks between its two ends.
+- **Hooks of a row's `after_save`** now run after its nested rows are written.
+- **A JSON repeater in a relationship row** checks the rules the row declares, not the child form's; the
+  child's own form checks its own.
+- **Large trees.** A form whose rows hold many nested rows reads one request per row when it opens.
+
+## Part D
+
+To be written before it is built. Planned content:
+
+- `validate_rows` over the final set of rows, and a row hook before the write;
+- reaction patches on relationship rows by key or ref (amends ADR 0043);
+- server closures for visibility, options and required, re-run on save (Q5).

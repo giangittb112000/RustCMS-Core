@@ -390,55 +390,7 @@ impl<R: Resource> ResourceAdapter<R> {
         components: Vec<ComponentSchema>,
         op: SchemaOperation,
     ) -> Vec<ComponentSchema> {
-        let mut out = Vec::with_capacity(components.len());
-        for component in components {
-            match component {
-                ComponentSchema::Input(mut input) if input.value_type == "rows" => {
-                    let Some(repeater) = self.row_repeaters.iter().find(|r| r.name == input.name) else { continue };
-                    let Some(child) = ctx.registry.get(repeater.target) else { continue };
-                    if !child.allows(ctx, ability::VIEW_ANY).await {
-                        continue;
-                    }
-                    let create = child.admits(ctx, ability::CREATE).await && child.allows(ctx, ability::CREATE).await;
-                    let update = op == SchemaOperation::Edit && child.admits(ctx, ability::UPDATE).await;
-                    let delete = op == SchemaOperation::Edit && child.admits(ctx, ability::DELETE).await;
-                    let rows = child.row_schema(ctx, &repeater.rules().components, op);
-                    let t = |text: &str| ctx.t_in(R::SLUG, text);
-                    let relationship = crate::schema::RepeaterRelationship {
-                        resource: repeater.target,
-                        relation: repeater.name,
-                        create,
-                        update,
-                        delete,
-                        order_column: repeater.order_column.clone(),
-                    };
-                    input.disabled = !(create || update || delete);
-                    let mut schema =
-                        crate::engine::repeater::options_schema(&repeater.spec, rows, &t, Some(relationship));
-                    // Empty rows to start with are for new records only.
-                    if op != SchemaOperation::Create {
-                        schema.default_items = None;
-                    }
-                    // Without an order column an order is never stored: no reordering offered.
-                    schema.reorderable = repeater.order_column.is_some();
-                    // On an edit page, new rows are the child's creates: its create form's inputs.
-                    if op == SchemaOperation::Edit && create {
-                        schema.create_components =
-                            Some(child.row_schema(ctx, &repeater.rules().components, SchemaOperation::Create));
-                    }
-                    input.repeater = Some(Box::new(schema));
-                    out.push(ComponentSchema::Input(input));
-                }
-                ComponentSchema::Layout(mut layout) => {
-                    layout.components = Box::pin(self.fill_row_repeaters(ctx, layout.components, op)).await;
-                    if !layout.components.is_empty() {
-                        out.push(ComponentSchema::Layout(layout));
-                    }
-                }
-                other => out.push(other),
-            }
-        }
-        out
+        fill_rows(ctx, R::SLUG, components, op, &self.row_repeaters).await
     }
 
     /// What the user may change with each `BelongsToManySelect` of the form
@@ -789,4 +741,69 @@ pub(crate) fn rich_node_schemas(
                 .collect(),
         })
         .collect()
+}
+
+/// Fills in the rows of `repeaters` (a form's, or nested in a row's, ADR 0044
+/// part C) among `components`, texts looked up in `slug`'s table first.
+fn fill_rows<'a>(
+    ctx: &'a Ctx,
+    slug: &'static str,
+    components: Vec<ComponentSchema>,
+    op: SchemaOperation,
+    repeaters: &'a [crate::adapter::rows::RowRepeater],
+) -> std::pin::Pin<Box<dyn std::future::Future<Output = Vec<ComponentSchema>> + Send + 'a>> {
+    Box::pin(async move {
+        let mut out = Vec::with_capacity(components.len());
+        for component in components {
+            match component {
+                ComponentSchema::Input(mut input) if input.value_type == "rows" => {
+                    let Some(repeater) = repeaters.iter().find(|r| r.name == input.name) else { continue };
+                    let Some(child) = ctx.registry.get(repeater.target) else { continue };
+                    if !child.allows(ctx, ability::VIEW_ANY).await {
+                        continue;
+                    }
+                    let create = child.admits(ctx, ability::CREATE).await && child.allows(ctx, ability::CREATE).await;
+                    let update = op == SchemaOperation::Edit && child.admits(ctx, ability::UPDATE).await;
+                    let delete = op == SchemaOperation::Edit && child.admits(ctx, ability::DELETE).await;
+                    let nested = &repeater.rules().nested;
+                    let rows = child.row_schema(ctx, &repeater.rules().components, op);
+                    let rows = fill_rows(ctx, slug, rows, op, nested).await;
+                    let t = |text: &str| ctx.t_in(slug, text);
+                    let relationship = crate::schema::RepeaterRelationship {
+                        resource: repeater.target,
+                        relation: repeater.name,
+                        create,
+                        update,
+                        delete,
+                        order_column: repeater.order_column.clone(),
+                    };
+                    input.disabled = !(create || update || delete);
+                    let mut schema =
+                        crate::engine::repeater::options_schema(&repeater.spec, rows, &t, Some(relationship));
+                    // Empty rows to start with are for new records only.
+                    if op != SchemaOperation::Create {
+                        schema.default_items = None;
+                    }
+                    // Without an order column an order is never stored: no reordering offered.
+                    schema.reorderable = repeater.order_column.is_some();
+                    // On an edit page, new rows are the child's creates: its create form's inputs.
+                    if op == SchemaOperation::Edit && create {
+                        let rows = child.row_schema(ctx, &repeater.rules().components, SchemaOperation::Create);
+                        schema.create_components =
+                            Some(fill_rows(ctx, slug, rows, SchemaOperation::Create, nested).await);
+                    }
+                    input.repeater = Some(Box::new(schema));
+                    out.push(ComponentSchema::Input(input));
+                }
+                ComponentSchema::Layout(mut layout) => {
+                    layout.components = fill_rows(ctx, slug, layout.components, op, repeaters).await;
+                    if !layout.components.is_empty() {
+                        out.push(ComponentSchema::Layout(layout));
+                    }
+                }
+                other => out.push(other),
+            }
+        }
+        out
+    })
 }

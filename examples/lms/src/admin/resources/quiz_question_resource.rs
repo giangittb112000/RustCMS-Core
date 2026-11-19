@@ -1,7 +1,8 @@
 //! Quiz questions of a lesson. One form edits the
-//! question and its rows: a choice question's options (one table row each),
-//! or a fill-in-the-blank question's blanks. Switching a question to the
-//! other kind removes the rows its form no longer shows, when saved.
+//! question and its rows: a choice question's options, or a
+//! fill-in-the-blank question's blanks, each with its choices (rows of rows).
+//! Switching a question to the other kind removes the rows its form no
+//! longer shows, when saved.
 //! Administrators only (instructors get no `quiz_*` permission).
 
 use rustcms::admin::*;
@@ -60,11 +61,29 @@ impl Resource for QuizQuestionResource {
                     RichEditor::make("explanation"),
                 ])
                 .add_action_label("Add an option"),
+            // Blanks, each with its choices: options of the blank that also name
+            // their question (a double foreign key), filled in by the server
+            // (`inherit`). Choices lock the question, as its options do.
             Repeater::make("blanks")
                 .relationship()
                 .shown_when(when("kind").eq(quiz_question::FILL_BLANK))
                 .order_column("position")
-                .schema(components![TextInput::make("label")])
+                .schema(components![
+                    TextInput::make("label"),
+                    Repeater::make("choices")
+                        .relationship()
+                        .inherit("quiz_question_id")
+                        .order_column("position")
+                        .schema(components![
+                            TextInput::make("content"),
+                            Toggle::make("correct"),
+                            TextInput::make("hint").shown_when(Condition::all([
+                                when("correct").is_true(),
+                                when_root("explain").is_true(),
+                            ])),
+                        ])
+                        .add_action_label("Add a choice"),
+                ])
                 .add_action_label("Add a blank"),
         ])
     }
@@ -109,8 +128,9 @@ impl Resource for QuizOptionResource {
         use quiz_option::Column as C;
         vec![
             Field::column(C::QuizQuestionId).belongs_to("quiz_questions").required(),
-            // Set by the relation the option is created through.
-            Field::column(C::BlankId).guarded().readable(|_| true),
+            // The blank of a choice: set by the relation the choice is created
+            // through, never by a client.
+            Field::column(C::BlankId).belongs_to("quiz_blanks").guarded().readable(|_| true),
             Field::column(C::Content).required().max_length(500),
             Field::column(C::Correct),
             Field::column(C::Hint).required().max_length(500),
@@ -143,4 +163,10 @@ impl Resource for QuizBlankResource {
             Field::column(C::Position).guarded().readable(|_| true).sortable(),
         ]
     }
+
+    // #region quiz-blank-relations
+    fn relations() -> Vec<Relation> {
+        vec![Relation::has_many("choices", "quiz_options", "blank_id")]
+    }
+    // #endregion quiz-blank-relations
 }

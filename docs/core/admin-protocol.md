@@ -205,6 +205,19 @@ older documents (`document_needs_version`) and more than 500 nodes
 read-only (they read versions 1 and 2 only). Extensions draw and edit nodes
 with `registerRichTextNode` (host `ui` 4).
 
+Vocabulary 26 adds rows of rows (ADR 0044, part C). A relationship repeater's
+rows may hold relationship repeaters (`relationship.resource` the nested child,
+`relation` a has-many relation of the row's resource) and JSON repeaters of the
+child's JSON fields; conditions in nested rows may carry `scope: "parent"` (the
+enclosing relationship row). A client reads a stored row's nested rows from
+`GET /resources/{row resource}/records/{row key}/relations/{relation}`; a new
+row has none. A row's change (`create` or `update` data) carries a nested
+repeater's change under its name, of the same shape (`create` and `order`
+only inside a new row); an `update` may carry only that. Errors name every
+level (`blanks.n1.choices.n2.content`). A save changing more than 1,000 rows,
+every level and rows removed with their parent row counted, is refused with a
+form error `too_many_rows_changed`.
+
 Vocabulary 25 adds files, documents and record selects in repeater rows (ADR
 0044, part B). A JSON repeater's rows may hold `file_upload` inputs (their
 `media` and `collection` from the input) and `rich_editor` inputs (their

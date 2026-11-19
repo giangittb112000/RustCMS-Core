@@ -77,6 +77,16 @@
 "Viewer" = "Người xem"
 "Reads posts and categories" = "Đọc bài viết và danh mục"
 
+"Section" = "Mục"
+"Sections" = "Các mục"
+"Links" = "Liên kết"
+"Style" = "Kiểu"
+"Compact" = "Gọn"
+"Detailed" = "Chi tiết"
+"URL" = "URL"
+"Note" = "Ghi chú"
+"Add a section" = "Thêm mục"
+
 # region scoped
 [posts]
 # "Content" is also a navigation group; on the post form it is the first tab.

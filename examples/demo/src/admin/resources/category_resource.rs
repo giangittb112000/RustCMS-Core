@@ -68,6 +68,30 @@ impl Resource for CategoryResource {
                         .item_label("{title}")
                         .add_action_label("Add a post"),
                     // #endregion posts-repeater
+                    // #region sections-repeater
+                    // The landing page's sections, each with its links: rows of rows
+                    // (ADR 0044). A link's note shows in a detailed section only: it
+                    // reads the section it is in (`when_parent`).
+                    Repeater::make("sections")
+                        .relationship()
+                        .order_column("position")
+                        .schema(components![
+                            TextInput::make("title"),
+                            SelectInput::make("style"),
+                            Repeater::make("links")
+                                .relationship()
+                                .order_column("position")
+                                .schema(components![
+                                    TextInput::make("label"),
+                                    TextInput::make("url").label("URL"),
+                                    TextInput::make("note").shown_when(when_parent("style").eq("detailed")),
+                                ])
+                                .item_label("{label}")
+                                .add_action_label("Add a link"),
+                        ])
+                        .item_label("{title}")
+                        .add_action_label("Add a section"),
+                    // #endregion sections-repeater
                 ])
                 .aside(components![Section::make("Display").compact().collapsible(false).schema(components![
                     // #region color-input
@@ -148,6 +172,8 @@ impl Resource for CategoryResource {
             Relation::has_many("posts", "posts", "category_id").label("Posts"),
             // A filtered relation: only the drafts; "New" there creates one.
             Relation::has_many("drafts", "posts", "category_id").where_eq("published", false).label("Drafts"),
+            // Its landing page's sections (edited in the form).
+            Relation::has_many("sections", "category_sections", "category_id").label("Sections"),
         ]
     }
     // #endregion relations

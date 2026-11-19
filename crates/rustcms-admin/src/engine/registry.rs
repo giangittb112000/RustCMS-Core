@@ -63,7 +63,17 @@ pub trait DynResource: Send + Sync {
     /// # Panics
     /// On a condition that does not hold (ADR 0037 boot checks).
     #[doc(hidden)]
-    fn compile_row_rules(&self, registry: &Registry);
+    fn compile_row_rules(&self, registry: &Registry, nodes: &Arc<crate::rich_text::AppNodes>);
+    /// The pairs (outer child, nested child) of the relationship repeaters
+    /// nested in the rows of the form's (ADR 0044, part C): lock order edges.
+    #[doc(hidden)]
+    fn nested_row_edges(&self) -> Vec<(&'static str, &'static str)>;
+    /// The JSON repeaters declared in the rows of this form's relationship
+    /// repeaters (any depth) whose child is `target` (ADR 0044, part C): what
+    /// a restore of a `target` record checks its JSON fields' media with.
+    #[doc(hidden)]
+    #[allow(private_interfaces)]
+    fn row_json_repeaters(&self, target: &str) -> Vec<&HashMap<String, crate::engine::repeater::Rows>>;
     /// Checks the rows of the relationship repeatable entries of the infolist
     /// with their children's fields (ADR 0044).
     ///
@@ -436,7 +446,7 @@ impl Registry {
         let nodes = Arc::new(std::mem::take(&mut self.rich_nodes));
         for resource in self.resources.values() {
             resource.attach_rich_nodes(&nodes);
-            resource.compile_row_rules(&self);
+            resource.compile_row_rules(&self, &nodes);
             resource.check_relation_entries(&self);
         }
         self.rich_table = nodes;
@@ -470,10 +480,9 @@ impl Registry {
                     matches!(resource.field_link(field), Some((Some(linked), _)) if linked == *target),
                     "resource `{slug}`: lock_parent needs `{field}` to be a field with `belongs_to(\"{target}\")`"
                 );
-                assert!(
-                    parent.meta().parent_lock.is_none(),
-                    "resource `{slug}`: lock_parent target `{target}` locks a parent of its own (no chains)"
-                );
+                // Chains are allowed (ADR 0044, part C, amending ADR 0018): a write
+                // locks its direct parent; ranks order the chain, cycles are refused.
+                let _ = parent;
             }
             let mut names = HashSet::new();
             for relation in resource.relations() {
@@ -624,6 +633,14 @@ impl Registry {
             for (_, child, _, _) in resource.row_repeater_fields() {
                 for relation in resource.relations().iter().filter(|r| r.is_many()) {
                     edges.entry(relation.target).or_default().push(child);
+                }
+            }
+            // Nested repeaters (ADR 0044, part C): a row's resource before the
+            // resource of its rows, and the link targets before those too.
+            for (outer, inner) in resource.nested_row_edges() {
+                edges.entry(outer).or_default().push(inner);
+                for relation in resource.relations().iter().filter(|r| r.is_many()) {
+                    edges.entry(relation.target).or_default().push(inner);
                 }
             }
         }
