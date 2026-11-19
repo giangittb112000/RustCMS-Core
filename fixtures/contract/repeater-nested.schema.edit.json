@@ -275,6 +275,23 @@
                     },
                     "type": "text_input",
                     "valueType": "string"
+                  },
+                  {
+                    "columnSpan": 1,
+                    "disabled": false,
+                    "label": "Image",
+                    "media": {
+                      "accept": [
+                        "image/*"
+                      ],
+                      "maxItems": 1,
+                      "multiple": false
+                    },
+                    "name": "image",
+                    "nullable": true,
+                    "rules": [],
+                    "type": "file_upload",
+                    "valueType": "uuid"
                   }
                 ],
                 "createComponents": [
@@ -311,6 +328,23 @@
                     },
                     "type": "text_input",
                     "valueType": "string"
+                  },
+                  {
+                    "columnSpan": 1,
+                    "disabled": false,
+                    "label": "Image",
+                    "media": {
+                      "accept": [
+                        "image/*"
+                      ],
+                      "maxItems": 1,
+                      "multiple": false
+                    },
+                    "name": "image",
+                    "nullable": true,
+                    "rules": [],
+                    "type": "file_upload",
+                    "valueType": "uuid"
                   }
                 ],
                 "deletable": true,
@@ -453,6 +487,23 @@
                     },
                     "type": "text_input",
                     "valueType": "string"
+                  },
+                  {
+                    "columnSpan": 1,
+                    "disabled": false,
+                    "label": "Image",
+                    "media": {
+                      "accept": [
+                        "image/*"
+                      ],
+                      "maxItems": 1,
+                      "multiple": false
+                    },
+                    "name": "image",
+                    "nullable": true,
+                    "rules": [],
+                    "type": "file_upload",
+                    "valueType": "uuid"
                   }
                 ],
                 "deletable": true,

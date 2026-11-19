@@ -1,7 +1,8 @@
 // A relationship repeater (ADR 0040): child records edited in the parent's
 // form. The stored rows are read from the relation's list (the child's scope,
 // policy and read rules); the form keeps only what the user changed.
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { useEffect, useState } from "react";
 import { ChevronDown, ChevronUp, Plus, Trash2 } from "lucide-react";
 import type { InputSchema, LinkPage } from "@/api/types";
 import { useApi } from "@/api/context";
@@ -10,7 +11,7 @@ import { useT } from "@/i18n";
 import { cn } from "@/lib/utils";
 import { type RelationRow, type RelationState, createView, newRef, parseState, relationRowProblems, stateOf } from "@/schema/relation-rows";
 import { inputsOf } from "@/schema/form";
-import { type Row, itemLabel, rowOf } from "@/schema/repeater";
+import { type Row, hiddenInRow, itemLabel, rowOf } from "@/schema/repeater";
 import type { FormContext, WidgetProps } from "./form";
 import { useOuter } from "./outer";
 import { IconButton, NestedRow, RowComponents, TABLE_BAR, TABLE_BODY, TABLE_ROW, TableHeader, tableOf } from "./repeater";
@@ -41,14 +42,53 @@ export function useStoredRows(input: InputSchema, ctx: FormContext, refetch = tr
  */
 export function HiddenRowsNotice({ input, ctx }: { input: InputSchema; ctx: FormContext }) {
   const t = useT();
+  const queries = useQueryClient();
+  // Read again as the form's nested reads land (the count below reads the cache).
+  const [, setVersion] = useState(0);
+  useEffect(
+    () =>
+      queries.getQueryCache().subscribe((event) => {
+        // Only a read that lands (rendering the notice emits observer events: no loop).
+        if (event.type === "updated" && event.action.type === "success") setVersion((v) => v + 1);
+      }),
+    [queries],
+  );
   const stored = useStoredRows(input, ctx, false);
   const count = stored.data?.meta.total ?? 0;
   if (!ctx.record || count === 0) return null;
-  // Rows holding rows of their own (ADR 0044, part C): those go with them.
-  const nested = inputsOf(input.repeater?.components ?? []).some((i) => i.repeater?.relationship);
+  // Rows holding rows of their own (ADR 0044, part C): those go with them, at
+  // every level, counted from what the form read of them; not counted when
+  // some were not read.
+  const nested = inputsOf(input.repeater?.components ?? []).filter((i) => i.repeater?.relationship);
+  let known = stored.data!.data.length === count;
+  const inside = (owner: InputSchema, rows: { key: string }[]): number => {
+    let total = 0;
+    for (const child of inputsOf(owner.repeater?.components ?? []).filter((i) => i.repeater?.relationship)) {
+      const relationship = child.repeater!.relationship!;
+      for (const row of rows) {
+        const page = queries.getQueryData<LinkPage>([
+          "records", relationship.resource, "relation", owner.repeater!.relationship!.resource, row.key, relationship.relation, "repeater",
+        ]);
+        if (!page || page.data.length < page.meta.total) {
+          known = false;
+          continue;
+        }
+        total += page.meta.total + inside(child, page.data);
+      }
+    }
+    return total;
+  };
+  const inner = nested.length > 0 ? inside(input, stored.data!.data) : 0;
+  const text = nested.length === 0
+    ? t("repeater.willRemove", { count, label: input.label })
+    : known && inner > 0
+      ? t("repeater.willRemoveCounted", { count, label: input.label, inner })
+      : known
+        ? t("repeater.willRemove", { count, label: input.label })
+        : t("repeater.willRemoveNested", { count, label: input.label });
   return (
     <p role="status" className="col-span-full rounded-md border border-warning/40 bg-warning-soft px-3 py-2 text-sm text-warning-soft-foreground">
-      {t(nested ? "repeater.willRemoveNested" : "repeater.willRemove", { count, label: input.label })}
+      {text}
     </p>
   );
 }
@@ -121,6 +161,13 @@ export function RelationRepeaterWidget({ id, input, ctx, value, onChange, disabl
             .filter(([p]) => p.startsWith(`${rowId}.`))
             .map(([p, message]) => [`${index}.${p.slice(rowId.length + 1)}`, message]));
           const view = row.key ? repeater : createView(repeater);
+          // A stored row's repeaters as the form opened: hiding one now removes its rows on save (ADR 0044).
+          const before = row.key ? stored.data?.data.find((r) => r.key === row.key) : undefined;
+          const hiddenBefore = before ? hiddenInRow(view, rowOf(view, before.data, true), outer) : null;
+          const hiddenNotice = (nested: InputSchema) =>
+            hiddenBefore && !hiddenBefore.has(nested.name)
+              ? <HiddenRowsNotice input={nested} ctx={{ ...ctx, slug: relationship.resource, record: row.key }} />
+              : null;
           return (
             <li key={rowId} className={cn("rounded-lg border bg-card", table && TABLE_ROW, failed ? "border-destructive" : "border-border")}>
               <div className={cn("flex items-center gap-1 border-b border-border px-2 py-1.5", table && TABLE_BAR, table?.bar)}>
@@ -145,7 +192,7 @@ export function RelationRepeaterWidget({ id, input, ctx, value, onChange, disabl
                     <RowComponents components={view.components} repeater={view} row={row.values} hidden={hidden}
                       path={(name) => `${index}.${name}`} problem={problem(index)} server={rowServer}
                       ctx={{ ...ctx, slug: repeater.relationship?.resource ?? ctx.slug, record: row.key }} disabled={!editable}
-                      idPrefix={bodyId} onChange={(next) => setRow(index, next)} />
+                      idPrefix={bodyId} onChange={(next) => setRow(index, next)} hiddenNotice={hiddenNotice} />
                   )}
                 </NestedRow>
               </div>

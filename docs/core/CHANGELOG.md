@@ -108,6 +108,11 @@ All notable changes are documented here. The format follows
     limited as `form/react`); saves run them again on every path (hidden values dropped, `is required`, `is not
     one of the options`, new code `form_rules_failed`). Declarative conditions may not read an input whose
     visibility is computed. `SelectOption` is exported at the crate root. Demo: a link category needs its link.
+  - View pages show rows of rows: a relationship entry in a relationship row reads the row's has-many relation
+    (checked at boot; the default view page shows nested relationship repeaters). The hidden-repeater notice counts
+    the nested rows the form read; a nested repeater hidden by its row's condition says so in the row.
+    `DynResource::check_entry_rows` takes the registry and a depth, `entry_row_schemas` is async. LMS: a published
+    course with lessons needs a summary (`required_fn`).
   - Demo: categories are their posts or a link (migration `m20261119_000001_add_layout_to_categories`), posts
     edited as a table and shown on the view page, a "Drafts" section. LMS: quiz questions with options
     (`where_null("blank_id")`) and blanks, three tables (migration `m20261119_000006_create_quiz_tables`).

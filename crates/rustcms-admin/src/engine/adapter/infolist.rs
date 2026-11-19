@@ -151,7 +151,7 @@ pub(crate) const MAX_ENTRY_ROWS: u32 = 100;
 /// The options of a relationship repeatable entry: rows (`limit`, at most
 /// 100) and the entries of each row; the entries themselves are checked
 /// with the child's fields once every resource is registered.
-fn check_relationship_options(owner: &str, entry: &Entry) {
+pub(super) fn check_relationship_options(owner: &str, entry: &Entry) {
     let here = format!("{owner}: repeatable entry `{}`", entry.name);
     assert!(!entry.components.is_empty(), "{here}: the row has no entry (`.schema(components![…])`)");
     check_layouts(&here, &entry.components, None);
@@ -164,9 +164,12 @@ fn check_relationship_options(owner: &str, entry: &Entry) {
 
 /// Checks the entries of the rows of a relationship repeatable entry with
 /// `fields` and `columns`, the child's (ADR 0044): each a readable field of
-/// the child that its entry fits, once; no nested relationship rows.
+/// the child that its entry fits, once. Relationship entries among them (rows
+/// of rows) are left to `check_entry_rows`, which knows the child's relations;
+/// `depth` is the rows' level (JSON rows below count from it).
 pub(super) fn check_relation_rows<C: ColumnTrait>(
     here: &str,
+    depth: u8,
     components: &[Component],
     fields: &[Field],
     columns: &HashMap<String, ColumnInfo<C>>,
@@ -176,7 +179,10 @@ pub(super) fn check_relation_rows<C: ColumnTrait>(
     for entry in rows.entries() {
         let name = entry.name.as_str();
         assert!(seen.insert(name), "{here}: entry `{name}` appears twice in a row");
-        assert!(!entry.relationship, "{here}: entry `{name}`: rows of rows are not shown on view pages yet (ADR 0044)");
+        // Rows of rows: checked with the relation's target (`check_entry_rows`).
+        if entry.relationship {
+            continue;
+        }
         let field = fields.iter().find(|f| f.name == name && f.secret.is_none());
         assert!(
             field.is_some() && !matches!(entry.kind, EntryType::ComputedEntry),
@@ -190,7 +196,7 @@ pub(super) fn check_relation_rows<C: ColumnTrait>(
         );
         check_options(here, entry, kind);
         if entry.kind == EntryType::RepeatableEntry {
-            check_row_entries(here, entry, 2);
+            check_row_entries(here, entry, depth + 1);
         }
     }
     let kind_of = |name: &str| {
@@ -239,13 +245,10 @@ fn form_entry(input: &Input, field: Option<(&Field, FieldKind)>) -> Option<Entry
             entry.column_span = input.column_span;
             entry.shown_when = input.shown_when.clone();
             entry.relationship = true;
-            // Rows of rows are not shown on view pages yet (ADR 0044, part C).
-            entry.components = entries_of(&spec.components, &|input| {
-                if input.repeater.as_deref().is_some_and(|spec| spec.relationship) {
-                    return None;
-                }
-                form_entry(input, None)
-            });
+            // The repeater's order, for the view page's rows (wherever the repeater is declared).
+            entry.order_by = spec.order_column.clone();
+            // Rows of rows too (ADR 0044, part C): nested relationship repeaters.
+            entry.components = entries_of(&spec.components, &|input| form_entry(input, None));
             return Some(entry);
         }
         (InputType::Repeater, _) if input.repeater.is_none() => return None,
@@ -472,19 +475,36 @@ impl<R: Resource> ResourceAdapter<R> {
                 slot.insert(listable);
             }
         }
-        // Rows of has-many relations, for a user who may list them (ADR 0044).
+        let rows = self.relation_entry_rows(ctx, &infolist.entries()).await;
+        Some(InfolistSchema {
+            columns: infolist.columns,
+            components: self.entry_components(ctx, &infolist.components, &EntryLinks { links, rows }),
+            width: infolist.width.unwrap_or(self.form.width),
+            from_form: infolist.from_form,
+        })
+    }
+
+    /// The rows of the relationship entries among `entries` (this resource's
+    /// has-many relations), for a user who may list them (ADR 0044): each
+    /// with its rows' entries, rows of rows included.
+    pub(super) async fn relation_entry_rows(
+        &self,
+        ctx: &Ctx,
+        entries: &[&Entry],
+    ) -> HashMap<String, (EntryRows, Vec<ComponentSchema>, String)> {
         let mut rows = HashMap::new();
-        for entry in infolist.entries().into_iter().filter(|e| e.relationship) {
+        for entry in entries.iter().filter(|e| e.relationship) {
             let Some(relation) = self.relations.iter().find(|r| r.name == entry.name) else { continue };
             let Some(child) = ctx.registry.get(relation.target) else { continue };
             if !child.allows(ctx, ability::VIEW_ANY).await {
                 continue;
             }
-            let order_by = self
-                .row_repeaters
-                .iter()
-                .find(|r| r.name == relation.name)
-                .and_then(|r| r.order_column.clone())
+            let order_by = entry
+                .order_by
+                .clone()
+                .or_else(|| {
+                    self.row_repeaters.iter().find(|r| r.name == relation.name).and_then(|r| r.order_column.clone())
+                })
                 // The list sorts by it: the first rows are the first by position.
                 .filter(|column| child.sorts_by(ctx, column));
             let schema = EntryRows {
@@ -495,14 +515,9 @@ impl<R: Resource> ResourceAdapter<R> {
             };
             let label =
                 entry.label.clone().or_else(|| relation.label.clone()).unwrap_or_else(|| humanize(relation.name));
-            rows.insert(entry.name.clone(), (schema, child.entry_row_schemas(ctx, &entry.components), label));
+            rows.insert(entry.name.clone(), (schema, child.entry_row_schemas(ctx, &entry.components).await, label));
         }
-        Some(InfolistSchema {
-            columns: infolist.columns,
-            components: self.entry_components(ctx, &infolist.components, &EntryLinks { links, rows }),
-            width: infolist.width.unwrap_or(self.form.width),
-            from_form: infolist.from_form,
-        })
+        rows
     }
 
     pub(super) fn entry_components(

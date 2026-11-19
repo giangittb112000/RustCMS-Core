@@ -227,6 +227,40 @@ db_test!(the_prompt_keeps_the_blanks_in_step, migrate = Migrator, |db: TestDb| a
     assert_eq!(answer["patches"][0]["id"], json!("n2"));
 });
 
+db_test!(a_published_course_with_lessons_needs_a_summary, migrate = Migrator, |db: TestDb| async move {
+    use lms::models::course;
+    let app = seeded(db).await;
+    let admin = as_user(&app, "admin@example.test").await;
+    let seeded = course::Entity::find().order_by_asc(course::Column::Id).one(app.state().db()).await.unwrap().unwrap();
+    let url = record(&app, "courses", seeded.id);
+    // Published, with lessons: a summary is required (a rule computed on the server).
+    let refused = admin.send(Method::PATCH, &url, Some(&json!({"summary": null, "published": true}))).await;
+    assert!(errors(&refused).contains("summary"), "{}", refused.text());
+    // Unpublished: none needed.
+    let saved = admin.send(Method::PATCH, &url, Some(&json!({"summary": null, "published": false}))).await;
+    saved.assert_status(StatusCode::OK);
+    // A user who may edit courses but not list lessons is not held to it (the rule reads what they see).
+    {
+        use rustcms::auth::{ADMIN_GUARD, Actor, AuthState, RbacService};
+        use rustcms_testing::Factory;
+        let auth = app.state().service::<AuthState>().unwrap();
+        let rbac = RbacService::new(app.state().db(), &auth.resolver);
+        let permissions: Vec<String> =
+            ["courses.view_any", "courses.view", "courses.update", lms::policies::permissions::ALL_COURSES]
+                .map(str::to_owned)
+                .to_vec();
+        let role = rbac.create_role(Actor::System, ADMIN_GUARD, "course_editor", &permissions).await.unwrap();
+        let user = rustcms_testing::UserFactory::new().create(app.state().db()).await;
+        rbac.assign_role(Actor::System, user.id, role.id).await.unwrap();
+        let editor = app.acting_as(&user).await;
+        let saved = editor.send(Method::PATCH, &url, Some(&json!({"summary": null, "published": true}))).await;
+        saved.assert_status(StatusCode::OK);
+    }
+    // A new course (no lessons yet) is created without one.
+    let body = json!({"title": "New", "slug": "new-course", "capacity": 5, "published": true});
+    admin.post_json(&records(&app, "courses"), &body).await.assert_status(StatusCode::CREATED);
+});
+
 fn uuid_like() -> String {
     "0199d3a4-1b2c-7d3e-8f40-123456789abc".to_owned()
 }

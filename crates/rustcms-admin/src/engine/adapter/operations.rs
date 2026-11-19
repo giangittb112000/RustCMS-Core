@@ -82,16 +82,42 @@ impl<R: Resource> DynResource for ResourceAdapter<R> {
             let relation = self.relations.iter().find(|r| r.name == entry.name).expect("checked with the infolist");
             let Some(child) = registry.get(relation.target) else { continue };
             let here = format!("resource `{}`: repeatable entry `{}`", R::SLUG, entry.name);
-            child.check_entry_rows(&here, &entry.components);
+            child.check_entry_rows(&here, &entry.components, registry, 1);
         }
     }
 
-    fn check_entry_rows(&self, here: &str, components: &[Component]) {
-        super::infolist::check_relation_rows(here, components, &self.fields, &self.columns);
+    fn check_entry_rows(&self, here: &str, components: &[Component], registry: &crate::Registry, depth: u8) {
+        super::infolist::check_relation_rows(here, depth, components, &self.fields, &self.columns);
+        // Rows of rows (ADR 0044): this resource's has-many relations, their targets' fields.
+        let rows = crate::ui::Infolist::new().schema(components.to_vec());
+        for entry in rows.entries().into_iter().filter(|e| e.relationship) {
+            let inner = format!("{here}: repeatable entry `{}`", entry.name);
+            assert!(
+                entry.kind == crate::ui::EntryType::RepeatableEntry,
+                "{inner}: `relationship()` is for repeatable entries"
+            );
+            assert!(
+                depth < crate::engine::repeater::MAX_DEPTH,
+                "{inner}: repeatable entries nest {} deep at most",
+                crate::engine::repeater::MAX_DEPTH
+            );
+            let relation = self
+                .relations
+                .iter()
+                .find(|r| r.name == entry.name && !r.is_many())
+                .unwrap_or_else(|| panic!("{inner}: `relationship()` needs a has-many relation of `{}`", R::SLUG));
+            super::infolist::check_relationship_options(here, entry);
+            let child =
+                registry.get(relation.target).unwrap_or_else(|| panic!("{inner}: unknown `{}`", relation.target));
+            child.check_entry_rows(&inner, &entry.components, registry, depth + 1);
+        }
     }
 
-    fn entry_row_schemas(&self, ctx: &Ctx, components: &[Component]) -> Vec<ComponentSchema> {
-        self.entry_components(ctx, components, &super::infolist::EntryLinks::default())
+    async fn entry_row_schemas(&self, ctx: &Ctx, components: &[Component]) -> Vec<ComponentSchema> {
+        // Rows of rows (ADR 0044): read through this resource's relations.
+        let entries = crate::ui::Infolist::new().schema(components.to_vec());
+        let rows = self.relation_entry_rows(ctx, &entries.entries()).await;
+        self.entry_components(ctx, components, &super::infolist::EntryLinks { rows, ..Default::default() })
     }
 
     fn relation_filter_value(&self, name: &str, filter: &RelationFilter) -> Result<serde_json::Value, String> {

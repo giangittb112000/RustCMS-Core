@@ -104,6 +104,12 @@ the entry. The demo's categories show their posts this way:
 
 <<< @/../../../examples/demo/src/admin/resources/category_resource.rs#posts-entry [src/admin/resources/category_resource.rs]
 
+A row may hold a relationship entry of its own: a has-many relation of the
+child (a question's blanks, each with its choices), read through the row's
+relation (each row one request), three levels at most, in the list's order.
+More rows than `limit(n)`: the link opens that row's page, at the relation's
+section. The default view page shows nested relationship repeaters this way.
+
 ### Conditions
 
 `shown_when` works as in forms (see [Showing inputs under conditions](forms.md#showing-inputs-under-conditions)),

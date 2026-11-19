@@ -219,6 +219,21 @@ function Shown({ entry, value, ctx }: { entry: EntrySchema; value: JsonValue; ct
  */
 function RelationRows({ entry, rows, ctx }: { entry: EntrySchema; rows: NonNullable<EntrySchema["rows"]>; ctx: Context }) {
   const t = useT();
+  // Rows of rows (ADR 0044): read when asked, so a page of many rows does not
+  // send a request per row at every level when it opens.
+  const [asked, setAsked] = useState(!ctx.outer);
+  if (!asked) {
+    return (
+      <button type="button" onClick={() => setAsked(true)} className="self-start text-sm font-medium text-primary underline-offset-4 hover:underline">
+        {t("entry.showRows", { label: entry.label })}
+      </button>
+    );
+  }
+  return <RelationRowsRead entry={entry} rows={rows} ctx={ctx} />;
+}
+
+function RelationRowsRead({ entry, rows, ctx }: { entry: EntrySchema; rows: NonNullable<EntrySchema["rows"]>; ctx: Context }) {
+  const t = useT();
   const api = useApi();
   const enc = encodeURIComponent;
   const page = useQuery({
@@ -253,11 +268,17 @@ function RelationRows({ entry, rows, ctx }: { entry: EntrySchema; rows: NonNulla
           </li>
         ))}
       </ol>
-      {more && (
+      {more && (ctx.outer ? (
+        // Rows of a row (ADR 0044, part C): the relation's section is on that row's page.
+        <Link to="/r/$slug/records/$key" params={{ slug: ctx.slug ?? "", key: ctx.recordKey ?? "" }} hash={`relation-${rows.relation}`}
+          className="self-start text-sm font-medium text-primary underline-offset-4 hover:underline">
+          {t("entry.allRows", { count: page.data.meta.total })}
+        </Link>
+      ) : (
         <a href={`#relation-${rows.relation}`} className="self-start text-sm font-medium text-primary underline-offset-4 hover:underline">
           {t("entry.allRows", { count: page.data.meta.total })}
         </a>
-      )}
+      ))}
     </div>
   );
 }

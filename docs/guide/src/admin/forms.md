@@ -380,6 +380,10 @@ input takes closures run on the server:
 
 <<< @/../../../examples/demo/src/admin/resources/category_resource.rs#link-required [src/admin/resources/category_resource.rs]
 
+The LMS reads data: a published course with lessons needs a summary.
+
+<<< @/../../../examples/lms/src/admin/resources/course_resource.rs#summary-required [src/admin/resources/course_resource.rs]
+
 - **`f` is async**, with the request's `Ctx` (it may read the database; it
   should not write) and the `FormState` a reaction reads: what the user's form
   holds, the inputs hidden by `when(..)` conditions read as empty. **Its values
@@ -692,7 +696,11 @@ saved at once:
   every row of their parent and every row sharing a key the repeater
   inherits, so a unique `(question, position)` holds across the blanks.
 - **The form reads** each stored row's own rows through its relation when it
-  opens (one request per row). View pages show the first level only.
+  opens (one request per row). View pages show the rows of rows too
+  ([relationship entries](infolists.md)).
+- **Hiding a repeater whose rows hold rows** says how many go with them
+  (counted from what the form read); hiding a nested repeater by its row's
+  condition says so in that row.
 
 The demo's categories hold sections, each with its links (a chain of parent
 locks; a link's note shows in a detailed section):

@@ -3,14 +3,16 @@
 // a save sends the choices' change inside the blank's; errors are named by
 // every level.
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+import { RouterProvider, createMemoryHistory, createRootRoute, createRouter } from "@tanstack/react-router";
 import { fireEvent, render, screen } from "@testing-library/react";
 import { http, HttpResponse } from "msw";
 import { setupServer } from "msw/node";
 import { useForm } from "react-hook-form";
 import { SessionContext } from "@/api/context";
-import type { ComponentSchema, InputSchema } from "@/api/types";
+import type { ComponentSchema, InfolistSchema, InputSchema } from "@/api/types";
 import { createSession } from "@/app/session";
 import { Components } from "@/renderers/form";
+import { InfolistRenderer } from "@/renderers/infolist";
 import { type FormValues, defaultValues, fromFormValue, inputsOf, serverErrors } from "@/schema/form";
 import { applyPatches, reactionState } from "@/schema/reactions";
 import { type RelationState, changeOf, relationRowProblems } from "@/schema/relation-rows";
@@ -121,7 +123,16 @@ it("says that hiding the rows removes the rows inside them too", async () => {
   mount({ title: "Q", kind: "blank" });
   await screen.findByDisplayValue("yes");
   fireEvent.change(screen.getByLabelText(/^Kind/), { target: { value: JSON.stringify("choice") } });
-  expect(await screen.findByRole("status")).toHaveTextContent("Saving removes the 1 rows of Blanks you can see, and the rows inside them.");
+  // The blank's choices were read when the form opened: counted.
+  expect(await screen.findByRole("status")).toHaveTextContent("Saving removes the 1 rows of Blanks you can see, and the 1 rows inside them.");
+});
+
+it("says in a row that hiding its rows removes them", async () => {
+  mount({ title: "Q", kind: "blank" });
+  await screen.findByDisplayValue("yes");
+  // An open blank has no choices: its stored choice goes on save.
+  fireEvent.change(screen.getByLabelText(/^Mode/), { target: { value: JSON.stringify("open") } });
+  expect(await screen.findByRole("status")).toHaveTextContent("Saving removes the 1 rows of Choices you can see.");
 });
 
 describe("reactions on relationship rows (ADR 0044, part D)", () => {
@@ -167,4 +178,48 @@ describe("reactions on relationship rows (ADR 0044, part D)", () => {
     const removed = applyPatches(inputs, values, [{ op: "remove_relation_row", field: "blanks", id: "1" }], () => stored());
     expect((JSON.parse(removed.values.blanks as string) as RelationState).deleted).toEqual(["1"]);
   });
+});
+
+it("shows rows of rows on the view page, each read through its row's relation", async () => {
+  server.use(
+    http.get("*/admin/api/resources/questions/records/:key/relations/blanks", () =>
+      HttpResponse.json({ data: [{ key: "1", abilities: {}, data: { label: "First" } }], meta: { total: 1, page: 1, perPage: 100, lastPage: 1 } })),
+    http.get("*/admin/api/resources/question_blanks/records/:key/relations/choices", ({ params }) => {
+      choicesAsked.push(String(params.key));
+      return HttpResponse.json({
+        data: [{ key: "11", abilities: {}, data: { content: "yes" } }],
+        meta: { total: 3, page: 1, perPage: 1, lastPage: 3 },
+      });
+    }),
+  );
+  const infolist = {
+    columns: 1,
+    components: [{
+      type: "repeatable_entry", name: "blanks", label: "Blanks", valueType: "rows", columnSpan: 1,
+      rows: { resource: "question_blanks", relation: "blanks", limit: 100 },
+      components: [
+        { type: "text_entry", name: "label", label: "Label", valueType: "string", columnSpan: 1 },
+        {
+          type: "repeatable_entry", name: "choices", label: "Choices", valueType: "rows", columnSpan: 1,
+          rows: { resource: "question_options", relation: "choices", limit: 1 },
+          components: [{ type: "text_entry", name: "content", label: "Content", valueType: "string", columnSpan: 1 }],
+        },
+      ],
+    }],
+  } as unknown as InfolistSchema;
+  const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+  const session = createSession({ basePath: "", apiPath: "http://localhost/admin/api" }, client, () => {});
+  const history = createMemoryHistory({ initialEntries: ["/r/questions/records/7"] });
+  const router = createRootRoute({ component: () => (
+    <SessionContext.Provider value={session}><QueryClientProvider client={client}>
+      <InfolistRenderer infolist={infolist} slug="questions" recordKey="7" data={{ title: "Q" }} />
+    </QueryClientProvider></SessionContext.Provider>
+  ) });
+  render(<RouterProvider router={createRouter({ routeTree: router, history })} />);
+  // Rows of rows are read when asked: none on open.
+  fireEvent.click(await screen.findByRole("button", { name: "Show Choices" }));
+  expect(await screen.findByText("yes")).toBeInTheDocument();
+  expect(choicesAsked).toEqual(["1"]);
+  // More choices than shown: the blank's page has them all.
+  expect(screen.getByRole("link", { name: "All 3 rows" })).toHaveAttribute("href", "/r/question_blanks/records/1#relation-choices");
 });

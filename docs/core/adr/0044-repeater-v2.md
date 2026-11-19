@@ -477,15 +477,20 @@ first. A row whose inputs did not change but whose nested rows did still runs it
   per row, at most 100 rows each (beyond: read-only, as today). New rows start with the nested repeater's
   `default_items`. No new route.
 - **Removing a row** that holds nested rows removes them on save; the hidden-repeater notice of part A says
-  so when the hidden repeater's rows hold repeaters ("…, and the rows inside them").
+  so when the hidden repeater's rows hold repeaters, counting the nested rows the form read ("…, and the 4
+  rows inside them"; uncounted when some were not read). A nested repeater its row's condition hides (shown
+  when the form opened) says in that row how many of its rows saving removes.
 - **Errors** at nested paths show under the nested row's input; uploads and editors in nested rows are tracked
   by their full path (part B).
 - **Limits on the client** (`min_items`, `max_items`, row problems) are checked per level, as the server does.
 
 ### View pages (C5)
 
-- Unchanged in this part: a view page shows the first level of a relationship repeater (part A). Nested
-  relationship entries are left for later.
+- A row of a relationship entry may hold a relationship entry of the child's has-many relations (checked at
+  boot with the target's fields, three levels at most), read through the row's relation list (`GET
+  …/{child}/records/{key}/relations/{relation}`, one request per row, the list's order), left out for a user who
+  may not list its target; more rows than `limit` link to the row's page. The default view page shows nested
+  relationship repeaters this way (2026-11-20, after part E).
 
 ### Wire (vocabulary 26)
 

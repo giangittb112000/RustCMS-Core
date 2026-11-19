@@ -2,7 +2,7 @@
 // reordered (buttons, or dragging the handle). Each row input is drawn by the
 // form's own widgets; the rows live in the form as one JSON value.
 import { ChevronDown, ChevronUp, Copy, GripVertical, Plus, Trash2 } from "lucide-react";
-import { useRef, useState } from "react";
+import { Fragment, useRef, useState } from "react";
 import type * as React from "react";
 import type { ComponentSchema, InputSchema, RepeaterSchema } from "@/api/types";
 import { Button } from "@/components/ui/button";
@@ -251,7 +251,7 @@ export function NestedRow({ repeater, row, outer, children }: {
   return <OuterContext.Provider value={{ parent: rowLevel(repeater, row, hidden), root: outer.root }}>{children(hidden)}</OuterContext.Provider>;
 }
 
-export function RowComponents({ components, repeater, row, hidden, path, problem, server, ctx, disabled, idPrefix, onChange }: {
+export function RowComponents({ components, repeater, row, hidden, path, problem, server, ctx, disabled, idPrefix, onChange, hiddenNotice }: {
   components: ComponentSchema[];
   repeater: RepeaterSchema;
   row: Row;
@@ -263,17 +263,23 @@ export function RowComponents({ components, repeater, row, hidden, path, problem
   disabled?: boolean;
   idPrefix: string;
   onChange: (row: Row) => void;
+  /** In place of a hidden relationship repeater: what its rows' removal shows (ADR 0044). */
+  hiddenNotice?: (input: InputSchema) => React.ReactNode;
 }) {
   return <>{components.map((component, index) => {
     if (isLayout(component)) {
       return (
         <SchemaLayout key={`layout-${index}`} layout={component}>
           <RowComponents components={component.components} repeater={repeater} row={row} hidden={hidden} path={path}
-            problem={problem} server={server} ctx={ctx} disabled={disabled} idPrefix={idPrefix} onChange={onChange} />
+            problem={problem} server={server} ctx={ctx} disabled={disabled} idPrefix={idPrefix} onChange={onChange}
+            hiddenNotice={hiddenNotice} />
         </SchemaLayout>
       );
     }
     const table = repeater.layout === "table";
+    if (isInput(component) && hidden.has(component.name) && component.repeater?.relationship) {
+      return <Fragment key={component.name}>{hiddenNotice?.(component) ?? null}</Fragment>;
+    }
     // A hidden input keeps its column in a table row: an empty cell.
     if (isInput(component) && hidden.has(component.name) && table && component.type !== "hidden") {
       return <div key={component.name} aria-hidden="true" className="hidden md:block" />;

@@ -53,6 +53,9 @@ pub struct Entry {
     /// Rich text entries of a JSON row made from a rich editor: the
     /// application nodes the input accepts (ADR 0044).
     pub(crate) row_nodes: Vec<String>,
+    /// Relationship entries of the default view page: the order column of
+    /// the form's repeater, wherever it is declared (rows of rows, ADR 0044).
+    pub(crate) order_by: Option<String>,
 }
 
 /// Display options (boxed: most entries have few).
@@ -94,6 +97,7 @@ impl Entry {
             row_kind: None,
             relationship: false,
             row_nodes: Vec::new(),
+            order_by: None,
         }
     }
 

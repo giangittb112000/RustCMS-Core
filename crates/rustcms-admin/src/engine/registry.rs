@@ -98,13 +98,20 @@ pub trait DynResource: Send + Sync {
     fn check_relation_entries(&self, registry: &Registry);
     /// Checks `components`, the entries of a relationship repeatable entry's
     /// rows, with this resource's fields (`here` names them in panics).
+    /// Relationship entries among them show this resource's has-many
+    /// relations (rows of rows, ADR 0044), checked with their targets' fields
+    /// (`depth`: the entry's level, 1 on a view page).
     #[doc(hidden)]
-    fn check_entry_rows(&self, here: &str, components: &[crate::ui::Component]);
+    fn check_entry_rows(&self, here: &str, components: &[crate::ui::Component], registry: &Registry, depth: u8);
     /// The schemas of `components`, the entries of rows of this resource
     /// (a relationship repeatable entry's), for the user of `ctx`: entries
     /// of fields they may not read left out.
     #[doc(hidden)]
-    fn entry_row_schemas(&self, ctx: &Ctx, components: &[crate::ui::Component]) -> Vec<crate::schema::ComponentSchema>;
+    async fn entry_row_schemas(
+        &self,
+        ctx: &Ctx,
+        components: &[crate::ui::Component],
+    ) -> Vec<crate::schema::ComponentSchema>;
     /// Whether field `name` is encrypted: what a relationship repeater's rows
     /// may not edit (ADR 0041, amended by ADR 0044: media and rich text are
     /// checked with the parent's).

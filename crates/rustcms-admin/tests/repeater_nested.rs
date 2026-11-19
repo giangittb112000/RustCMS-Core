@@ -72,6 +72,8 @@ pub mod option {
         pub content: String,
         pub note: Option<String>,
         pub position: i32,
+        /// A file, checked with the question's (ADR 0044, part B), at any level.
+        pub image: Option<Uuid>,
     }
 
     #[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]
@@ -226,6 +228,7 @@ impl Resource for QuestionResource {
                             TextInput::make("content"),
                             // Explained only for a select blank (the enclosing row).
                             TextInput::make("note").shown_when(when_parent("mode").eq("select")),
+                            FileUpload::make("image"),
                         ]),
                 ]),
         ])
@@ -315,6 +318,7 @@ impl Resource for OptionResource {
             Field::column(C::Content).required().max_length(50),
             Field::column(C::Note),
             Field::column(C::Position).guarded().readable(|_| true).sortable(),
+            Field::column(C::Image).media().accept(&["image/*"]),
         ]
     }
 
@@ -334,12 +338,45 @@ impl Resource for OptionResource {
 }
 
 fn build(config: Config) -> AppBuilder {
+    // One directory for every run: these tests store no file content (media rows only).
+    let root = std::env::temp_dir().join("rustcms-repeater-nested");
+    let config = config.with("storage.root", root.to_string_lossy()).expect("storage config");
     let mut app = AppBuilder::new(config);
+    app.provider(rustcms_core::storage::StorageProvider);
     app.provider(AuthProvider::new());
     app.provider(
-        AdminProvider::new().resource::<QuestionResource>().resource::<BlankResource>().resource::<OptionResource>(),
+        AdminProvider::new()
+            .media()
+            .resource::<QuestionResource>()
+            .resource::<BlankResource>()
+            .resource::<OptionResource>(),
     );
     app
+}
+
+/// A file of the media library (`mime`), trashed or not.
+async fn stored_media(app: &TestApp, owner: i64, mime: &str, trashed: bool) -> String {
+    let id = uuid::Uuid::now_v7();
+    rustcms_admin::media::entity::ActiveModel {
+        id: Set(id),
+        disk: Set("local".into()),
+        key: Set(format!("media/{id}")),
+        name: Set("f".into()),
+        mime: Set(mime.into()),
+        size: Set(10),
+        sha256: Set("0".repeat(64)),
+        width: Set(None),
+        height: Set(None),
+        alt: Set(None),
+        collection: Set(None),
+        owner_id: Set(owner),
+        created_at: Set(chrono::Utc::now()),
+        deleted_at: Set(trashed.then(chrono::Utc::now)),
+    }
+    .insert(app.state().db())
+    .await
+    .unwrap();
+    id.to_string()
 }
 
 struct Users {
@@ -605,6 +642,30 @@ db_test!(inherited_keys_are_the_server_s, |db: TestDb| async move {
     assert_eq!(refused.json()["errors"][&path][0], json!("is not one of the rows"), "{}", refused.json());
 });
 
+db_test!(files_of_rows_of_rows_are_checked_with_the_record_s, |db: TestDb| async move {
+    let (app, users) = setup(db).await;
+    let admin = app.acting_as(&users.admin).await;
+    let png = stored_media(&app, users.admin.id, "image/png", false).await;
+    let pdf = stored_media(&app, users.admin.id, "application/pdf", false).await;
+    let gone = stored_media(&app, users.admin.id, "image/png", true).await;
+    let question = |image: &str| {
+        json!({"title": "Q", "kind": "blank", "blanks": {"create": [{"ref": "n1", "data": {
+            "label": "A", "mode": "select",
+            "choices": {"create": [{"ref": "n2", "data": {"content": "x", "image": image}}]},
+        }}]}})
+    };
+    // A file in the trash, or of a type the field refuses: named at its row, every level.
+    for image in [&gone, &pdf] {
+        let refused = create(&admin, &app, question(image)).await;
+        refused.assert_status(StatusCode::UNPROCESSABLE_ENTITY);
+        assert!(refused.json()["errors"]["blanks.n1.choices.n2.image"].is_array(), "{}", refused.json());
+    }
+    let created = create(&admin, &app, question(&png)).await;
+    created.assert_status(StatusCode::CREATED);
+    let choice = option::Entity::find().filter(option::Column::Content.eq("x")).one(app.state().db()).await.unwrap();
+    assert_eq!(choice.unwrap().image.map(|i| i.to_string()), Some(png));
+});
+
 db_test!(errors_are_named_by_every_level, |db: TestDb| async move {
     let (app, users) = setup(db).await;
     let admin = app.acting_as(&users.admin).await;
@@ -788,6 +849,23 @@ db_test!(two_saves_of_one_question_s_choices_wait_for_each_other, |db: TestDb| a
     two.assert_status(StatusCode::OK);
     assert_eq!(choices_of(&app, blanks[0].0).await[0].content, "a1!");
     assert_eq!(choices_of(&app, blanks[1].0).await[0].content, "b1!");
+});
+
+db_test!(the_view_page_shows_rows_of_rows, |db: TestDb| async move {
+    let (app, users) = setup(db).await;
+    let admin = app.acting_as(&users.admin).await;
+    let (question, _) = stored(&app, &[("A", "select", &["a1"])]).await;
+    let schema = admin.get(&app.admin_api(&format!("resources/questions/schema?operation=view&key={question}"))).await;
+    let schema = schema.json();
+    let blanks = schema["infolist"]["components"].as_array().unwrap().iter().find(|c| c["name"] == "blanks").unwrap();
+    assert_eq!(blanks["rows"]["relation"], json!("blanks"));
+    // The blank's choices, read through the blank's relation.
+    let choices = blanks["components"].as_array().unwrap().iter().find(|c| c["name"] == "choices").unwrap();
+    assert_eq!(choices["rows"]["resource"], json!("question_options"));
+    assert_eq!(choices["rows"]["relation"], json!("choices"));
+    // In the nested repeater's order, though the blank's own form has no repeater.
+    assert_eq!(choices["rows"]["orderBy"], json!("position"));
+    assert!(choices["components"].as_array().unwrap().iter().any(|c| c["name"] == "content"));
 });
 
 db_test!(the_edit_form_holds_the_nested_repeater, |db: TestDb| async move {
@@ -990,6 +1068,61 @@ mod boot {
             Registry::new().register::<RootCondition>().register::<BlankResource>().register::<OptionResource>()
         });
         assert!(message.contains("reads its row only"), "{message}");
+    }
+
+    #[test]
+    fn nested_relationship_entries_show_relations_of_the_row() {
+        struct Viewed;
+        impl Resource for Viewed {
+            type Entity = question::Entity;
+            const SLUG: &'static str = "questions";
+            fn meta() -> ResourceMeta {
+                ResourceMeta::new("Question")
+            }
+            fn fields() -> Vec<Field> {
+                vec![Field::column(question::Column::Title)]
+            }
+            fn infolist() -> Infolist {
+                Infolist::new().schema(components![RepeatableEntry::make("blanks").relationship().schema(components![
+                    TextEntry::make("label"),
+                    RepeatableEntry::make("answers").relationship().schema(components![TextEntry::make("content")]),
+                ])])
+            }
+            fn relations() -> Vec<Relation> {
+                vec![Relation::has_many("blanks", "question_blanks", "question_id")]
+            }
+        }
+        let message =
+            fails(|| Registry::new().register::<Viewed>().register::<BlankResource>().register::<OptionResource>());
+        assert!(message.contains("`relationship()` needs a has-many relation of `question_blanks`"), "{message}");
+    }
+
+    #[test]
+    fn nested_relationship_entries_are_repeatable() {
+        struct Viewed;
+        impl Resource for Viewed {
+            type Entity = question::Entity;
+            const SLUG: &'static str = "questions";
+            fn meta() -> ResourceMeta {
+                ResourceMeta::new("Question")
+            }
+            fn fields() -> Vec<Field> {
+                vec![Field::column(question::Column::Title)]
+            }
+            fn infolist() -> Infolist {
+                Infolist::new().schema(components![
+                    RepeatableEntry::make("blanks")
+                        .relationship()
+                        .schema(components![TextEntry::make("label"), TextEntry::make("choices").relationship(),])
+                ])
+            }
+            fn relations() -> Vec<Relation> {
+                vec![Relation::has_many("blanks", "question_blanks", "question_id")]
+            }
+        }
+        let message =
+            fails(|| Registry::new().register::<Viewed>().register::<BlankResource>().register::<OptionResource>());
+        assert!(message.contains("`relationship()` is for repeatable entries"), "{message}");
     }
 
     #[test]
